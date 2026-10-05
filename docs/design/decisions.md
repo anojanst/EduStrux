@@ -106,6 +106,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `.github/rulesets/protect-main.json`, ready to apply after upgrading.
 - **Consequences:** Pushes from other machines, or edits in the GitHub web UI, aren't blocked
   until the ruleset is active. Required status checks get added to the ruleset once CI exists.
+- **Update 2026-10-05:** the account was upgraded to GitHub Pro and the ruleset is active (id
+  24489131). Pushes from anywhere now go through it.
 
 ## D-014 · 2026-10-05 · Claude works as a bot account; the owner reviews
 

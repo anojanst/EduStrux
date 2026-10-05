@@ -101,6 +101,6 @@ reviews as themselves.
 |---|---|---|
 | Git hooks | Commits on `main`; pushing to, force-pushing or deleting `main` | `.githooks/` (installed by `pnpm install` via `core.hooksPath`) |
 | Claude Code deny rules | Claude pushing to `main`, force-pushing, `--no-verify`, changing the hooks path, merging PRs | `.claude/settings.json` |
-| GitHub ruleset | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`. **Not active yet:** needs GitHub Pro for a private repo |
+| GitHub ruleset | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`, active on GitHub (ruleset 24489131) |
 
 Don't try to work around a block (another flag, `git -c`, the API). Stop and tell the user.
