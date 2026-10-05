@@ -62,7 +62,9 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
 - **Modules** (`apps/api/src/modules/<name>/`) own their routes, service and repository, and call
   each other only through services.
-- **API format**: JSON, camelCase. Errors are `{ error: { code, message, fields? } }`. Lists use
+- **API format**: JSON, camelCase, locale-neutral (no `Accept-Language`, no translated text).
+  Errors are `{ error: { code, message, fields? } }`: `code` is a stable key the client
+  translates, `message` is English for developers (D-015). Lists use
   `?limit&cursor` → `{ data, nextCursor }`. PATCH takes the `updatedAt` you last read (stale →
   409). Money is `{ amount, currency }` in minor units. Long actions return `202 { jobId }`.
   `Idempotency-Key` makes POSTs retry-safe.
