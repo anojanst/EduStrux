@@ -75,3 +75,7 @@ Every task (or small bundle) is delivered as its own pull request for the user t
   or deploy. The user reviews and merges.
 - **Review feedback:** fix on the same branch as new commits (`/open-pr --update`). Don't amend
   pushed commits.
+- **Merged branches are deleted.** GitHub deletes the remote branch on merge (repo setting
+  "Automatically delete head branches", which also retargets stacked PRs). `/mark-done` deletes
+  the matching local branches on the next sync. Notion's `Branch` property keeps the name for
+  history.

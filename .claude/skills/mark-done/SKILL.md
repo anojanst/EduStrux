@@ -48,6 +48,28 @@ gh pr view <url> --json number,state,mergedAt,isDraft,baseRefName,headRefName,re
 For a task with no `PR` but a `Branch`, check `gh pr list --head <branch>` and fill in `PR` if a
 PR exists. Code that exists only on an unmerged branch is never Done.
 
+### Clean up merged branches
+
+Branches are deleted once their PR is merged. GitHub deletes the remote branch itself (the repo
+has "Automatically delete head branches" on), and the earlier `git fetch --prune` drops its
+remote-tracking ref. You tidy up what's left, for every PR that is `MERGED`:
+
+1. **Local branch.** If `git branch --list <headRefName>` finds it, delete it with
+   `git branch -d <headRefName>`, but never the branch that's checked out. If `-d` refuses because
+   of unmerged commits (normal after a squash or rebase merge), check
+   `git log origin/main..<branch>`. Use `-D` only if every commit there is in the merged PR
+   (`gh pr view <n> --json commits`). Otherwise keep the branch and report it, because it has work
+   that never shipped.
+2. **Remote branch, as a fallback** (if `git ls-remote --heads origin <headRefName>` still finds
+   it):
+   - First retarget any open PR stacked on it: `gh pr list --base <headRefName>`, then
+     `gh pr edit <n> --base main` for each. Deleting a base branch would otherwise close those PRs.
+   - Then `git push origin --delete <headRefName>`.
+3. Never delete `main`, a branch whose PR is open or closed-unmerged, or a branch with no PR.
+4. Leave the task's `Branch` property as it is; it's the record of where the work was done.
+
+List the deleted branches in the report.
+
 ## 3. Gather the evidence once
 
 Judge against `origin/main`, not whatever branch is checked out. Don't switch branches; the
@@ -118,5 +140,6 @@ Checks on main: typecheck ✓  tests ✓ (42 passed)   (or: "not re-run locally 
 | TUI-31 Courses | In review | In review | #14 open, changes requested | waiting on review |
 | ... |
 
-Needs attention: <PRs with requested changes, closed PRs, failing checks, merged work missing tests>
+Branches deleted: task/tui-27-branches-rooms (local)   (or: none)
+Needs attention: <PRs with requested changes, closed PRs, failing checks, merged work missing tests, branches kept with unshipped commits>
 ```

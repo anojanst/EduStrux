@@ -92,3 +92,5 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   depend on unmerged work are stacked on that task's branch.
 - **Consequences:** The Notion board gains `In review` status and `PR` / `Branch` properties.
   `/open-pr` handles commits and PRs; `/mark-done` reads PR state from GitHub.
+  Merged branches are deleted: GitHub removes the remote branch on merge (repo setting on), and
+  `/mark-done` removes the local branch.
