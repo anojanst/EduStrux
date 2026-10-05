@@ -151,8 +151,8 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Idempotency | `Idempotency-Key` header on invoices, payments and bulk actions |
 | Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. `code` (and field error codes) is the stable key the client translates; `message` is English, for developers (D-015). |
 | Language | The API is locale-neutral: no `Accept-Language`, no translated responses. It returns raw values (money in minor units + ISO 4217 code, UTC timestamps, `YYYY-MM-DD` dates) and clients format them with shared helpers in `packages/shared`, which the API also uses for emails, PDFs and crons. User-facing strings go through `t('key')` with a single `en` catalog: the web app's, and one for server-rendered text (system emails, PDFs). Org-authored content is never translated (D-015). |
-| Money | Integer minor units + currency: `{ "amount": 2490, "currency": "NZD" }` |
-| Dates/times | Lessons store a local date and time (`"date": "2026-10-14", "start": "16:00"`) plus the org's timezone, so lessons stay at 4 pm across daylight-saving changes. Event timestamps are ISO UTC. |
+| Money | Integer minor units + currency: `{ "amount": 2490, "currency": "NZD" }`. Decimal places per currency come from a fixed ISO 4217 table (JPY 0, KWD 3), not runtime `Intl` data. |
+| Dates/times | Lessons store a local date and time (`"date": "2026-10-14", "start": "16:00"`) plus the org's timezone, so lessons stay at 4 pm across daylight-saving changes. A local time skipped when clocks go forward moves forward by the gap; one that happens twice resolves to the earlier instant (D-016). Weekdays are ISO: 1 = Monday … 7 = Sunday. Event timestamps are ISO UTC. |
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |

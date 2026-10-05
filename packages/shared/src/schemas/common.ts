@@ -57,16 +57,21 @@ export const TimeZone = z
   }, 'Must be an IANA time zone like Pacific/Auckland')
   .openapi({ example: 'Pacific/Auckland' });
 
+/** The org's formatting region. The UI is English only, so only English variants (D-015). */
 export const Locale = z
   .string()
   .refine((l) => {
     try {
-      return Intl.getCanonicalLocales(l).length === 1;
+      const [canonical] = Intl.getCanonicalLocales(l);
+      return canonical === 'en' || canonical?.startsWith('en-') === true;
     } catch {
       return false;
     }
-  }, 'Must be a BCP 47 locale like en-NZ')
-  .openapi({ example: 'en-NZ' });
+  }, 'Must be an English locale like en-NZ, en-GB or en-IN')
+  .openapi({
+    example: 'en-NZ',
+    description: 'Formatting region for numbers, money and dates. English variants only.',
+  });
 
 export const PageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50).openapi({ example: 50 }),

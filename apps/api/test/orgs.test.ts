@@ -36,6 +36,31 @@ describe('orgs', () => {
     );
   });
 
+  it('only accepts English locales, on create and update (D-015)', async () => {
+    const { token } = await newUser();
+    const create = await call('POST', '/api/v1/orgs', {
+      token,
+      body: { ...sampleOrg(), locale: 'fr-FR' },
+    });
+    expect(create.status).toBe(400);
+    expect(Object.keys(create.body.error.fields)).toEqual(['locale']);
+
+    const org = await newOrg(token);
+    const update = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt, locale: 'de-DE' },
+    });
+    expect(update.status).toBe(400);
+    expect(Object.keys(update.body.error.fields)).toEqual(['locale']);
+
+    const ok = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt, locale: 'en-IN' },
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body.locale).toBe('en-IN');
+  });
+
   it('checks auth before validating the body', async () => {
     const res = await call('POST', '/api/v1/orgs', { body: {} });
     expect(res.status).toBe(401);

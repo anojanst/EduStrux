@@ -5,6 +5,7 @@ import { CurrencyCode, Locale, Timestamp, TimeZone } from './common';
 export const OrgPlan = z.enum(['trial', 'solo', 'small', 'custom']);
 export const OrgStatus = z.enum(['trialing', 'active', 'past_due', 'suspended', 'cancelled']);
 export const DateFormat = z.enum(['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']);
+export type DateFormat = z.infer<typeof DateFormat>;
 
 const Slug = z
   .string()

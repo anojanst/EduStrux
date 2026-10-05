@@ -5,7 +5,7 @@ Swagger before the web app.
 
 ```
 apps/api/          Hono on Cloudflare Workers: REST API, cron handlers, queue consumers
-packages/shared/   Zod schemas, roles & permissions, ID generator (shared with web/mobile later)
+packages/shared/   Zod schemas, roles & permissions, ID generator, money/date helpers (shared with web/mobile later)
 packages/db/       Drizzle schema + D1 migrations
 ```
 
@@ -68,6 +68,10 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   `?limit&cursor` → `{ data, nextCursor }`. PATCH takes the `updatedAt` you last read (stale →
   409). Money is `{ amount, currency }` in minor units. Long actions return `202 { jobId }`.
   `Idempotency-Key` makes POSTs retry-safe.
+- **Money and dates** go through the helpers in `packages/shared` (`money.ts`, `dates.ts`),
+  shared by the API and the web app: decimal strings ↔ minor units without floats, local date
+  maths, local time ↔ UTC in the org's timezone (DST rule D-016), and formatting with the org's
+  locale and date format.
 - **Tests** sign their own Clerk-shaped tokens with a throwaway key, verified through the same
   code path as production. See `apps/api/test/helpers.ts`.
 

@@ -164,3 +164,22 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   English messages rather than stable codes; moving them to codes is code work not yet assigned
   to a task (assumption: to be scheduled).
 - **Tasks:** TUI-25, TUI-23, TUI-65, TUI-59 (and TUI-7, which decides where PDFs render).
+
+## D-016 · 2026-10-05 · Daylight saving: local times convert to UTC with the "compatible" rule
+
+- **Context:** Lessons store a local date and time plus the org's timezone (handoff §5), so
+  turning them into UTC instants needs a rule for two daylight-saving cases: a local time that
+  doesn't exist (clocks go forward) and one that happens twice (clocks go back). It came up
+  building the shared date helpers in TUI-25.
+- **Decision:** Use Temporal's `"compatible"` disambiguation, the same rule as RFC 5545:
+  - A local time skipped when clocks go forward moves forward by the length of the gap
+    (Pacific/Auckland 2026-09-27 02:30 → 03:30 NZDT).
+  - A local time that happens twice when clocks go back resolves to the earlier instant
+    (Pacific/Auckland 2026-04-05 02:30 → the NZDT one, not the NZST one).
+- **Alternatives considered:** returning 422 for such times (rejected: a weekly class could fail
+  to generate one week a year); resolving a repeated time to the later instant (rejected).
+- **Consequences:** Converting a local date + time + timezone to UTC always succeeds, so session
+  generation (TUI-31) has no daylight-saving error case. On the clocks-forward day, a lesson
+  whose time falls inside the gap starts later by the gap's length. The rule lives in the shared
+  date helpers in `packages/shared`, so the API and the web app agree.
+- **Tasks:** TUI-25, TUI-31.
