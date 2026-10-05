@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.turbo/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.seed-users.json
+*.log
+.DS_Store

@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Runs in Workers, browsers and React Native, which all provide Web Crypto and Intl.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["src"]
+}

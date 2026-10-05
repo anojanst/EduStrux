@@ -1,0 +1,46 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "edustrux",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The React build will be served from here once apps/web exists:
+  // "assets": { "directory": "../web/dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+
+  "vars": {
+    "ENVIRONMENT": "development",
+    "ENABLE_DOCS": "true",
+    // Comma-separated origins allowed in the token's azp claim. Empty = not checked (dev only).
+    "CLERK_AUTHORIZED_PARTIES": "",
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "edustrux",
+      // Replace with the id from `wrangler d1 create edustrux` before the first remote deploy.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "edustrux-files" }],
+
+  "queues": {
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "edustrux-email" },
+      { "binding": "JOBS_QUEUE", "queue": "edustrux-jobs" },
+    ],
+    "consumers": [
+      { "queue": "edustrux-email", "max_batch_size": 10, "max_retries": 5 },
+      { "queue": "edustrux-jobs", "max_batch_size": 1, "max_retries": 3 },
+    ],
+  },
+
+  "triggers": {
+    // Hourly: reminders and credit expiry for orgs whose local time matches. Daily: housekeeping.
+    "crons": ["0 * * * *", "0 3 * * *"],
+  },
+}

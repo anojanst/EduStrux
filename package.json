@@ -1,0 +1,25 @@
+{
+  "name": "edustrux",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @edustrux/db generate",
+    "db:migrate": "pnpm --filter @edustrux/api db:migrate:local",
+    "seed": "pnpm --filter @edustrux/api seed",
+    "dev:token": "pnpm --filter @edustrux/api dev:token",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "prettier": "^3.6.0",
+    "turbo": "^2.11.7",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@edustrux/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json && tsc -p scripts/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "seed": "tsx scripts/seed.ts",
+    "dev:token": "tsx scripts/dev-token.ts"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.22.0",
+    "@edustrux/db": "workspace:*",
+    "@edustrux/shared": "workspace:*",
+    "@hono/swagger-ui": "^0.6.1",
+    "@hono/zod-openapi": "^1.6.3",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.13",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20261005.1",
+    "@types/node": "^24.19.1",
+    "jose": "^6.2.12",
+    "tsx": "^4.23.15",
+    "vitest": "~4.1.11",
+    "wrangler": "^4.147.0"
+  }
+}
