@@ -122,3 +122,45 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Consequences:** Commits and PRs clearly show what Claude did. The bot can't change repo
   settings or bypass protection. The token needs rotating when it expires (re-run the script).
   Until it's set up, Claude falls back to the owner's login and review is comment-only.
+
+## D-015 · 2026-10-05 · English-only UI, i18n-ready; locale is the formatting region
+
+- **Context:** The product is global, but translating the UI isn't worth it for the MVP. The
+  open points were what `orgs.locale` should mean, how the API and server-rendered text handle
+  language, and how to avoid a refactor when languages are added.
+- **Decision:**
+  - **UI language:** English only for the MVP. UI languages stay in v1.1.
+  - **Web app:** i18n structure from day one. Every user-facing string goes through a
+    `t('key')` lookup with a single `en` catalog, so adding a language later is translation work,
+    not a refactor.
+  - **API:** JSON stays locale-neutral, with no multi-locale support: no `Accept-Language`
+    negotiation and no translated responses. Money is integer minor units + ISO 4217 code,
+    timestamps are UTC ISO 8601, calendar dates are `YYYY-MM-DD`. Errors are
+    `{ code, message, fields }`: `code` (and field error codes) is the stable key the frontend
+    translates; `message` is English for developers.
+  - **`orgs.locale`** is kept but means the **formatting region**, not the language, and is
+    restricted to English variants (`en-*`, e.g. en-IN, en-GB, en-US, en-ZA, en-NZ). Number,
+    money and date formats differ even within English (en-IN groups 12,34,567.50; en-ZA writes
+    1 234 567,50; en-US "Oct 5, 2026" vs en-GB "5 Oct 2026"), while allowing e.g. fr-FR would put
+    French month names inside an English UI. `orgs.date_format` still overrides the locale's
+    default date pattern.
+  - **Server-rendered text** (system emails from the email queue: reminders, session changes,
+    sign-in links; and invoice/receipt PDFs if TUI-7 picks server-side rendering) uses a single
+    English string catalog keyed by id, the same shape as the frontend catalog. No multi-language
+    support now. `guardians.language` stays as a stored preference that nothing acts on in the
+    MVP (kept for future per-recipient emails and the AI translation add-on).
+  - **Org-authored content** (message templates, class and subject names, etc.) is the org's own
+    content and is never translated by the product.
+  - **Formatting helpers** live in `packages/shared` and are used by both the API (emails, PDFs,
+    crons) and the web app, so output is identical everywhere. They do formatting only; there is
+    no translation catalog in them.
+- **Alternatives considered:** any BCP 47 locale (rejected: mixed-language UI); dropping
+  `orgs.locale` and relying on date format + currency (rejected: loses regional number formats
+  such as lakh grouping); inline English strings in email/PDF templates (rejected: adding a
+  language later would mean refactoring every template).
+- **Consequences:** The `Locale` validator in `packages/shared` currently accepts any BCP 47
+  locale; tightening it to `en-*` is code work for TUI-25. The `en` catalogs land with TUI-23
+  (web), TUI-65 (emails) and TUI-59 (PDFs). Today the validation error `fields` carry Zod's
+  English messages rather than stable codes; moving them to codes is code work not yet assigned
+  to a task (assumption: to be scheduled).
+- **Tasks:** TUI-25, TUI-23, TUI-65, TUI-59 (and TUI-7, which decides where PDFs render).

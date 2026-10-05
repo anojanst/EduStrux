@@ -21,7 +21,7 @@ A global SaaS for running tuition centres, from a solo tutor up to a centre with
 
 ### Product principles
 1. Everything belongs to an organisation.
-2. Global from day one: nothing locale-specific is hard-coded.
+2. Global from day one: nothing locale-specific is hard-coded. Language and formatting are separate: the UI is English only for the MVP but built i18n-ready, and the org's locale is its formatting region (numbers, money, dates), not a language (D-015).
 3. Tax is configurable, and "no tax" is a valid setting.
 4. Money is recorded, not processed.
 5. Parents use their phones: every parent action works on mobile web without installing an app.
@@ -149,7 +149,8 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` |
 | Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
 | Idempotency | `Idempotency-Key` header on invoices, payments and bulk actions |
-| Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. |
+| Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. `code` (and field error codes) is the stable key the client translates; `message` is English, for developers (D-015). |
+| Language | The API is locale-neutral: no `Accept-Language`, no translated responses. It returns raw values (money in minor units + ISO 4217 code, UTC timestamps, `YYYY-MM-DD` dates) and clients format them with shared helpers in `packages/shared`, which the API also uses for emails, PDFs and crons. User-facing strings go through `t('key')` with a single `en` catalog: the web app's, and one for server-rendered text (system emails, PDFs). Org-authored content is never translated (D-015). |
 | Money | Integer minor units + currency: `{ "amount": 2490, "currency": "NZD" }` |
 | Dates/times | Lessons store a local date and time (`"date": "2026-10-14", "start": "16:00"`) plus the org's timezone, so lessons stay at 4 pm across daylight-saving changes. Event timestamps are ISO UTC. |
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
@@ -183,12 +184,12 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 
 | Area | Tables | Key columns |
 |---|---|---|
-| Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale, plan, status, slug; room capacity; tax rate %, inclusive flag |
+| Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale (formatting region, `en-*` only, D-015), date format (overrides the locale's default), plan, status, slug; room capacity; tax rate %, inclusive flag |
 | People and access | `users`, `memberships`, `invitations` | `clerk_user_id`; role, branch ids, status |
 | Calendar | `academic_years`, `terms`, `holidays` | start/end dates; term → academic year |
 | Curriculum | `grade_levels`, `subjects`, `courses` | grade sort order; **course = subject × grade** (+ optional curriculum, teaching medium, default price, duration) |
 | Classes | `classes`, `class_schedules`, `sessions` | course, term, branch, room, teacher, capacity; weekly recurrence rule; dated session (local date/time, status) |
-| Families | `families`, `guardians`, `students`, `student_grades` | billing contact, preferred channel, language; consents; **grade per academic year** |
+| Families | `families`, `guardians`, `students`, `student_grades` | billing contact, preferred channel, language (stored only; unused in the MVP, D-015); consents; **grade per academic year** |
 | Enrolment | `enrolments`, `enrolment_requests` | student, class, start/end, price override, status |
 | Attendance | `attendance`, `absence_notices`, `makeup_policies`, `makeup_credits`, `makeup_bookings` | session, student, status; credit source, expiry, used-by |
 | Learning | `lesson_notes` | session, per-student note, homework text |
@@ -209,7 +210,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 ## 8. MVP feature scope
 
 ### In the MVP
-- **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly), locale settings, tax settings, academic years, grade levels and subjects.
+- **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly), locale settings (formatting region; UI in English, D-015), tax settings, academic years, grade levels and subjects.
 - **People:** family records, student profiles, emergency contacts and consents, staff profiles, search with duplicate warnings.
 - **Enquiry and enrolment:** enquiry form (embeddable/link), online enrolment form with staff approval, enrol/transfer/withdraw with pro-rata, term roll-over (confirm phase; may be v1.1), year-end promotion.
 - **Courses and pricing:** courses, class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing and bundles.
@@ -226,7 +227,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Import:** spreadsheet import with **manual** column mapping. AI mapping is part of the AI add-on.
 
 ### Not in the MVP (v1.1 / Later / add-ons)
-- **v1.1:** roles and permissions UI (custom permission sets), custom fields, school-type templates, UI languages, one login across many orgs, document templates, curriculum/medium tags, grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export, shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
+- **v1.1:** roles and permissions UI (custom permission sets), custom fields, school-type templates, UI languages (English only in the MVP, D-015), one login across many orgs, document templates, curriculum/medium tags, grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export, shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
 - **Later:** public class listing, prerequisites, timetable builder, check-in kiosk, external exam tracking, skill maps, practice logs, newsletters, student login, teacher invoices, parent–teacher meetings, performer line-ups, volunteer rosters, galleries, resource library, custom reports, public API and webhooks, native mobile apps, referral programme, large-class attendance (custom only).
 - **Paid add-ons:** WhatsApp, SMS, all AI features (report comment drafts, voice notes, translation, make-up matching, "ask your data", at-risk alerts, timetable suggestions, bank-match assist, AI import mapping).
 - **Out of scope for now:** online payments from parents.
