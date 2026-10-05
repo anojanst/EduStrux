@@ -9,6 +9,10 @@ packages/shared/   Zod schemas, roles & permissions, ID generator (shared with w
 packages/db/       Drizzle schema + D1 migrations
 ```
 
+Design spec: [docs/design/handoff.md](docs/design/handoff.md) · decisions:
+[docs/design/decisions.md](docs/design/decisions.md) · task board and build skills:
+[CLAUDE.md](CLAUDE.md)
+
 ## Setup
 
 ```bash
@@ -64,6 +68,15 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   `Idempotency-Key` makes POSTs retry-safe.
 - **Tests** sign their own Clerk-shaped tokens with a throwaway key, verified through the same
   code path as production. See `apps/api/test/helpers.ts`.
+
+## Branches and pull requests
+
+`main` is protected: commit on a branch (`task/tui-<n>-<slug>`) and open a pull request. Git
+hooks in `.githooks/` (installed by `pnpm install`) block commits and pushes to `main`. See the
+Git workflow in [CLAUDE.md](CLAUDE.md).
+
+Claude Code commits and opens PRs as a separate bot account, so you can review and approve them.
+Set it up once with `scripts/setup-claude-bot.sh <bot-username>`.
 
 ## Before the first deploy
 

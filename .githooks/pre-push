@@ -1,0 +1,11 @@
+#!/bin/sh
+# Protects main: blocks pushing to, force-pushing or deleting main from this machine.
+# Merge pull requests on GitHub instead; `git pull` on main is unaffected.
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "✖ main is protected — push your branch and open a PR instead." >&2
+    exit 1
+  fi
+done
+exit 0

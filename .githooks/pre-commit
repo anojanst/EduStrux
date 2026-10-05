@@ -1,0 +1,11 @@
+#!/bin/sh
+# Protects main: changes reach it only through a reviewed pull request.
+# Installed by `pnpm install` (root "prepare" script sets core.hooksPath=.githooks).
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ]; then
+  echo "✖ main is protected — commit on a branch and open a PR." >&2
+  echo "  git switch -c task/tui-<n>-<slug>   (see CLAUDE.md → Git workflow)" >&2
+  exit 1
+fi
+exit 0
