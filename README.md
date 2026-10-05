@@ -9,6 +9,10 @@ packages/shared/   Zod schemas, roles & permissions, ID generator (shared with w
 packages/db/       Drizzle schema + D1 migrations
 ```
 
+Design spec: [docs/design/handoff.md](docs/design/handoff.md) · decisions:
+[docs/design/decisions.md](docs/design/decisions.md) · task board and build skills:
+[CLAUDE.md](CLAUDE.md)
+
 ## Setup
 
 ```bash
