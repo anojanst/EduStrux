@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f)",
+      "Bash(git push * -f *)",
+      "Bash(git push * +*)",
+      "Bash(git *--no-verify*)",
+      "Bash(git -c *hooksPath*)",
+      "Bash(git config *hooksPath*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh api *pulls/*/merge*)"
+    ]
+  }
+}

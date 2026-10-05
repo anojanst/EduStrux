@@ -69,6 +69,12 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Tests** sign their own Clerk-shaped tokens with a throwaway key, verified through the same
   code path as production. See `apps/api/test/helpers.ts`.
 
+## Branches and pull requests
+
+`main` is protected: commit on a branch (`task/tui-<n>-<slug>`) and open a pull request. Git
+hooks in `.githooks/` (installed by `pnpm install`) block commits and pushes to `main`. See the
+Git workflow in [CLAUDE.md](CLAUDE.md).
+
 ## Before the first deploy
 
 - `wrangler d1 create edustrux` and put the id in `apps/api/wrangler.jsonc`.

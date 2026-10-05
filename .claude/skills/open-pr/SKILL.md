@@ -95,8 +95,9 @@ differs from the one above.
 git push -u origin <branch>
 ```
 
-Never push to `main`. Never force-push, except `--force-with-lease` on your own task branch after
-a rebase the user asked for.
+Never push to `main`, and never force-push. Both are blocked by the git hooks and Claude Code
+deny rules (see "Protecting main" in `CLAUDE.md`). If the push is rejected, report it rather than
+working around it. If a rebase is needed, ask the user to force-push.
 
 ## 6. Open the PR
 

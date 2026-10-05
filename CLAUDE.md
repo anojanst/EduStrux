@@ -71,11 +71,23 @@ Every task (or small bundle) is delivered as its own pull request for the user t
 - **Commits:** `<type>(<module>): <summary> (TUI-n)`, ending with the Notion link and the
   attribution line. Stage files by path. Never commit `.dev.vars`, `.seed-users.json` or secrets.
 - **Pushing and PRs** on task branches are expected as part of this workflow. Never push to
-  `main`, merge a PR, force-push (except `--force-with-lease` on your own task branch when asked)
-  or deploy. The user reviews and merges.
+  `main`, merge a PR, force-push or deploy. The user reviews and merges. If a branch needs a
+  rebase and force-push, ask the user to run it.
 - **Review feedback:** fix on the same branch as new commits (`/open-pr --update`). Don't amend
   pushed commits.
 - **Merged branches are deleted.** GitHub deletes the remote branch on merge (repo setting
   "Automatically delete head branches", which also retargets stacked PRs). `/mark-done` deletes
   the matching local branches on the next sync. Notion's `Branch` property keeps the name for
   history.
+
+### Protecting main
+
+`main` changes only through merged pull requests. Three layers enforce this:
+
+| Layer | Blocks | Where |
+|---|---|---|
+| Git hooks | Commits on `main`; pushing to, force-pushing or deleting `main` | `.githooks/` (installed by `pnpm install` via `core.hooksPath`) |
+| Claude Code deny rules | Claude pushing to `main`, force-pushing, `--no-verify`, changing the hooks path, merging PRs | `.claude/settings.json` |
+| GitHub ruleset | Everyone: PR required, no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`. **Not active yet:** needs GitHub Pro for a private repo |
+
+Don't try to work around a block (another flag, `git -c`, the API). Stop and tell the user.

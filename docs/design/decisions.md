@@ -94,3 +94,15 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `/open-pr` handles commits and PRs; `/mark-done` reads PR state from GitHub.
   Merged branches are deleted: GitHub removes the remote branch on merge (repo setting on), and
   `/mark-done` removes the local branch.
+
+## D-013 · 2026-10-05 · Protect main
+
+- **Context:** Branch protection and rulesets on a private repo need GitHub Pro. The account is on
+  the free plan.
+- **Decision:** Protect `main` locally for now. Git hooks block commits on `main` and pushes,
+  force-pushes or deletion of `main`. Claude Code deny rules block Claude from pushing to `main`,
+  force-pushing, skipping hooks, changing the hooks path and merging PRs. The GitHub ruleset (PR
+  required, no force-push or deletion, conversations resolved) is saved in
+  `.github/rulesets/protect-main.json`, ready to apply after upgrading.
+- **Consequences:** Pushes from other machines, or edits in the GitHub web UI, aren't blocked
+  until the ruleset is active. Required status checks get added to the ruleset once CI exists.
