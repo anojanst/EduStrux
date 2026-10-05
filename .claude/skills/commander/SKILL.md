@@ -90,7 +90,9 @@ unanswered question, a long review queue, or when the only remaining work needs 
 
 ## `review` flow (feedback on a PR)
 1. `gh pr list` (and `gh pr view <n> --comments`, plus `gh api repos/{owner}/{repo}/pulls/<n>/comments`
-   for inline comments). Pick the PRs with requested changes or unanswered comments.
+   for inline comments). Pick the PRs with `reviewDecision: CHANGES_REQUESTED`, or with comments
+   from the repo owner that have no reply or follow-up commit yet. When PRs are authored by the
+   owner (no bot identity), comments are the only review signal.
 2. `git switch <head branch>` and `git pull`. Make the fixes, keeping the conventions from
    implement-task. Run typecheck and tests.
 3. If a fix changes the design, run `Skill(update-design-docs, ...)`.

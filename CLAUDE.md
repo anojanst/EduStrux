@@ -80,6 +80,19 @@ Every task (or small bundle) is delivered as its own pull request for the user t
   the matching local branches on the next sync. Notion's `Branch` property keeps the name for
   history.
 
+### Identity: Claude acts as a bot account
+
+GitHub doesn't let a PR's author approve or request changes on it. So Claude commits, pushes and
+opens PRs as a separate **bot** GitHub account with write (not admin) access, and the owner
+reviews as themselves.
+
+- **Set up once by the owner:** run `scripts/setup-claude-bot.sh <bot-username>`. It writes
+  `GH_TOKEN` and the bot's git author/committer to `.claude/settings.local.json` (gitignored). Only
+  Claude Code sessions use that identity; the owner's own terminal is unaffected.
+- **Never read, print or edit** `.claude/settings.local.json` or `GH_TOKEN`. Deny rules block it.
+- `/open-pr` requests the owner's review. If `gh api user` returns the owner, the bot isn't set
+  up: PRs still work, but the owner can only comment and merge.
+
 ### Protecting main
 
 `main` changes only through merged pull requests. Three layers enforce this:
@@ -88,6 +101,6 @@ Every task (or small bundle) is delivered as its own pull request for the user t
 |---|---|---|
 | Git hooks | Commits on `main`; pushing to, force-pushing or deleting `main` | `.githooks/` (installed by `pnpm install` via `core.hooksPath`) |
 | Claude Code deny rules | Claude pushing to `main`, force-pushing, `--no-verify`, changing the hooks path, merging PRs | `.claude/settings.json` |
-| GitHub ruleset | Everyone: PR required, no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`. **Not active yet:** needs GitHub Pro for a private repo |
+| GitHub ruleset | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`. **Not active yet:** needs GitHub Pro for a private repo |
 
 Don't try to work around a block (another flag, `git -c`, the API). Stop and tell the user.

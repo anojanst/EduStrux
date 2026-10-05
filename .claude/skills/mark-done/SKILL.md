@@ -42,7 +42,7 @@ gh pr view <url> --json number,state,mergedAt,isDraft,baseRefName,headRefName,re
 |---|---|
 | `MERGED` into `main` | Candidate for Done; judge it in step 4 against `origin/main` |
 | `MERGED` into another task branch (stacked) | Leave `In review`, noting "merged into stack, waiting for #N" |
-| `OPEN` | `In review` (draft PRs too); note `CHANGES_REQUESTED` if present |
+| `OPEN` | `In review` (draft PRs too); note `APPROVED` ("approved, ready to merge") or `CHANGES_REQUESTED`. If the PR author is the owner, `reviewDecision` stays empty, so read the owner's comments instead |
 | `CLOSED` without merge | `In progress`, noting "PR #N closed unmerged"; ask whether to reopen or drop |
 
 For a task with no `PR` but a `Branch`, check `gh pr list --head <branch>` and fill in `PR` if a

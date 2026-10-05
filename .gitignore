@@ -8,3 +8,6 @@ dist/
 .seed-users.json
 *.log
 .DS_Store
+
+# Claude Code personal settings (holds the bot token)
+.claude/settings.local.json

@@ -14,7 +14,10 @@
       "Bash(git -c *hooksPath*)",
       "Bash(git config *hooksPath*)",
       "Bash(gh pr merge*)",
-      "Bash(gh api *pulls/*/merge*)"
+      "Bash(gh api *pulls/*/merge*)",
+      "Read(.claude/settings.local.json)",
+      "Bash(*settings.local.json*)",
+      "Bash(*GH_TOKEN*)"
     ]
   }
 }

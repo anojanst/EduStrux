@@ -23,7 +23,8 @@ Arguments: `$ARGUMENTS`
 ```bash
 git branch --show-current
 git status --short
-gh auth status
+gh api user -q .login                                   # who Claude acts as
+gh repo view --json owner -q .owner.login               # the reviewer
 ```
 
 - **On `main`:** never commit there. Create the task branch first (naming in `CLAUDE.md`),
@@ -31,6 +32,10 @@ gh auth status
 - **Branch name doesn't match the task:** ask before continuing.
 - **`gh` not authenticated, or no `origin` remote:** stop and tell the user. Don't create repos
   or remotes yourself.
+- **Acting as the repo owner instead of the bot** (the two logins above match): the bot identity
+  isn't set up, so the owner won't be able to approve or request changes on the PR. Warn the user
+  once, mention `scripts/setup-claude-bot.sh` (see Identity in `CLAUDE.md`), then carry on. The
+  PR still works for comments and merging.
 
 ## 2. Gate
 
@@ -108,7 +113,8 @@ top of the description.
 Write the description to a scratchpad file, then:
 
 ```bash
-gh pr create --base <base> --head <branch> --title "<commit subject>" --body-file <file> [--draft]
+gh pr create --base <base> --head <branch> --title "<commit subject>" --body-file <file> \
+  --reviewer <repo owner> [--draft]
 ```
 
 Description template (drop sections that would be empty):
@@ -158,7 +164,8 @@ pnpm dev:token owner      # paste into Swagger → Authorize at http://localhost
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ````
 
-Make "How to test" specific to this task, with real paths and example bodies. A reviewer
+Request the repo owner as reviewer (drop `--reviewer` when acting as the owner, since GitHub
+won't let authors review their own PRs). Make "How to test" specific to this task, with real paths and example bodies. A reviewer
 should be able to follow it without reading the code.
 
 ## 7. Link it

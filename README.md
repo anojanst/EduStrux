@@ -75,6 +75,9 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 hooks in `.githooks/` (installed by `pnpm install`) block commits and pushes to `main`. See the
 Git workflow in [CLAUDE.md](CLAUDE.md).
 
+Claude Code commits and opens PRs as a separate bot account, so you can review and approve them.
+Set it up once with `scripts/setup-claude-bot.sh <bot-username>`.
+
 ## Before the first deploy
 
 - `wrangler d1 create edustrux` and put the id in `apps/api/wrangler.jsonc`.

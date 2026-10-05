@@ -106,3 +106,17 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `.github/rulesets/protect-main.json`, ready to apply after upgrading.
 - **Consequences:** Pushes from other machines, or edits in the GitHub web UI, aren't blocked
   until the ruleset is active. Required status checks get added to the ruleset once CI exists.
+
+## D-014 · 2026-10-05 · Claude works as a bot account; the owner reviews
+
+- **Context:** Claude was committing and opening PRs with the owner's GitHub login, and GitHub
+  doesn't let a PR's author approve it or request changes, so the owner couldn't review properly.
+- **Decision:** Claude acts as a separate bot GitHub account with write access. The owner runs
+  `scripts/setup-claude-bot.sh`, which invites and accepts the bot as a collaborator and puts its
+  token and git identity in the gitignored `.claude/settings.local.json`, so only Claude Code
+  sessions use it. PRs request the owner as reviewer. When the GitHub ruleset is enabled, it
+  requires 1 approval, which admins may bypass on a PR (for the owner's own PRs) but never for
+  direct pushes.
+- **Consequences:** Commits and PRs clearly show what Claude did. The bot can't change repo
+  settings or bypass protection. The token needs rotating when it expires (re-run the script).
+  Until it's set up, Claude falls back to the owner's login and review is comment-only.
