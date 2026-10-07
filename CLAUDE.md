@@ -9,9 +9,12 @@ built and tested through Swagger (phases P1–P6) before the web app (P7 UI).
 
 ## Project tracking (in git)
 
+Everything about this project lives in this repo and git: the board, the design and the
+decisions. Don't read or write Notion, or any other outside tracker, for it (D-029).
+
 The board is one markdown file per task in [docs/project/tasks/](docs/project/tasks/), grouped
 by phase folder. How it works, the fields and the lifecycle are in
-[docs/project/README.md](docs/project/README.md) (D-029). Notion is no longer used.
+[docs/project/README.md](docs/project/README.md).
 
 - **See it:** `pnpm board` (open tasks with live branch and PR state), `pnpm board --all`,
   `pnpm board --json` (for skills), `pnpm board --check` (validate the files).

@@ -1,7 +1,7 @@
 # EduStrux project board
 
-The build is tracked here, in git, as one markdown file per task. This replaced the Notion board
-on 2026-10-07 (D-029). The old Notion workspace is an archive and is no longer updated.
+The build is tracked here, in git, as one markdown file per task (D-029). This folder and
+`docs/design/` are the only place the project is tracked.
 
 - Product and technical design: [handoff.md](../design/handoff.md)
 - Decisions made during the build: [decisions.md](../design/decisions.md)

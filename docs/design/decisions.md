@@ -359,8 +359,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `blocked`, `done` and `deferred`. A task's own PR sets its file to `done`, so merging the PR
   updates the board on `main`. In progress and in review aren't stored; `pnpm board` derives them
   from local branches and open PRs. Other status changes go in a `chore/board-<slug>` PR. The 88
-  Notion tasks (TUI-1 to TUI-88) were exported on 2026-10-07 with their ids kept; the Notion
-  workspace is an archive.
+  Notion tasks (TUI-1 to TUI-88) were exported on 2026-10-07 with their ids kept. Notion is no
+  longer used for this project.
 - **Alternatives considered:** one board file with a table per phase (conflicts between PRs that
   edit nearby rows); per-task files plus a committed, generated `BOARD.md` (conflicts on that
   file between open PRs).
