@@ -64,7 +64,8 @@ changes it, so merging the PR is what updates the board on `main`. Set:
 - The notes (the body): fix anything this PR made stale, such as a "Missing: …" line it
   resolved, and add the D-numbers of decisions it recorded.
 
-Then run `pnpm -s board --check`.
+Don't run `pnpm board --check` yet. It rejects a `done` build task with a `branch` but no `pr`,
+so it only passes once step 8 sets `pr`.
 
 ## 4. Choose what to commit
 
@@ -197,9 +198,9 @@ should be able to follow it without reading the code.
 
 ## 8. Link it
 
-- Set `pr: <N>` in each task file, then commit it as `chore(board): link PR #N (TUI-n)`, with the
-  same `Task:` and attribution lines, and push. The PR is squash-merged, so this adds no noise to
-  `main`.
+- Set `pr: <N>` in each task file and run `pnpm -s board --check`. Fix anything it reports, then
+  commit the task files as `chore(board): link PR #N (TUI-n)`, with the same `Task:` and
+  attribution lines, and push. The PR is squash-merged, so this adds no noise to `main`.
 - If this session has the `ccd_pr` tools, call `get_status`, and `bind_pr` if it doesn't report
   this PR. Don't poll CI.
 - With `--update`, post a PR comment listing what changed (`gh pr comment <n> --body-file <file>`),
