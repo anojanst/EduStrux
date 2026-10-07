@@ -9,7 +9,7 @@ size: S
 endpoints:
   - GET /audit-log
 branch: task/tui-77-audit-log-viewer
-pr:
+pr: 7
 ---
 
 # TUI-77 Audit log viewer
