@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Commit a finished EduStrux task on its branch, push it, and open a GitHub pull request with a generated review description, then set the Notion task to In review. Also updates an open PR after review feedback. Use when a task is implemented, or the user says "commit this", "open a PR", "raise a PR", or "push the fixes".
+description: Commit a finished EduStrux task on its branch, push it, and open a GitHub pull request with a generated review description, with the task file marked done in the same PR. Also updates an open PR after review feedback. Use when a task is implemented, or the user says "commit this", "open a PR", "raise a PR", or "push the fixes".
 argument-hint: '<TUI-n> [TUI-n ...] [--report <implementation report>] [--draft] [--update]'
 ---
 
@@ -8,7 +8,7 @@ argument-hint: '<TUI-n> [TUI-n ...] [--report <implementation report>] [--draft]
 
 Every task reaches the user as one reviewable pull request. You commit the task's changes on its
 branch, push, open the PR with a description the reviewer can act on, and link it on the board.
-Read `CLAUDE.md` (Git workflow and Notion sections) first.
+Read `CLAUDE.md` (Git workflow and Project tracking sections) first.
 
 Arguments: `$ARGUMENTS`
 
@@ -48,13 +48,31 @@ pnpm exec prettier --write <changed files>
 If typecheck or tests fail, stop and report, unless `--draft` was given. A draft PR says plainly
 in its description which checks fail.
 
-## 3. Choose what to commit
+## 3. Update the task files
+
+Each task this PR delivers has a file, `docs/project/tasks/<phase>/tui-<n>-<slug>.md`. The PR
+changes it, so merging the PR is what updates the board on `main`. Set:
+
+- `status`:
+  - `done` when the Definition of Done in `CLAUDE.md` holds for this PR. For a decision task, the
+    decision must be in `docs/design/decisions.md`.
+  - `in-progress` when it doesn't yet, e.g. a `--draft` with failing checks. Say what's missing
+    in the notes.
+  - `blocked` for a decision or manual task that still waits on the owner. Say on what.
+- `branch`: the current branch.
+- `pr`: left empty for now; step 8 fills it in once the PR exists.
+- The notes (the body): fix anything this PR made stale, such as a "Missing: …" line it
+  resolved, and add the D-numbers of decisions it recorded.
+
+Then run `pnpm -s board --check`.
+
+## 4. Choose what to commit
 
 Read `git status --short` and `git diff`. Stage only this task's files, by path. Never
 `git add -A` or `git add .`.
 
-- **Belongs:** code, tests, migrations, shared schemas, `docs/design/*` changes for this task, and
-  lockfile changes from dependencies the task added.
+- **Belongs:** code, tests, migrations, shared schemas, `docs/design/*` changes for this task,
+  the task files from step 3, and lockfile changes from dependencies the task added.
 - **Never commit:** `.dev.vars`, `.seed-users.json`, `.wrangler/`, anything containing a key or
   token (`sk_live_`, `sk_test_` values, `-----BEGIN PRIVATE KEY`), or `node_modules`.
 - **Unrelated changes already in the tree:** leave them unstaged and mention them in the report.
@@ -67,7 +85,7 @@ git diff --cached --stat
 git diff --cached | grep -nE 'sk_(live|test)_[A-Za-z0-9]{8,}|BEGIN (RSA )?PRIVATE KEY' && echo "SECRET FOUND"
 ```
 
-## 4. Commit
+## 5. Commit
 
 Use one commit per task. For a bundle, use one commit per task when the changes separate
 cleanly, otherwise one combined commit. With `--update`, add a new commit; never amend or
@@ -78,7 +96,7 @@ rebase a pushed commit unless the user asks.
 
 <2–4 lines: what changed and why, in plain words>
 
-Notion: <task page url>
+Task: docs/project/tasks/<phase>/tui-<n>-<slug>.md   (one line per task in a bundle)
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 
@@ -95,7 +113,7 @@ Write the message to a file in the scratchpad and run `git commit -F <file>`, so
 isn't mangled by shell quoting. Use the attribution line from the session's instructions if it
 differs from the one above.
 
-## 5. Push
+## 6. Push
 
 ```bash
 git push -u origin <branch>
@@ -105,10 +123,10 @@ Never push to `main`, and never force-push. Both are blocked by the git hooks an
 deny rules (see "Protecting main" in `CLAUDE.md`). If the push is rejected, report it rather than
 working around it. If a rebase is needed, ask the user to force-push.
 
-## 6. Open the PR
+## 7. Open the PR
 
-**Base branch:** `main`. If the branch was stacked on another task's unmerged branch (the
-Notion `Branch` of a task that is `In review`), use that branch as the base, and say so at the
+**Base branch:** `main`. If the branch was stacked on another task's unmerged branch (the head
+branch of an open PR, which `pnpm board` shows as in review), use that branch as the base, and say so at the
 top of the description.
 
 Write the description to a scratchpad file, then:
@@ -125,7 +143,7 @@ Description template (drop sections that would be empty):
 
 <2–3 sentences: what this delivers and why it matters for the product>
 
-**Task:** [TUI-n <title>](<notion url>) · Phase <phase>
+**Task:** [TUI-n <title>](docs/project/tasks/<phase>/tui-<n>-<slug>.md) · Phase <phase>
 <"Stacked on #N — merge that first." if stacked>
 
 ## Changes
@@ -177,24 +195,25 @@ Request the repo owner as reviewer (drop `--reviewer` when acting as the owner, 
 won't let authors review their own PRs). Make "How to test" specific to this task, with real paths and example bodies. A reviewer
 should be able to follow it without reading the code.
 
-## 7. Link it
+## 8. Link it
 
-- On Notion (`notion-update-page`, `update_properties`), set `Status` → `In review`, `PR` → the
-  PR url, `Branch` → the branch name, and add "PR #N opened" to `Notes`.
+- Set `pr: <N>` in each task file, then commit it as `chore(board): link PR #N (TUI-n)`, with the
+  same `Task:` and attribution lines, and push. The PR is squash-merged, so this adds no noise to
+  `main`.
 - If this session has the `ccd_pr` tools, call `get_status`, and `bind_pr` if it doesn't report
   this PR. Don't poll CI.
 - With `--update`, post a PR comment listing what changed (`gh pr comment <n> --body-file <file>`),
-  and leave the Notion status as `In review`.
+  and change the task file only if its status changes (e.g. a draft whose checks now pass
+  becomes `done`).
 
-Never merge the PR. The user reviews and merges, and `/mark-done` moves the task to Done after
-the merge.
+Never merge the PR. The user reviews and merges, and merging makes the task done on `main`.
 
-## 8. Report
+## 9. Report
 
 ```
 PR #12 opened: <url>
 Branch task/tui-27-branches-rooms → main · 1 commit · 14 files
 Checks: typecheck ✓ tests ✓ (48 passed, 14 new)
-Notion: TUI-27 → In review
+Board: TUI-27 → done in this PR (shows as in review until merged)
 Left unstaged: <files, or none>
 ```

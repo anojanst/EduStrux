@@ -84,6 +84,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 
 ## D-012 · 2026-10-05 · One pull request per task; Done means merged
 
+**Board parts superseded by D-029** (the board moved from Notion to git).
+
 - **Context:** The owner wants to review every task before it lands.
 - **Decision:** Each task (or small bundle) is built on its own branch
   (`task/tui-<n>-<slug>`) and delivered as one PR with a generated description (changes, design
@@ -346,3 +348,24 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   matches the grade × subject data model exactly and is the biggest market.
 - **Consequences:** Music, language/cultural and dance templates come after, on the same engine.
 - **Tasks:** TUI-10.
+
+## D-029 · 2026-10-07 · The project board lives in git, not Notion
+
+- **Context:** The owner doesn't want to pay for Notion, and the free plan's query limit stopped
+  the board sync partway through a session.
+- **Decision:** Track the build as one markdown file per task in `docs/project/tasks/<phase>/`,
+  with YAML frontmatter (`id`, `title`, `status`, `phase`, `module`, `priority`, `size`,
+  `endpoints`, `branch`, `pr`) and notes in the body. Statuses are `todo`, `in-progress`,
+  `blocked`, `done` and `deferred`. A task's own PR sets its file to `done`, so merging the PR
+  updates the board on `main`. In progress and in review aren't stored; `pnpm board` derives them
+  from local branches and open PRs. Other status changes go in a `chore/board-<slug>` PR. The 88
+  Notion tasks (TUI-1 to TUI-88) were exported on 2026-10-07 with their ids kept; the Notion
+  workspace is an archive.
+- **Alternatives considered:** one board file with a table per phase (conflicts between PRs that
+  edit nearby rows); per-task files plus a committed, generated `BOARD.md` (conflicts on that
+  file between open PRs).
+- **Consequences:** No paid tool or API limit, and the board's history is in git. Every status
+  change is reviewed in a PR. There's no board web view beyond GitHub's file browser and
+  `pnpm board`. `CLAUDE.md`, the workflow skills and `docs/project/README.md` describe the new
+  flow; D-012's PR-per-task rule stands.
+- **Tasks:** none (workflow change).

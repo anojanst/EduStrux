@@ -401,7 +401,8 @@ Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
 
 > **Status (2026-10-05):** steps 1–3 are done, except `apps/web`, which moved to the last phase
 > (API-first, D-001). Step 4 is now API-only, tested through Swagger. Track progress on the
-> Notion board; `/recommend-next` picks the next task.
+> board in [docs/project/](../project/README.md) (`pnpm board`, D-029); `/recommend-next` picks
+> the next task.
 
 1. Scaffold the monorepo (pnpm + Turborepo): `apps/web` (Vite React TS), `apps/api` (Hono on Workers, `wrangler.toml` with D1, R2, Queues, Cron), `packages/shared`, `packages/db`.
 2. Set up Drizzle for D1 with base column helpers (`id`, `org_id`, timestamps, `deleted_at`) and a prefixed-ULID id generator.
