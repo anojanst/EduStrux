@@ -108,6 +108,8 @@ export const jobs = sqliteTable(
       .notNull()
       .default('queued'),
     progress: integer('progress').notNull().default(0),
+    // Queue deliveries so far (Cloudflare's message.attempts), including the one running now.
+    attempts: integer('attempts').notNull().default(0),
     input: text('input', { mode: 'json' }),
     result: text('result', { mode: 'json' }),
     error: text('error'),

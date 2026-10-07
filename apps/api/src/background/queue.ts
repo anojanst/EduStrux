@@ -12,7 +12,7 @@ export async function handleQueue(
   for (const message of batch.messages) {
     try {
       if (batch.queue.endsWith('-jobs')) {
-        await runJob(db, env, message.body as JobMessage);
+        await runJob(db, env, message.body as JobMessage, message.attempts);
       } else if (batch.queue.endsWith('-email')) {
         // TODO(comms): render template → send with Resend → update delivery status.
         console.log(

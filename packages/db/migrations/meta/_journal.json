@@ -8,6 +8,13 @@
       "when": 1791182383082,
       "tag": "0000_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791343614749,
+      "tag": "0001_jobs_attempts",
+      "breakpoints": true
     }
   ]
 }
