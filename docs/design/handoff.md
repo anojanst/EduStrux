@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-05 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-07 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -146,7 +146,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search. |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update. `DELETE` is a soft delete (`deleted_at`) and returns 204. |
 | Actions | Verb sub-path with `POST`, e.g. `POST /terms/{id}/generate-invoices` |
-| Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` |
+| Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` until `succeeded` or `failed`. Starting a job writes a `job.started` audit row. A failed try is retried up to 3 times, so job handlers must be idempotent (D-017). |
 | Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
 | Idempotency | `Idempotency-Key` header on invoices, payments and bulk actions |
 | Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. `code` (and field error codes) is the stable key the client translates; `message` is English, for developers (D-015). |
@@ -174,6 +174,8 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Messages | Full | Branch | Branch | Own classes | Own family | — |
 | Reports | Full | Branch | Limited | Own classes | — | Money only |
 
+Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
+
 Student logins come later (v1.1+). The super-admin console sits outside org routes, and every access is logged, including impersonation.
 
 ---
@@ -195,7 +197,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 | Learning | `lesson_notes` | session, per-student note, homework text |
 | Money | `price_rules`, `discount_rules`, `invoices`, `invoice_lines`, `payments`, `payment_allocations` | minor units; invoice status (draft, issued, paid, part-paid, void); payment method and reference; unique bank reference per family |
 | Messages | `messages`, `message_recipients`, `message_templates`, `notification_settings` | channel (email for MVP), audience, delivery status |
-| Platform | `files`, `imports`, `jobs`, `audit_log`, `exports`, `org_subscriptions` | R2 key; import mapping; job type and progress; actor, action, before/after; Paddle subscription id |
+| Platform | `files`, `imports`, `jobs`, `audit_log`, `exports`, `org_subscriptions` | R2 key; import mapping; job type, status, progress, attempts, last error, started-by user (D-017, D-018); actor, action, before/after; Paddle subscription id |
 
 ### Grade and subject model
 - Each org defines its own ordered **grade levels** (NZ Year 1–13, US Grade K–12, Sri Lanka Grade 1–13 / O/L / A/L) and its **subjects**.
@@ -333,7 +335,7 @@ Paths are relative to `/api/v1/orgs/{orgId}` unless they start with `/api/v1`. A
 - `GET /reports/money`
 
 ### Platform
-- `GET /jobs/{id}`
+- `GET /jobs/{id}`: only the person who started the job and the owner can see it; anyone else gets 404 (D-018)
 - `GET /audit-log`
 - `POST /exports` · `GET /exports/{id}`
 - `POST /files/upload-url` · `GET /files/{id}`
@@ -360,7 +362,7 @@ Paths are relative to `/api/v1/orgs/{orgId}` unless they start with `/api/v1`. A
 | Hourly cron | Every hour; acts on orgs whose local time matches | Overdue invoice reminders (email), make-up credit expiry |
 | Daily cron | Daily | Extends generated sessions ahead; cleans expired files and links; nightly per-org export to R2 (backup + owner export) |
 | `email` queue | Any email | Render template → Resend → retry with backoff → update delivery status |
-| `jobs` queue | Bulk actions | Term invoices, roll-over, promotion, imports, PDF batches; progress in `jobs` |
+| `jobs` queue | Bulk actions | Term invoices, roll-over, promotion, imports, PDF batches; progress in `jobs`. Handlers run as the user who started the job. A failed try goes back to `queued` and is retried up to 3 times; the job is `failed` only when the last try fails, and `succeeded`/`failed` are final, so a redelivered message is ignored. Each try reruns the whole handler and a message can arrive twice, so **handlers must be idempotent**. No dead-letter queue yet: final failures are logged (D-017). |
 | Webhooks | Clerk / Paddle / Resend | Sync users; update plan, limits and status; update email delivery status. All webhooks verify signatures and are idempotent. |
 
 ---

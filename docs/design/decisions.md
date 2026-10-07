@@ -183,3 +183,40 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   whose time falls inside the gap starts later by the gap's length. The rule lives in the shared
   date helpers in `packages/shared`, so the API and the web app agree.
 - **Tasks:** TUI-25, TUI-31.
+
+## D-017 · 2026-10-07 · Job status during retries
+
+- **Context:** The `jobs` queue retries a failed try (`max_retries` 3). Building the jobs consumer
+  in TUI-66 raised what status a polling client sees between tries, and what happens when the
+  queue delivers a message again.
+- **Decision:**
+  - A job becomes `failed` only when its last try fails (try 4 = 1 + 3 retries). A failed try with
+    retries left goes back to `queued`, keeping `error` and the `attempts` count.
+  - Status only moves forward: `queued` → `running` → `succeeded`, or → `failed` on the last try.
+    It never moves from `failed` back to `running`.
+  - `succeeded` and `failed` are final, so a message delivered again is ignored.
+  - On the last try the job is marked `failed` and the message is acked, rather than left for the
+    queue to drop.
+  - A job type with no handler fails at once, with no retries.
+- **Consequences:**
+  - The job gains an `attempts` column and response field. A `queued` job with `attempts > 0` is
+    waiting for a retry, and `error` holds the last failure.
+  - A retry reruns the whole handler, and the queue can deliver a message more than once, so job
+    handlers must be idempotent. This matters for term invoices (TUI-37), promotion (TUI-45) and
+    imports (TUI-60).
+  - Progress restarts at 0 on each try, and stays at 99 or below until the job succeeds, so 100
+    always means finished.
+  - No dead-letter queue is configured: final failures are only logged. The retry limit is set in
+    both the code and `wrangler.jsonc`, which must stay in step.
+- **Tasks:** TUI-66 (and TUI-37, TUI-45, TUI-60, whose handlers must be idempotent).
+
+## D-018 · 2026-10-07 · Only the job's starter and the owner can read a job
+
+- **Context:** `GET /jobs/{id}` needs `org:read`, which every role has. A job's result or error can
+  hold data the role otherwise couldn't read.
+- **Decision:** Only the person who started the job (`jobs.created_by_user_id`) and the org owner
+  can read it. Everyone else in the org gets 404, not 403, so job ids can't be probed. Jobs the
+  system started (no `created_by_user_id`) are visible to the owner only.
+- **Consequences:** Staff who start a long action can poll it, but colleagues can't see each
+  other's jobs, and a branch manager can't see jobs started by their branch staff.
+- **Tasks:** TUI-66.

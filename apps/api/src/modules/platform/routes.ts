@@ -1,12 +1,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { AuditEntry, Job, PageQuery, page } from '@edustrux/shared';
 import { orgCtx } from '../../db/scope';
-import { notFound } from '../../lib/errors';
 import { createRouter, errors, json } from '../../lib/openapi';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as repo from './repository';
+import * as service from './service';
 
 const healthRoute = createRoute({
   method: 'get',
@@ -25,7 +25,8 @@ const getJobRoute = createRoute({
   tags: ['Platform'],
   summary: 'Poll a background job',
   description:
-    'Long actions return `202 { jobId }`. Poll this until status is succeeded or failed.',
+    'Long actions return `202 { jobId }`. Poll this until status is succeeded or failed. ' +
+    'Only the person who started the job and the org owner can see it; anyone else gets 404.',
   middleware: orgAccess('org:read'),
   request: { params: OrgParams.extend({ jobId: z.string() }) },
   responses: {
@@ -50,21 +51,8 @@ const auditLogRoute = createRoute({
 export const platformRoutes = createRouter()
   .openapi(healthRoute, (c) => c.json({ ok: true as const, environment: c.env.ENVIRONMENT }, 200))
   .openapi(getJobRoute, async (c) => {
-    const job = await repo.findJob(orgCtx(c), c.req.valid('param').jobId);
-    if (!job) throw notFound('Job');
-    return c.json(
-      {
-        id: job.id,
-        type: job.type,
-        status: job.status,
-        progress: job.progress,
-        result: job.result ?? null,
-        error: job.error,
-        createdAt: job.createdAt,
-        updatedAt: job.updatedAt,
-      },
-      200,
-    );
+    const job = await service.getJob(orgCtx(c), c.var.membership.role, c.req.valid('param').jobId);
+    return c.json(job, 200);
   })
   .openapi(auditLogRoute, async (c) => {
     const { limit, cursor } = c.req.valid('query');
