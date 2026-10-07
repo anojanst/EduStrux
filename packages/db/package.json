@@ -8,6 +8,7 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
+    "studio": "drizzle-kit studio --config drizzle.studio.config.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
