@@ -8,7 +8,12 @@ describe('API docs', () => {
     expect(res.body.openapi).toBe('3.1.0');
     expect(res.body.components.securitySchemes.Bearer).toMatchObject({ scheme: 'bearer' });
     expect(Object.keys(res.body.paths)).toEqual(
-      expect.arrayContaining(['/api/v1/me', '/api/v1/orgs', '/api/v1/orgs/{orgId}']),
+      expect.arrayContaining([
+        '/api/v1/me',
+        '/api/v1/orgs',
+        '/api/v1/orgs/{orgId}',
+        '/api/v1/orgs/{orgId}/audit-log',
+      ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);
   });

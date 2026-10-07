@@ -179,6 +179,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Fees and payments | Full | Branch | Branch | — | Own invoices, read | Read + export |
 | Messages | Full | Branch | Branch | Own classes | Own family | — |
 | Reports | Full | Branch | Limited | Own classes | — | Money only |
+| Audit log (D-030) | Full | — | — | — | — | — |
 
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
@@ -345,7 +346,7 @@ Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
 
 ### Platform
 - `GET /jobs/{id}`: only the person who started the job and the owner can see it; anyone else gets 404 (D-018)
-- `GET /audit-log`
+- `GET /audit-log`: owner only; every other role gets 403 (D-030)
 - `POST /exports` · `GET /exports/{id}`
 - `POST /files/upload-url` · `GET /files/{id}`
 - `GET /billing/subscription`
