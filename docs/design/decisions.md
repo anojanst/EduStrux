@@ -369,3 +369,16 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `pnpm board`. `CLAUDE.md`, the workflow skills and `docs/project/README.md` describe the new
   flow; D-012's PR-per-task rule stands.
 - **Tasks:** none (workflow change).
+
+## D-030 · 2026-10-07 · The audit log is owner-only
+
+- **Context:** The handoff §6 role table had no row for the audit log. The code has granted
+  `audit:read` to the owner only since the initial scaffold, and TUI-77 added tests that refuse
+  every other role.
+- **Decision:** Only the owner can read the audit log (`GET /audit-log`), across the whole org.
+  Branch manager, front desk, teacher, parent and accountant get 403.
+- **Consequences:** There's no branch-scoped audit view, so a branch manager can't see their
+  branch's entries. Opening it to another role later means granting `audit:read` in the
+  permission map and a new decision. Assumption: recorded from the implementation; the owner
+  hasn't stated a reason.
+- **Tasks:** TUI-77.

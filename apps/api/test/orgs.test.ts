@@ -134,6 +134,16 @@ describe('orgs', () => {
     expect(second.body.data.map((e: { action: string }) => e.action)).toEqual(['org.created']);
     expect(second.body.nextCursor).toBeNull();
   });
+
+  it.each(['0', '201', 'abc'])('rejects audit log limit=%s with a field error', async (limit) => {
+    const { token } = await newUser();
+    const org = await newOrg(token);
+
+    const res = await call('GET', `/api/v1/orgs/${org.id}/audit-log?limit=${limit}`, { token });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_failed');
+    expect(Object.keys(res.body.error.fields)).toEqual(['limit']);
+  });
 });
 
 describe('org isolation', () => {
@@ -184,12 +194,17 @@ describe('permissions', () => {
     expect(patch.body.error.code).toBe('forbidden');
   });
 
-  it('keeps the audit log owner-only', async () => {
-    const owner = await newUser('owner');
-    const org = await newOrg(owner.token);
-    const accountant = await newUser('accountant');
-    const token = await addMember(org.id, accountant.clerkUserId, 'accountant');
+  it.each(['branch_manager', 'front_desk', 'teacher', 'parent', 'accountant'] as const)(
+    'keeps the audit log owner-only: %s gets 403',
+    async (role) => {
+      const owner = await newUser('owner');
+      const org = await newOrg(owner.token);
+      const member = await newUser(role);
+      const token = await addMember(org.id, member.clerkUserId, role);
 
-    expect((await call('GET', `/api/v1/orgs/${org.id}/audit-log`, { token })).status).toBe(403);
-  });
+      const res = await call('GET', `/api/v1/orgs/${org.id}/audit-log`, { token });
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('forbidden');
+    },
+  );
 });
