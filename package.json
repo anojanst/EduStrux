@@ -17,11 +17,13 @@
     "seed": "pnpm --filter @edustrux/api seed",
     "dev:token": "pnpm --filter @edustrux/api dev:token",
     "board": "node scripts/board.mjs",
+    "board:web": "boardmd serve --open",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@libsql/client": "^0.18.0",
     "@types/node": "^24.19.1",
+    "board.md": "^0.1.0",
     "prettier": "^3.6.0",
     "turbo": "^2.11.7",
     "typescript": "^7.0.2"
