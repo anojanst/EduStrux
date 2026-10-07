@@ -220,3 +220,129 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Consequences:** Staff who start a long action can poll it, but colleagues can't see each
   other's jobs, and a branch manager can't see jobs started by their branch staff.
 - **Tasks:** TUI-66.
+
+## D-019 · 2026-10-07 · Employment agreement checked
+
+- **Decision:** The owner checked the IP and side-business clauses of their employment agreement;
+  it permits this project.
+- **Tasks:** TUI-1.
+
+## D-020 · 2026-10-07 · Path-based org addressing; public pages use the org slug
+
+- **Context:** Open question: `/orgs/{orgId}` in the URL or a subdomain per centre.
+- **Decision:**
+  - The API and the app keep path-based addressing, `/api/v1/orgs/{orgId}`, as already built. No
+    code change.
+  - Public pages (enquiry and enrolment forms, later the parent portal link) use the org slug,
+    e.g. web path `/f/{orgSlug}/…`, matching the public API shape `/api/v1/public/{orgSlug}/…`
+    (TUI-47). Slugs are already unique across orgs (D-009).
+  - A vanity subdomain could be added later as a redirect, not now.
+- **Alternatives considered:** a subdomain per centre (rejected: wildcard DNS and TLS, Clerk
+  cookies per subdomain, and reworking the middleware).
+- **Consequences:** Everything is served from one domain. The org middleware keeps reading
+  `orgId` from the path; public routes look the org up by slug.
+- **Tasks:** TUI-5 (and TUI-47).
+
+## D-021 · 2026-10-07 · Parents sign in through Clerk, passwordless
+
+- **Context:** Open question: Clerk accounts for parents (they count toward Clerk's free users)
+  or our own magic-link tokens for the portal.
+- **Decision:** Parents are Clerk users. They sign in passwordless with an email code (or magic
+  link) and are linked to a `parent` membership when they accept an invite. Staff and parents use
+  the same auth path, so there's no second auth system.
+- **Alternatives considered:** our own magic-link tokens (rejected). Signed no-login links in
+  emails (not now).
+- **Consequences:** At the target (~26 centres, ≤150 students each, roughly 4,000 parents at
+  most) parents stay well within Clerk's 50k free monthly retained users. The portal goes through
+  the same auth and org middleware as the staff app; what a parent sees comes from the `parent`
+  role (handoff §6). Unblocks the parent portal (TUI-39) and parent sign-in (TUI-72).
+  Assumption: Clerk sends the sign-in codes and links, so parent sign-in emails don't go through
+  our `email` queue (D-015 listed sign-in links there); invite emails may still be ours.
+- **Tasks:** TUI-4 (and TUI-39, TUI-72).
+
+## D-022 · 2026-10-07 · MVP cut: four P2 Could items move to v1.1
+
+- **Context:** Open question: is the ~65-feature MVP too big for the first launch?
+- **Decision:** Move four P2 Could items to v1.1: term roll-over (TUI-48), student timeline
+  (TUI-44), grade timetable view (TUI-53) and drag-and-drop timetable editing (TUI-52).
+  Spreadsheet import (TUI-60) and everything else stay in the MVP. The aim is the shortest path
+  to the first paying centres without losing anything a centre needs to switch. Import stays
+  because centres won't retype 100 students.
+- **Consequences:** `GET /students/{id}/timeline` and the roll-over job leave the MVP. Calendar
+  views and clash detection (including grade overlaps) stay; only the per-grade weekly grid and
+  drag-and-drop editing move. The four tasks stay on the board, marked as moved to v1.1.
+- **Tasks:** TUI-2 (moves TUI-44, TUI-48, TUI-52, TUI-53).
+
+## D-023 · 2026-10-07 · Product name and domain: EduStrux, edustrux.com
+
+- **Context:** Open question: product name and domain.
+- **Decision:** The product is EduStrux, at edustrux.com. Registering the domain is the owner's
+  job.
+- **Consequences:** No renaming in code. TUI-3 is Done only once the owner confirms the domain is
+  registered (pending on 2026-10-07).
+- **Tasks:** TUI-3.
+
+## D-024 · 2026-10-07 · D1 launch region: Oceania
+
+- **Context:** The one shared D1 database lives in one region (handoff §3), and the launch region
+  was open.
+- **Decision:** Create the D1 database in Oceania (`oc` location hint). The first centres are in
+  NZ/AU, near the owner in Auckland.
+- **Consequences:** Writes from other regions are slower, which is acceptable for admin work. D1
+  read replicas can serve reads closer to users later. A per-region database is needed only when
+  a customer requires data residency (the v1.1 data-region feature). Unblocks the deploy half of
+  TUI-24: create the D1 database with `--location oc`.
+- **Tasks:** TUI-6 (and TUI-24).
+
+## D-025 · 2026-10-07 · PDFs render server-side with Cloudflare Browser Rendering
+
+- **Context:** Open question: render invoice and receipt PDFs in the browser or server-side.
+- **Decision:** Render server-side with Cloudflare Browser Rendering: headless Chrome turns
+  HTML/CSS templates into PDFs. Reasons:
+  - The API already returns PDFs (`GET /invoices/{id}/pdf`, `GET /payments/{id}/receipt`,
+    `GET /portal/invoices/{id}/pdf`) and PDF batches run as jobs, so browser-only printing
+    doesn't fit.
+  - HTML templates make branding easy.
+  - Chrome shapes non-Latin scripts correctly (e.g. Tamil names, and Tamil schools are a target
+    customer), which a basic PDF library such as pdf-lib doesn't.
+- **Alternatives considered:** pdf-lib in the Worker (rejected); print CSS in the browser
+  (rejected).
+- **Consequences:** Workers Paid includes some browser time each month, then it's billed per
+  browser-hour. Each PDF takes a second or two, so batches go through the `jobs` queue. Tests
+  check the rendered HTML and stub the renderer. This settles the PDF case D-015 left open: PDF
+  text uses the server-side English catalog. Unblocks TUI-59.
+- **Tasks:** TUI-7 (and TUI-59).
+
+## D-026 · 2026-10-07 · Search: prefix search first
+
+- **Context:** Open question: SQLite FTS5 or simple prefix search at first.
+- **Decision:** Prefix search. Names get normalised (lower-case, accent-stripped) columns with
+  indexes that lead with `org_id`. A search matches the start of first, last and family names,
+  plus exact email or phone. Duplicate warnings use the same normalised fields. Move to SQLite
+  FTS5 only if large centres need word-anywhere search.
+- **Alternatives considered (for now):** FTS5 (rejected: virtual tables plus sync triggers);
+  contains search (rejected: `LIKE '%x%'` scans every row in the org).
+- **Consequences:** A search matches from the start of a name only, not words inside it. The
+  normalised columns and their indexes need a migration with TUI-43.
+- **Tasks:** TUI-8 (and TUI-43).
+
+## D-027 · 2026-10-07 · Annual billing at launch; USD base with local prices for NZ, AU and UK
+
+- **Context:** Open questions: an annual billing discount, and which currency each country sees.
+- **Decision:**
+  - **Annual billing at launch**, two months free: Solo US$99/year, Small US$249/year (about 17%
+    off).
+  - **Displayed currency:** USD is the base. NZD, AUD and GBP get hand-set round local prices in
+    Paddle; other countries see Paddle's automatic local-currency conversion.
+- **Consequences:** One payment a year saves about $5.50 per customer per year in Paddle's $0.50
+  per-transaction fee, brings cash up front and lowers churn. Exact local amounts are set during
+  Paddle setup (TUI-73).
+- **Tasks:** TUI-9 (and TUI-73).
+
+## D-028 · 2026-10-07 · First school-type template: academic tuition
+
+- **Context:** Open question: which school-type template gets polished first.
+- **Decision:** Academic tuition: grade levels × school subjects, term pricing, group classes. It
+  matches the grade × subject data model exactly and is the biggest market.
+- **Consequences:** Music, language/cultural and dance templates come after, on the same engine.
+- **Tasks:** TUI-10.
