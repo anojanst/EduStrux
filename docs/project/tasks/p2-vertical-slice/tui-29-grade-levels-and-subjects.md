@@ -13,7 +13,7 @@ endpoints:
   - GET|POST /subjects
   - PATCH|DELETE /subjects/{id}
 branch: task/tui-27-29-branches-rooms-grades-subjects
-pr:
+pr: 11
 ---
 
 # TUI-29 Grade levels and subjects

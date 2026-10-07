@@ -12,7 +12,7 @@ endpoints:
   - GET|POST /branches/{id}/rooms
   - PATCH|DELETE /rooms/{id}
 branch: task/tui-27-29-branches-rooms-grades-subjects
-pr:
+pr: 11
 ---
 
 # TUI-27 Branches and rooms CRUD
