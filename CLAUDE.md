@@ -7,27 +7,25 @@ built and tested through Swagger (phases P1–P6) before the web app (P7 UI).
 - Product and technical design (living spec): [docs/design/handoff.md](docs/design/handoff.md)
 - Decisions made during the build: [docs/design/decisions.md](docs/design/decisions.md)
 
-## Project tracking (Notion)
+## Project tracking (in git)
 
-| What | Value |
-|---|---|
-| Project page | https://app.notion.com/p/3f0b1cfeccf781ac9191c65fa90efd10 (page id `3f0b1cfeccf781ac9191c65fa90efd10`) |
-| Tasks database | https://app.notion.com/p/548605a808a74c9eadccc138392457a1 |
-| Tasks data source | `collection://9fac3feb-0aae-44c1-a78b-7f5bafaceb1b` |
+Everything about this project lives in this repo and git: the board, the design and the
+decisions. Don't read or write Notion, or any other outside tracker, for it (D-029).
 
-Tasks properties (exact names): `Task` (title), `ID` (TUI-n, read-only), `Status`
-(`Not started` · `In progress` · `In review` · `Blocked` · `Done`), `Phase` (`P0 Decisions` ·
-`P1 Foundation` · `P2 Vertical slice` · `P3 Core modules` · `P4 Background & comms` ·
-`P5 SaaS layer` · `P6 Launch hardening` · `P7 UI`), `Module`, `Priority` (`P0 Must` ·
-`P1 Should` · `P2 Could`), `Size` (`S` · `M` · `L`), `Endpoints`, `Notes`, `PR` (url),
-`Branch`.
+The board is one markdown file per task in [docs/project/tasks/](docs/project/tasks/), grouped
+by phase folder. How it works, the fields and the lifecycle are in
+[docs/project/README.md](docs/project/README.md).
 
-Status lifecycle: `Not started` → `In progress` (task branch created) → `In review` (PR open)
-→ `Done` (PR merged and the Definition of Done holds on `main`).
-
-The Notion tools are MCP tools named `notion-*` (load them with ToolSearch if they are deferred).
-Read tasks with `notion-query-data-sources` in `rows` mode (works on every Notion plan; max 100
-rows, so filter out `Done`), and write with `notion-update-page` → `update_properties`.
+- **See it:** `pnpm board` (open tasks with live branch and PR state), `pnpm board --all`,
+  `pnpm board --json` (for skills), `pnpm board --check` (validate the files).
+- **A task file:** `docs/project/tasks/<phase-folder>/tui-<n>-<slug>.md`, with frontmatter
+  `id`, `title`, `status` (`todo` · `in-progress` · `blocked` · `done` · `deferred`), `phase`
+  (`P0`–`P7`), `module`, `priority` (`P0` Must · `P1` Should · `P2` Could), `size` (`S` · `M` ·
+  `L`), `endpoints`, `branch`, `pr`. Notes go in the body.
+- **Lifecycle:** a task's own PR updates its file (`status: done`, `branch`, `pr`), so `main`
+  always shows what's merged. While the work is on a branch or in an open PR, `pnpm board` shows
+  it as in progress or in review without the file changing. Status changes that aren't part of a
+  task's PR go in a `chore/board-<slug>` PR.
 
 ## Definition of Done
 
@@ -39,25 +37,26 @@ A build task is **Done** only when all of these hold:
 3. `pnpm typecheck` and `pnpm test` pass.
 4. Schema changes have a generated migration in `packages/db/migrations/`.
 5. Anything that deviated from or added to the design is recorded in `docs/design/`.
-6. The work is in a pull request linked on the task (`PR`), and the user has merged it.
+6. The work is in a pull request that sets the task file's `status`, `branch` and `pr`, and the
+   user has merged it.
 
-Decision tasks (`P0 Decisions`, module `decisions`) are Done only when the user has stated the
+Decision tasks (phase `P0`, module `decisions`) are Done only when the user has stated the
 decision and it is logged in `docs/design/decisions.md`. Tasks that need a person (running
 against real Clerk, legal docs, launch) are Done only when the user confirms them.
 
 ## Skills
 
-| Skill | Does |
-|---|---|
-| `/commander` | Runs the loop below, choosing which skills to run and in what order |
-| `/mark-done` | Checks the board against the repo and updates task statuses (subagent) |
-| `/recommend-next` | Recommends the next task(s) to build, read-only (subagent) |
-| `/implement-task` | Builds one task, or a small bundle, to the Definition of Done on its own branch |
-| `/update-design-docs` | Brings `docs/design/` and the Notion project page in line with what was built or decided (subagent) |
-| `/open-pr` | Commits the task, pushes, opens a PR with a generated review description, sets the task to In review |
+| Skill                 | Does                                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `/commander`          | Runs the loop below, choosing which skills to run and in what order                                                                     |
+| `/mark-done`          | Checks the board against the repo and GitHub, tidies merged branches, and prepares a `chore/board-…` PR for any status fixes (subagent) |
+| `/recommend-next`     | Recommends the next task(s) to build, read-only (subagent)                                                                              |
+| `/implement-task`     | Builds one task, or a small bundle, to the Definition of Done on its own branch                                                         |
+| `/update-design-docs` | Brings `docs/design/` (and `docs/project/README.md` when goal or phases change) in line with what was built or decided (subagent)       |
+| `/open-pr`            | Marks the task file done, commits, pushes and opens a PR with a generated review description                                            |
 
 Typical loop: mark-done (sync) → recommend-next → implement-task → update-design-docs → open-pr.
-After the user merges, the next sync moves the task to Done.
+The task is Done on `main` the moment the user merges its PR.
 
 ## Git workflow
 
@@ -68,8 +67,9 @@ Every task (or small bundle) is delivered as its own pull request for the user t
   use `docs/tui-<n>-<slug>`. Changes not tied to a task use `chore/<slug>`.
 - **Stacking:** if a task needs code from another task whose PR isn't merged yet, branch from
   that task's branch and target its PR at that branch ("Stacked on #N").
-- **Commits:** `<type>(<module>): <summary> (TUI-n)`, ending with the Notion link and the
-  attribution line. Stage files by path. Never commit `.dev.vars`, `.seed-users.json` or secrets.
+- **Commits:** `<type>(<module>): <summary> (TUI-n)`, ending with a `Task:` line pointing at the
+  task file and the attribution line. Stage files by path. Never commit `.dev.vars`,
+  `.seed-users.json` or secrets.
 - **Pushing and PRs** on task branches are expected as part of this workflow. Never push to
   `main`, merge a PR, force-push or deploy. The user reviews and merges. If a branch needs a
   rebase and force-push, ask the user to run it.
@@ -77,7 +77,7 @@ Every task (or small bundle) is delivered as its own pull request for the user t
   pushed commits.
 - **Merged branches are deleted.** GitHub deletes the remote branch on merge (repo setting
   "Automatically delete head branches", which also retargets stacked PRs). `/mark-done` deletes
-  the matching local branches on the next sync. Notion's `Branch` property keeps the name for
+  the matching local branches on the next sync. The task file's `branch` field keeps the name for
   history.
 
 ### Identity: Claude acts as a bot account
@@ -97,10 +97,10 @@ reviews as themselves.
 
 `main` changes only through merged pull requests. Three layers enforce this:
 
-| Layer | Blocks | Where |
-|---|---|---|
-| Git hooks | Commits on `main`; pushing to, force-pushing or deleting `main` | `.githooks/` (installed by `pnpm install` via `core.hooksPath`) |
-| Claude Code deny rules | Claude pushing to `main`, force-pushing, `--no-verify`, changing the hooks path, merging PRs | `.claude/settings.json` |
-| GitHub ruleset | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`, active on GitHub (ruleset 24489131) |
+| Layer                  | Blocks                                                                                                                                             | Where                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Git hooks              | Commits on `main`; pushing to, force-pushing or deleting `main`                                                                                    | `.githooks/` (installed by `pnpm install` via `core.hooksPath`)           |
+| Claude Code deny rules | Claude pushing to `main`, force-pushing, `--no-verify`, changing the hooks path, merging PRs                                                       | `.claude/settings.json`                                                   |
+| GitHub ruleset         | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`, active on GitHub (ruleset 24489131) |
 
 Don't try to work around a block (another flag, `git -c`, the API). Stop and tell the user.

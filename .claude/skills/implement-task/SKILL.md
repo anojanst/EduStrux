@@ -1,7 +1,7 @@
 ---
 name: implement-task
-description: Implement one EduStrux Notion task (or a small bundle) end to end, following the repo's module pattern, until it meets the Definition of Done. Use when the user says "implement TUI-n", "build <feature>", or the commander hands over a task.
-argument-hint: "<TUI-n> [TUI-n ...] [--no-ship]"
+description: Implement one EduStrux task from docs/project/tasks/ (or a small bundle) end to end, following the repo's module pattern, until it meets the Definition of Done. Use when the user says "implement TUI-n", "build <feature>", or the commander hands over a task.
+argument-hint: '<TUI-n> [TUI-n ...] [--no-ship]'
 ---
 
 # Implement task
@@ -15,20 +15,24 @@ update and the PR itself, so stop after the report.
 
 ## 1. Understand the task
 
-1. Load the Notion tools (ToolSearch if deferred) and read the task(s) from the Tasks data source
-   (`rows` mode, filter on `ID`). Note `Endpoints`, `Notes`, `Module`, `Phase`.
-2. If it's a decision task (`P0 Decisions`), stop: decisions are the user's. Ask the questions
-   that would settle it, then hand over to `/update-design-docs` and `/mark-done --confirm`.
+1. Read the task file(s): `ls docs/project/tasks/*/tui-<n>-*.md`, or `pnpm -s board --all --json`
+   for live branch and PR state. Note `endpoints`, the notes in the body, `module` and `phase`.
+   If a task is `done` or `deferred`, stop and tell the user.
+2. If it's a decision task (phase `P0`), stop: decisions are the user's. Ask the questions
+   that would settle it, then hand over to `/update-design-docs` and `/open-pr`
+   (a docs PR that marks the decision task done).
 3. Create the task branch before touching code (see Git workflow in `CLAUDE.md`):
    - Check the working tree with `git status --short`. If there are uncommitted changes that don't
      belong to this task, ask the user what to do (commit them separately, stash, or carry on);
      never discard them.
    - Run `git fetch origin`, then `git switch main` and `git pull --ff-only`.
-   - If the task needs code from a task that is `In review` (unmerged), branch from that task's
-     `Branch` instead of `main`, and note "stacked on" for the PR.
+   - If the task needs code from a task that is in review (an open PR, which `pnpm board`
+     shows), branch from that PR's head branch instead of `main`, and note "stacked on" for the PR.
    - Run `git switch -c task/tui-<n>-<slug>`. If that branch already exists (the task was started
      before), switch to it and continue.
-4. Set each task's `Status` to `In progress` and `Branch` to the branch name.
+4. In each task file, set `branch:` to the branch name (this change is on the task branch, so it
+   ships in the PR). Leave `status` alone: `pnpm board` shows the task as in progress from the
+   branch, and `/open-pr` sets `status` when it opens the PR.
 5. Read the design for it in `docs/design/handoff.md`: the endpoints (§9), the tables and columns
    (§7), the permissions for each role (§6), the conventions (§5) and the feature rules (§8).
    Also read `docs/design/decisions.md`, since newer decisions override the handoff.
@@ -42,6 +46,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 ## 2. Build, in this order
 
 **Schema** (`packages/db/src/schema/<module>.ts`, exported from `schema/index.ts`)
+
 - Spread `...orgColumns()` into every org-owned table. Every index starts with `org_id`.
 - Money is an integer minor-units column plus a currency column. Lesson dates and times are local
   `text` (`YYYY-MM-DD`, `HH:MM`). Event times are ISO UTC text.
@@ -50,6 +55,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   `pnpm --filter @edustrux/db exec drizzle-kit generate --name <module_change>`
 
 **Schemas** (`packages/shared/src/schemas/<module>.ts`, exported from `src/index.ts`)
+
 - Import `z` from `../zod`. Give the resource, create and update schemas `.openapi('Name')`.
 - Update schemas are `.partial()` with `updatedAt` required. Reuse `Money`, `LocalDate`,
   `LocalTime`, `PageQuery` and `page()` from `common.ts`.
@@ -57,6 +63,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   handoff §6 table for every role.
 
 **Repository** (`apps/api/src/modules/<module>/repository.ts`)
+
 - The only file that queries D1. Every function takes `OrgCtx` and filters with
   `inOrg(ctx, table, ...)`.
 - Every write goes through `writeWithAudit(ctx, [statements], { action: '<entity>.<verb>', ... })`.
@@ -64,6 +71,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   `limit + 1`.
 
 **Service** (`service.ts`)
+
 - Business rules, `updatedAt` stale checks (`staleData()`), uniqueness and existence checks.
   Throw the helpers from `lib/errors.ts`.
 - Apply the role's scope: `branch` limits to `membership.branchIds` (when it isn't null), and
@@ -72,6 +80,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 - Map rows to API shapes (camelCase, no `orgId`/`deletedAt`).
 
 **Routes** (`routes.ts`)
+
 - `createRoute` with `tags`, `summary`, `middleware: orgAccess('<permission>')`, params built from
   `OrgParams.extend({...})`, `jsonBody(...)` for bodies, and `json(...)` plus `errors(...)` for
   every response.
@@ -81,6 +90,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 - Mount the router in `apps/api/src/app.ts`.
 
 **Tests** (`apps/api/test/<module>.test.ts`, using the helpers in `test/helpers.ts`)
+
 - The happy path for every endpoint.
 - Validation errors (400 with `fields`).
 - Another org's ids return 404 for every route.
@@ -101,8 +111,8 @@ in Swagger at `/api/docs`.
 
 ## 4. Report
 
-Leave the Notion status as `In progress`. `/open-pr` moves it to In review, and `/mark-done`
-moves it to Done after the merge. Don't commit here; `/open-pr` does that.
+Don't commit here, and don't change the task's `status`: `/open-pr` sets it when it opens the
+PR, and merging the PR makes the task done on `main`.
 
 Write this report (`/update-design-docs` and `/open-pr` read it):
 
@@ -125,7 +135,7 @@ Run on its own, this skill finishes the task's delivery:
 
 1. `Skill(update-design-docs, "<the report>")`. Its edits land on this branch, so they go in the
    same PR.
-2. `Skill(open-pr, "TUI-n --report <the report>")`. This commits, pushes, opens the PR, and sets
-   the task to In review.
+2. `Skill(open-pr, "TUI-n --report <the report>")`. This marks the task file done, commits,
+   pushes and opens the PR.
 
 Finish by giving the user the PR link.

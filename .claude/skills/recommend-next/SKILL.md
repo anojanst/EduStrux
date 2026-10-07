@@ -1,7 +1,7 @@
 ---
 name: recommend-next
-description: Recommend the next EduStrux task (or a small bundle of related tasks) to build, based on the Notion board, phase order, dependencies and what already exists in the repo. Read-only. Use when the user asks "what's next", "what should I build", or before starting new work.
-argument-hint: "[--module <name>] [--include-ui] [--count N]"
+description: Recommend the next EduStrux task (or a small bundle of related tasks) to build, based on the board in docs/project/tasks, phase order, dependencies and what already exists in the repo. Read-only. Use when the user asks "what's next", "what should I build", or before starting new work.
+argument-hint: '[--module <name>] [--include-ui] [--count N]'
 context: fork
 agent: general-purpose
 background: false
@@ -9,8 +9,8 @@ background: false
 
 # Recommend next
 
-You pick what to build next. You change nothing: no Notion writes, no file edits.
-Read `CLAUDE.md` first for the Notion ids and property names, and skim
+You pick what to build next. You change nothing: no file edits, no commits.
+Read `CLAUDE.md` first (Project tracking: the task fields and statuses), and skim
 `docs/design/handoff.md` §8–§9 and `docs/design/decisions.md`.
 
 Arguments: `$ARGUMENTS`
@@ -21,8 +21,10 @@ Arguments: `$ARGUMENTS`
 
 ## 1. Load the open tasks
 
-Load the Notion tools with ToolSearch if they're deferred. Query the Tasks data source in `rows`
-mode with `Status` `enum_is_not` `Done` (limit 100), and separately note which tasks are Done.
+Run `pnpm -s board --all --json`. Each task has its file's `status` plus a `live` field from git
+and GitHub: `in-progress` (a local branch exists), `in-review` (an open PR, with `pr`, `base` and
+a `note` such as "changes requested") or `merged` (merged but the file isn't marked done). Never
+recommend `done` or `deferred` tasks (deferred = moved out of the MVP, D-022).
 
 ## 2. Check what the code really has
 
@@ -38,10 +40,10 @@ know what's waiting for review.
 
 Apply these in order:
 
-1. **Finish before starting.** `In progress` build tasks come first, unless blocked. A task
-   `In review` with **changes requested** comes before anything new; recommend addressing the
-   review (`/open-pr --update` after the fixes).
-2. **API-first.** Skip `P7 UI` while any `P0 Must` task in P1–P6 is still open, unless
+1. **Finish before starting.** Build tasks that are `in-progress` (in the file or live) come
+   first, unless blocked. A task in review with **changes requested** comes before anything new;
+   recommend addressing the review (`/open-pr --update` after the fixes).
+2. **API-first.** Skip phase `P7` while any priority `P0` task in P1–P6 is still open, unless
    `--include-ui` is set (decision D-001).
 3. **Phase order.** P1 → P2 → P3 → P4 → P5 → P6.
 4. **Dependencies.** A task is only ready when what it needs exists. Within P2, follow the
@@ -56,10 +58,10 @@ Apply these in order:
    - Session-change notices and announcements need the email queue.
    - Promotion needs academic years and student grades.
    - Plan limits need Paddle and students.
-5. **Priority:** `P0 Must` before `P1 Should` before `P2 Could`.
+5. **Priority:** `P0` (Must) before `P1` (Should) before `P2` (Could).
 6. **Size:** on a tie, the smaller task first.
 
-**Unmerged work.** A dependency that's `In review` (PR open, not merged) still counts as
+**Unmerged work.** A dependency that's in review (PR open, not merged) still counts as
 available, but the new task must be **stacked** on that task's branch. Prefer a ready task that
 needs only merged code. Recommend a stacked task only when nothing comparable is unblocked, and
 never stack more than 2 deep.
@@ -69,21 +71,13 @@ user review them before more work piles up. Still give a recommendation.
 
 ## 4. Decisions that block work
 
-Decision tasks are the user's to make, not something to build. If the top build candidate
-depends on an open decision, say which one and what it changes. Known links:
+Decision tasks are the user's to make, not something to build. Open decisions are phase `P0`
+tasks that aren't `done`; their notes say what they block. If the top build candidate depends on
+one, say which and what it changes. Decisions already made are in `docs/design/decisions.md`
+and their tasks are `done`.
 
-| Decision | Blocks |
-|---|---|
-| Parent sign-in: Clerk vs own magic links | Parent portal sign-in, portal routes' auth |
-| Org addressing: URL vs subdomain | Only if switching away from `/orgs/{orgId}` (already built) |
-| PDF rendering | Invoice PDF + receipts |
-| Search approach | Search with duplicate warnings |
-| Pricing extras (annual, currency) | Paddle subscription billing |
-| Product name and domain | Landing page, email sender domain, production deploy |
-| MVP cut | Every `P2 Could` task |
-
-Also flag `P0 Must` decisions that block nothing yet but are overdue (e.g. the employment
-agreement IP check).
+Also flag priority `P0` decision or manual tasks that are `blocked` on the owner (e.g. a domain to
+register, a real Clerk run to confirm), so the user sees what's waiting on them.
 
 ## 5. Bundling
 
@@ -110,7 +104,7 @@ Alternatives
 2. TUI-yy … — why
 
 Decisions needed from you: <list, or "none blocking">
-Board drift: <tasks whose code exists but aren't Done → run /mark-done>
+Board drift: <tasks whose code exists on main but aren't `done`, or live state `merged` → run /mark-done>
 ```
 
 Name tasks by `TUI-n` and title so `/implement-task` can take them directly.
