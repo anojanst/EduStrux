@@ -3,6 +3,8 @@ export * from './dates';
 export * from './ids';
 export * from './money';
 export * from './permissions';
+export * from './schemas/branches';
 export * from './schemas/common';
+export * from './schemas/curriculum';
 export * from './schemas/orgs';
 export * from './schemas/platform';

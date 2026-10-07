@@ -6,6 +6,8 @@ import type { AppEnv } from './env';
 import { ApiError, errorBody } from './lib/errors';
 import { createRouter } from './lib/openapi';
 import { withDb } from './middleware/db';
+import { branchRoutes } from './modules/branches/routes';
+import { curriculumRoutes } from './modules/curriculum/routes';
 import { meRoutes } from './modules/me/routes';
 import { orgRoutes } from './modules/orgs/routes';
 import { platformRoutes } from './modules/platform/routes';
@@ -23,6 +25,8 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', platformRoutes);
   app.route('/', meRoutes);
   app.route('/', orgRoutes);
+  app.route('/', branchRoutes);
+  app.route('/', curriculumRoutes);
 
   // API docs: generated from the route definitions above.
   app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {

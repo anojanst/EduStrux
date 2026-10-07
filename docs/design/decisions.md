@@ -382,3 +382,85 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   permission map and a new decision. Assumption: recorded from the implementation; the owner
   hasn't stated a reason.
 - **Tasks:** TUI-77.
+
+## D-031 · 2026-10-07 · Every org starts with a "Main" branch
+
+- **Context:** Building branches (TUI-27) raised whether a new org has a branch before the owner
+  adds one.
+- **Decision:** The owner decided every org gets a default branch named "Main" at creation.
+  `POST /orgs` creates it in the same batch as the org and the owner membership (extends D-009).
+  It's recorded inside the `org.created` audit row as `after.defaultBranch`, not as a second
+  audit row, because two rows written in the same millisecond have no reliable order.
+- **Consequences:** Every org has at least one branch, and its last branch can't be deleted
+  (D-034). Migration `0003_backfill_default_branches` gives orgs created before this a "Main"
+  branch whose id is `brn_` plus the org id's ULID, so it's unique and sorts by the org's
+  creation time. The seed script creates its Main branches with the same ids.
+- **Tasks:** TUI-27.
+
+## D-032 · 2026-10-07 · Single-tutor mode means exactly one branch
+
+- **Context:** TUI-27 says to hide branches in single-tutor mode, so the API needed a rule for
+  what the mode allows.
+- **Decision:** The owner decided that an org in single-tutor mode has exactly one branch:
+  - `POST /branches` is refused while the mode is on.
+  - The reverse also holds: `PATCH /` with `singleTutorMode: true` is refused while the org has
+    more than one branch (`fields.singleTutorMode`).
+  - Both refusals are `422 unprocessable`, the business-rule status in D-007. The question put
+    to the owner said 409.
+- **Consequences:** To add a second branch, the owner turns single-tutor mode off first; to turn
+  it on, they delete the extra branches first. Assumption: the API still lists the one branch,
+  and hiding branches in single-tutor mode is left to the web app (P7).
+- **Tasks:** TUI-27.
+
+## D-033 · 2026-10-07 · Setup data: the owner writes, every role reads
+
+- **Context:** The handoff §6 role table had no row for branches, rooms, grade levels and
+  subjects.
+- **Decision:** Writes need `org:write`, which only the owner has. Reads need `org:read`, which
+  every role has (including parent and accountant), across the whole org. The owner decided this
+  for rooms; branches, grade levels and subjects were built the same way (assumption: recorded
+  from the implementation for those three).
+- **Consequences:** A branch manager can't add or edit rooms in their own branch. Because
+  `org:read` isn't branch-scoped, a branch manager sees every branch, not only theirs. Letting
+  other roles write setup data later needs a new permission and a new decision.
+- **Tasks:** TUI-27, TUI-29.
+
+## D-034 · 2026-10-07 · Setup names, branch deletion and rooms
+
+- **Context:** Rules the TUI-27 and TUI-29 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - Branch, grade level and subject names are unique per org, and room names per branch,
+    ignoring case and deleted rows. Partial unique indexes on `lower(name)` enforce it. A clash
+    is `409 conflict` with `fields.name: ['Taken']`.
+  - Deleting a branch (soft delete) is refused with 422 if it's the org's last branch, still has
+    rooms, or any membership lists it in its `branch_ids`.
+  - A room stays in its branch: `PATCH /rooms/{roomId}` takes no `branchId`.
+  - A PATCH that sends only `updatedAt` changes nothing and returns the record. This applies to
+    every PATCH and fixes a 500 on `PATCH /` from TUI-26.
+- **Consequences:**
+  - SQLite's `lower()` folds A–Z only, so names that differ only in the case of an accented
+    letter count as different.
+  - Two creates with the same name at the same moment can both pass the check and hit the
+    index, returning 500 instead of 409. Follow-up (not built): map D1 unique-constraint errors
+    to 409 everywhere.
+  - Deleting a room, grade level or subject doesn't yet check whether it's in use. Courses
+    (TUI-30) and classes (TUI-31) will need those checks once they reference them.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-27, TUI-29 (and TUI-30, TUI-31 for the in-use checks).
+
+## D-035 · 2026-10-07 · Grade levels are one ordered list, not paged
+
+- **Context:** Grade levels are a short, ordered list, and `PUT /grade-levels/order` works on
+  the whole list (TUI-29).
+- **Decision:**
+  - `GET /grade-levels` returns every grade in order as `{ data, nextCursor: null }`. It isn't
+    cursor-paged, an exception to handoff §5. An org can have at most 100 grade levels; creating
+    another is 422.
+  - Positions start at 1. A new grade goes to the end, and deleting one leaves a gap.
+  - `PUT /grade-levels/order` must list every grade exactly once: a duplicate id is 400, an
+    unknown, deleted or other org's id is 404, and a missing grade is 422. It writes one
+    `grade_level.reordered` audit row with the order before and after.
+  - Subjects stay cursor-paged.
+- **Consequences:** The response keeps the usual list shape, so clients read it like any other
+  list. Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-29.

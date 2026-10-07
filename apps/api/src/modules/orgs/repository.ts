@@ -1,7 +1,8 @@
 import { memberships, orgs, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
-import { and, eq, isNull } from 'drizzle-orm';
-import { writeWithAudit, type OrgCtx } from '../../db/scope';
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
+import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type OrgRow = typeof orgs.$inferSelect;
 export type NewOrgRow = typeof orgs.$inferInsert;
@@ -21,11 +22,15 @@ export async function slugTaken(db: Db, slug: string, exceptOrgId?: string) {
   return row !== undefined && row.id !== exceptOrgId;
 }
 
-/** Creates the org and makes the creator its owner, in one batch with the audit row. */
+/**
+ * Creates the org, makes the creator its owner and adds its default branch, in one batch with
+ * the audit row. The branch is recorded in that same `org.created` row.
+ */
 export async function insertOrgWithOwner(
   db: Db,
   org: NewOrgRow & { id: string },
   ownerUserId: string,
+  defaultBranch: { row: unknown; statement: BatchItem<'sqlite'> },
 ) {
   const ctx: OrgCtx = { db, orgId: org.id, actorUserId: ownerUserId };
   await writeWithAudit(
@@ -39,9 +44,31 @@ export async function insertOrgWithOwner(
         role: 'owner',
         branchIds: null,
       }),
+      defaultBranch.statement,
     ],
-    { action: 'org.created', entityType: 'org', entityId: org.id, after: org },
+    {
+      action: 'org.created',
+      entityType: 'org',
+      entityId: org.id,
+      after: { ...org, defaultBranch: defaultBranch.row },
+    },
   );
+}
+
+/** Active memberships whose branch list includes this branch (null branch lists mean all). */
+export async function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(memberships)
+    .where(
+      inOrg(
+        ctx,
+        memberships,
+        sql`exists (select 1 from json_each(${memberships.branchIds}) where value = ${branchId})`,
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
 }
 
 export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges) {

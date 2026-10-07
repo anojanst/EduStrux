@@ -60,6 +60,9 @@ async function main() {
     sql.push(
       `INSERT OR IGNORE INTO orgs (id, name, slug, country, currency, timezone, locale, date_format, single_tutor_mode, plan, status, trial_ends_at, created_at, updated_at)
        VALUES (${q(org.id)}, ${q(org.name)}, ${q(org.slug)}, ${q(org.country)}, ${q(org.currency)}, ${q(org.timezone)}, ${q(org.locale)}, ${q(org.dateFormat)}, 0, 'trial', 'trialing', ${q(trialEnds)}, ${q(now)}, ${q(now)});`,
+      // Every org has a branch from creation. Same id as migration 0003's backfill would give it.
+      `INSERT OR IGNORE INTO branches (id, org_id, name, address, created_at, updated_at)
+       VALUES (${q(org.id.replace(/^org_/, 'brn_'))}, ${q(org.id)}, 'Main', NULL, ${q(now)}, ${q(now)});`,
     );
   }
 

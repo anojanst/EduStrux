@@ -1,7 +1,8 @@
 import type { Db } from '@edustrux/db';
 import { newId, type CreateOrg, type Org, type UpdateOrg } from '@edustrux/shared';
 import type { OrgCtx } from '../../db/scope';
-import { conflict, notFound, staleData } from '../../lib/errors';
+import { conflict, notFound, staleData, unprocessable } from '../../lib/errors';
+import * as branches from '../branches/service';
 import * as repo from './repository';
 
 const TRIAL_DAYS = 14;
@@ -58,6 +59,7 @@ export async function createOrg(db: Db, userId: string, input: CreateOrg): Promi
       trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString(),
     },
     userId,
+    branches.defaultBranch(db, id),
   );
 
   const created = await repo.findOrg({ db, orgId: id, actorUserId: userId });
@@ -77,6 +79,14 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
   const { updatedAt: _ignored, ...changes } = input;
+  if (Object.keys(changes).length === 0) return toOrg(before);
+  if (changes.singleTutorMode && !before.singleTutorMode) {
+    if ((await branches.countBranches(ctx)) > 1) {
+      throw unprocessable('Single-tutor mode allows one branch. Delete the other branches first.', {
+        singleTutorMode: ['More than one branch'],
+      });
+    }
+  }
   if (changes.slug && changes.slug !== before.slug) {
     if (await repo.slugTaken(ctx.db, changes.slug, ctx.orgId)) {
       throw conflict('That slug is taken', { slug: ['Taken'] });
@@ -85,4 +95,9 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
 
   await repo.updateOrg(ctx, before, changes);
   return getOrg(ctx);
+}
+
+/** How many staff are limited to this branch (memberships with it in their branch list). */
+export function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
+  return repo.countMembersLimitedToBranch(ctx, branchId);
 }

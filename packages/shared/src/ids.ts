@@ -8,6 +8,8 @@ export const ID_PREFIXES = {
   invitation: 'ivt',
   branch: 'brn',
   room: 'rm',
+  gradeLevel: 'grd',
+  subject: 'sbj',
   student: 'stu',
   family: 'fam',
   guardian: 'gdn',
