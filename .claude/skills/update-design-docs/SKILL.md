@@ -1,7 +1,7 @@
 ---
 name: update-design-docs
 description: Keep EduStrux's design docs (docs/design/handoff.md, docs/design/decisions.md) and the Notion project page in line with what was built or decided. Use after implementing a task, when the user makes a product or technical decision, or when they say "update the design docs" or "record this decision".
-argument-hint: "[implementation report | decision text | --from-diff]"
+argument-hint: '[implementation report | decision text | --from-diff]'
 context: fork
 agent: general-purpose
 background: false
@@ -12,18 +12,19 @@ background: false
 You keep the design docs true to the code and to the user's decisions. Read `CLAUDE.md` first.
 
 Arguments: `$ARGUMENTS` — one of:
+
 - an implementation report from `/implement-task` (its "Design changes" list, endpoints, tables)
 - a decision the user stated ("parents sign in with our own magic links")
 - `--from-diff`: work out what changed from `git diff` and `git status` yourself
 
 ## The documents
 
-| Doc | What it's for | How to edit |
-|---|---|---|
-| `docs/design/decisions.md` | Every decision made during the build | Append only. Next number `D-NNN`. A changed decision gets a new entry, and the old one gets "**Superseded by D-xxx**" added under its title. |
-| `docs/design/handoff.md` | The living spec: what the product does and how it's built | Smallest edit that makes it true. Cite `(D-xxx)` where a decision changed it. Update the `Last updated:` date. |
-| Notion project page (`3f0b1cfeccf781ac9191c65fa90efd10`) | One-page overview: goal, stack, phases | Only when the stack, phases or goal change. Fetch first, then make a targeted `update_content` edit. |
-| `README.md` Conventions | How to write code here | Only when a coding convention changes |
+| Doc                                                      | What it's for                                             | How to edit                                                                                                                                  |
+| -------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/design/decisions.md`                               | Every decision made during the build                      | Append only. Next number `D-NNN`. A changed decision gets a new entry, and the old one gets "**Superseded by D-xxx**" added under its title. |
+| `docs/design/handoff.md`                                 | The living spec: what the product does and how it's built | Smallest edit that makes it true. Cite `(D-xxx)` where a decision changed it. Update the `Last updated:` date.                               |
+| Notion project page (`3f0b1cfeccf781ac9191c65fa90efd10`) | One-page overview: goal, stack, phases                    | Only when the stack, phases or goal change. Fetch first, then make a targeted `update_content` edit.                                         |
+| `README.md` Conventions                                  | How to write code here                                    | Only when a coding convention changes                                                                                                        |
 
 ## What goes where
 

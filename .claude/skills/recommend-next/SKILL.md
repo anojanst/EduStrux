@@ -1,7 +1,7 @@
 ---
 name: recommend-next
 description: Recommend the next EduStrux task (or a small bundle of related tasks) to build, based on the Notion board, phase order, dependencies and what already exists in the repo. Read-only. Use when the user asks "what's next", "what should I build", or before starting new work.
-argument-hint: "[--module <name>] [--include-ui] [--count N]"
+argument-hint: '[--module <name>] [--include-ui] [--count N]'
 context: fork
 agent: general-purpose
 background: false
@@ -72,15 +72,15 @@ user review them before more work piles up. Still give a recommendation.
 Decision tasks are the user's to make, not something to build. If the top build candidate
 depends on an open decision, say which one and what it changes. Known links:
 
-| Decision | Blocks |
-|---|---|
-| Parent sign-in: Clerk vs own magic links | Parent portal sign-in, portal routes' auth |
-| Org addressing: URL vs subdomain | Only if switching away from `/orgs/{orgId}` (already built) |
-| PDF rendering | Invoice PDF + receipts |
-| Search approach | Search with duplicate warnings |
-| Pricing extras (annual, currency) | Paddle subscription billing |
-| Product name and domain | Landing page, email sender domain, production deploy |
-| MVP cut | Every `P2 Could` task |
+| Decision                                 | Blocks                                                      |
+| ---------------------------------------- | ----------------------------------------------------------- |
+| Parent sign-in: Clerk vs own magic links | Parent portal sign-in, portal routes' auth                  |
+| Org addressing: URL vs subdomain         | Only if switching away from `/orgs/{orgId}` (already built) |
+| PDF rendering                            | Invoice PDF + receipts                                      |
+| Search approach                          | Search with duplicate warnings                              |
+| Pricing extras (annual, currency)        | Paddle subscription billing                                 |
+| Product name and domain                  | Landing page, email sender domain, production deploy        |
+| MVP cut                                  | Every `P2 Could` task                                       |
 
 Also flag `P0 Must` decisions that block nothing yet but are overdue (e.g. the employment
 agreement IP check).

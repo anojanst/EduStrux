@@ -1,7 +1,7 @@
 ---
 name: implement-task
 description: Implement one EduStrux Notion task (or a small bundle) end to end, following the repo's module pattern, until it meets the Definition of Done. Use when the user says "implement TUI-n", "build <feature>", or the commander hands over a task.
-argument-hint: "<TUI-n> [TUI-n ...] [--no-ship]"
+argument-hint: '<TUI-n> [TUI-n ...] [--no-ship]'
 ---
 
 # Implement task
@@ -42,6 +42,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 ## 2. Build, in this order
 
 **Schema** (`packages/db/src/schema/<module>.ts`, exported from `schema/index.ts`)
+
 - Spread `...orgColumns()` into every org-owned table. Every index starts with `org_id`.
 - Money is an integer minor-units column plus a currency column. Lesson dates and times are local
   `text` (`YYYY-MM-DD`, `HH:MM`). Event times are ISO UTC text.
@@ -50,6 +51,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   `pnpm --filter @edustrux/db exec drizzle-kit generate --name <module_change>`
 
 **Schemas** (`packages/shared/src/schemas/<module>.ts`, exported from `src/index.ts`)
+
 - Import `z` from `../zod`. Give the resource, create and update schemas `.openapi('Name')`.
 - Update schemas are `.partial()` with `updatedAt` required. Reuse `Money`, `LocalDate`,
   `LocalTime`, `PageQuery` and `page()` from `common.ts`.
@@ -57,6 +59,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   handoff §6 table for every role.
 
 **Repository** (`apps/api/src/modules/<module>/repository.ts`)
+
 - The only file that queries D1. Every function takes `OrgCtx` and filters with
   `inOrg(ctx, table, ...)`.
 - Every write goes through `writeWithAudit(ctx, [statements], { action: '<entity>.<verb>', ... })`.
@@ -64,6 +67,7 @@ small choices, pick a sensible default and list it in your report as a decision.
   `limit + 1`.
 
 **Service** (`service.ts`)
+
 - Business rules, `updatedAt` stale checks (`staleData()`), uniqueness and existence checks.
   Throw the helpers from `lib/errors.ts`.
 - Apply the role's scope: `branch` limits to `membership.branchIds` (when it isn't null), and
@@ -72,6 +76,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 - Map rows to API shapes (camelCase, no `orgId`/`deletedAt`).
 
 **Routes** (`routes.ts`)
+
 - `createRoute` with `tags`, `summary`, `middleware: orgAccess('<permission>')`, params built from
   `OrgParams.extend({...})`, `jsonBody(...)` for bodies, and `json(...)` plus `errors(...)` for
   every response.
@@ -81,6 +86,7 @@ small choices, pick a sensible default and list it in your report as a decision.
 - Mount the router in `apps/api/src/app.ts`.
 
 **Tests** (`apps/api/test/<module>.test.ts`, using the helpers in `test/helpers.ts`)
+
 - The happy path for every endpoint.
 - Validation errors (400 with `fields`).
 - Another org's ids return 404 for every route.

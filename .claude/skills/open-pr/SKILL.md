@@ -1,7 +1,7 @@
 ---
 name: open-pr
 description: Commit a finished EduStrux task on its branch, push it, and open a GitHub pull request with a generated review description, then set the Notion task to In review. Also updates an open PR after review feedback. Use when a task is implemented, or the user says "commit this", "open a PR", "raise a PR", or "push the fixes".
-argument-hint: "<TUI-n> [TUI-n ...] [--report <implementation report>] [--draft] [--update]"
+argument-hint: '<TUI-n> [TUI-n ...] [--report <implementation report>] [--draft] [--update]'
 ---
 
 # Open PR
@@ -83,6 +83,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 
 `<type>` is one of:
+
 - `feat`: new endpoints or behaviour
 - `fix`: a bug fix
 - `docs`: decisions or design docs only
@@ -121,34 +122,40 @@ Description template (drop sections that would be empty):
 
 ````markdown
 ## Summary
+
 <2–3 sentences: what this delivers and why it matters for the product>
 
 **Task:** [TUI-n <title>](<notion url>) · Phase <phase>
 <"Stacked on #N — merge that first." if stacked>
 
 ## Changes
-| Method | Path | Permission |
-|---|---|---|
-| POST | /api/v1/orgs/{orgId}/branches | staff:write |
+
+| Method | Path                          | Permission  |
+| ------ | ----------------------------- | ----------- |
+| POST   | /api/v1/orgs/{orgId}/branches | staff:write |
 
 - **Tables:** `branches`, `rooms` — migration `0002_setup_branches.sql`
 - **Shared schemas:** `Branch`, `CreateBranch`, …
 - **Other:** <middleware, jobs, cron>
 
 ## Design changes
+
 - D-0NN <title> — <one line> ([decisions.md](docs/design/decisions.md))
-<or "None — matches the handoff.">
+  <or "None — matches the handoff.">
 
 ## How to test
+
 ```bash
 pnpm install && pnpm db:migrate && pnpm dev
 pnpm dev:token owner      # paste into Swagger → Authorize at http://localhost:8787/api/docs
 ```
+
 1. <concrete call with an example body, and what to expect>
 2. With `pnpm dev:token teacher`: <call> → 403
 3. With `pnpm dev:token owner_b`: <call with a Bright Minds id> → 404
 
 ## Checks
+
 - [x] `pnpm typecheck`
 - [x] `pnpm test` — <N> passed (<M> new)
 - [x] Migration generated
@@ -156,9 +163,11 @@ pnpm dev:token owner      # paste into Swagger → Authorize at http://localhost
 - [ ] Tried in Swagger by reviewer
 
 ## Review focus
+
 - <the 1–3 places where a mistake would hurt most: money maths, scoping, a migration>
 
 ## Follow-ups
+
 - <deferred items, TODOs, related tasks>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

@@ -1,7 +1,7 @@
 ---
 name: mark-done
 description: Reconcile the EduStrux Notion task board with what is actually built and merged, using the repo and GitHub PR states, and set tasks to Done (only once their PR is merged), In review or In progress. Use after implementing something, when the user says a task is finished, or to sync the board ("mark done", "update the tickets", "sync the board").
-argument-hint: "[TUI-n ...] [--sync] [--confirm TUI-n]"
+argument-hint: '[TUI-n ...] [--sync] [--confirm TUI-n]'
 context: fork
 agent: general-purpose
 background: false
@@ -38,12 +38,12 @@ Run `git fetch origin --prune` first. For every task with a `PR` url:
 gh pr view <url> --json number,state,mergedAt,isDraft,baseRefName,headRefName,reviewDecision
 ```
 
-| PR state | Status to set |
-|---|---|
-| `MERGED` into `main` | Candidate for Done; judge it in step 4 against `origin/main` |
-| `MERGED` into another task branch (stacked) | Leave `In review`, noting "merged into stack, waiting for #N" |
-| `OPEN` | `In review` (draft PRs too); note `APPROVED` ("approved, ready to merge") or `CHANGES_REQUESTED`. If the PR author is the owner, `reviewDecision` stays empty, so read the owner's comments instead |
-| `CLOSED` without merge | `In progress`, noting "PR #N closed unmerged"; ask whether to reopen or drop |
+| PR state                                    | Status to set                                                                                                                                                                                       |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MERGED` into `main`                        | Candidate for Done; judge it in step 4 against `origin/main`                                                                                                                                        |
+| `MERGED` into another task branch (stacked) | Leave `In review`, noting "merged into stack, waiting for #N"                                                                                                                                       |
+| `OPEN`                                      | `In review` (draft PRs too); note `APPROVED` ("approved, ready to merge") or `CHANGES_REQUESTED`. If the PR author is the owner, `reviewDecision` stays empty, so read the owner's comments instead |
+| `CLOSED` without merge                      | `In progress`, noting "PR #N closed unmerged"; ask whether to reopen or drop                                                                                                                        |
 
 For a task with no `PR` but a `Branch`, check `gh pr list --head <branch>` and fill in `PR` if a
 PR exists. Code that exists only on an unmerged branch is never Done.
@@ -89,14 +89,14 @@ commander may be mid-task on a branch.
 
 For each task, check every Definition of Done item:
 
-| Check | How |
-|---|---|
-| Merged | Step 2 says `MERGED` into `main` |
-| Endpoints exist | Every path+method in `Endpoints` is in the routes on `origin/main` |
-| Tests | Tests on main hit those paths, with cases for 400, another org's 404, a refused role's 403, and the audit log for writes |
-| Green | Step 3 checks passed |
-| Migration | If the task needs tables, they're in `packages/db/src/schema` and a migration exists |
-| Design recorded | Deviations in the PR's "Design changes" are reflected in `docs/design/` |
+| Check           | How                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Merged          | Step 2 says `MERGED` into `main`                                                                                         |
+| Endpoints exist | Every path+method in `Endpoints` is in the routes on `origin/main`                                                       |
+| Tests           | Tests on main hit those paths, with cases for 400, another org's 404, a refused role's 403, and the audit log for writes |
+| Green           | Step 3 checks passed                                                                                                     |
+| Migration       | If the task needs tables, they're in `packages/db/src/schema` and a migration exists                                     |
+| Design recorded | Deviations in the PR's "Design changes" are reflected in `docs/design/`                                                  |
 
 Tasks with no `Endpoints` (infra, platform, tooling) are judged against their title and Notes by
 reading the relevant code on `origin/main`.
