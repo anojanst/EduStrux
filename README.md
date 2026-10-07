@@ -44,14 +44,15 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 
 ## Commands
 
-| Command            |                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| `pnpm dev`         | API on :8787 with local D1, R2 and Queues                                             |
-| `pnpm test`        | Vitest inside the Workers runtime, against a fresh local D1                           |
-| `pnpm typecheck`   | All packages                                                                          |
-| `pnpm db:generate` | New migration from schema changes in `packages/db/src/schema`                         |
-| `pnpm db:migrate`  | Apply migrations locally                                                              |
-| `pnpm board`       | The project board from `docs/project/tasks/` ([how it works](docs/project/README.md)) |
+| Command            |                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `pnpm dev`         | API on :8787 with local D1, R2 and Queues                                              |
+| `pnpm test`        | Vitest inside the Workers runtime, against a fresh local D1                            |
+| `pnpm typecheck`   | All packages                                                                           |
+| `pnpm db:generate` | New migration from schema changes in `packages/db/src/schema`                          |
+| `pnpm db:migrate`  | Apply migrations locally                                                               |
+| `pnpm db:studio`   | Browse and edit the local D1 database in Drizzle Studio (https://local.drizzle.studio) |
+| `pnpm board`       | The project board from `docs/project/tasks/` ([how it works](docs/project/README.md))  |
 
 ## Conventions
 

@@ -13,12 +13,14 @@
     "test": "turbo run test",
     "db:generate": "pnpm --filter @edustrux/db generate",
     "db:migrate": "pnpm --filter @edustrux/api db:migrate:local",
+    "db:studio": "pnpm --filter @edustrux/db studio",
     "seed": "pnpm --filter @edustrux/api seed",
     "dev:token": "pnpm --filter @edustrux/api dev:token",
     "board": "node scripts/board.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "@libsql/client": "^0.18.0",
     "@types/node": "^24.19.1",
     "prettier": "^3.6.0",
     "turbo": "^2.11.7",
