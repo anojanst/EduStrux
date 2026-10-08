@@ -11,6 +11,7 @@ import {
 import type { OrgCtx } from '../../db/scope';
 import { conflict, notFound, staleData, unprocessable } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
+import * as calendar from '../calendar/service';
 import * as orgs from '../orgs/service';
 import * as repo from './repository';
 
@@ -94,7 +95,8 @@ export async function updateBranch(ctx: OrgCtx, id: string, input: UpdateBranch)
 
 /**
  * Soft-deletes a branch. Refused while anything still depends on it: the org must keep one
- * branch, rooms must be deleted first, and staff limited to the branch must be moved first.
+ * branch; its rooms and its own holidays must be deleted first; and staff limited to the
+ * branch must be moved first.
  */
 export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findBranchOr404(ctx, id);
@@ -105,6 +107,10 @@ export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
   const roomCount = await repo.countRooms(ctx, id);
   if (roomCount > 0) {
     throw unprocessable(`Delete this branch's ${roomCount} room(s) first.`);
+  }
+  const holidayCount = await calendar.countBranchHolidays(ctx, id);
+  if (holidayCount > 0) {
+    throw unprocessable(`Delete this branch's ${holidayCount} holiday(s) first.`);
   }
   const staffCount = await orgs.countMembersLimitedToBranch(ctx, id);
   if (staffCount > 0) {

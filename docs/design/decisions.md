@@ -32,6 +32,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   Clerk development instance. `pnpm dev:token <role>` creates a session through Clerk's Backend
   API and mints a token with `expiresInSeconds` (8h default). No JWT template needed.
 - **Consequences:** Scripts refuse non-`sk_test_` keys. Not yet run against a real Clerk instance.
+- **Update 2026-10-08:** `pnpm seed` and `pnpm dev:token <role>` were confirmed against the
+  owner's real Clerk development instance (TUI-88). Tokens for owner, teacher and owner_b are
+  accepted by the API with the right role and org.
 
 ## D-004 · 2026-10-05 · Tests sign their own tokens
 
@@ -369,6 +372,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `pnpm board`. `CLAUDE.md`, the workflow skills and `docs/project/README.md` describe the new
   flow; D-012's PR-per-task rule stands.
 - **Tasks:** none (workflow change).
+- **Update 2026-10-08:** `pnpm board:web` (the board.md package, added in #11) serves a local web
+  board of the task files on http://127.0.0.1:4600. Status changes made by dragging cards still
+  ship in a `chore/board-<slug>` PR.
 
 ## D-030 · 2026-10-07 · The audit log is owner-only
 
@@ -464,3 +470,92 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Consequences:** The response keeps the usual list shape, so clients read it like any other
   list. Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-29.
+
+## D-036 · 2026-10-08 · Terms are optional: a class without a term is billed monthly
+
+- **Context:** Building terms (TUI-28) raised how a centre that bills monthly, without school
+  terms, fits a model where classes and invoices hang off terms.
+- **Decision:** The owner decided terms are optional per class:
+  - A class either belongs to a term and is billed per term, or has no term: it runs open-ended
+    from its start date and is billed monthly.
+  - One centre can mix both kinds of class.
+  - Academic years always exist, because student grades are stored per academic year.
+- **Consequences:**
+  - A class's term will be optional (TUI-31), and pricing (TUI-36) and invoice generation
+    (TUI-37) must handle both kinds of class.
+  - TUI-37 needs a month-based "generate invoices" action next to
+    `POST /terms/{id}/generate-invoices`. Its path isn't decided yet.
+- **Tasks:** TUI-28 (and TUI-31, TUI-36, TUI-37).
+
+## D-037 · 2026-10-08 · Academic year and term rules
+
+- **Context:** TUI-28 needed rules for how academic years and terms relate in time.
+- **Decision:** The owner decided:
+  - Academic years can't overlap, not even by one day. Back-to-back years are fine.
+  - A term sits inside its academic year, and terms can't overlap each other.
+  - Changing a year's dates is refused if the year would overlap another year or leave one of
+    its terms outside.
+  - Academic years can't be deleted: there's no `DELETE /academic-years/{academicYearId}`.
+  - A term stays in its academic year: `PATCH /terms/{termId}` takes no `academicYearId`.
+  - Every refusal is `422 unprocessable`.
+- **Consequences:** Any date belongs to at most one academic year and at most one term. A term in
+  the wrong year is deleted and created again. There's no "current academic year" flag yet;
+  families and students (TUI-32) will need one, worked out in the org's timezone.
+- **Tasks:** TUI-28 (and TUI-32).
+
+## D-038 · 2026-10-08 · Holidays: a date range, org-wide or for one branch
+
+- **Context:** TUI-28 needed to settle what a holiday covers.
+- **Decision:** The owner decided:
+  - A holiday is a date range; a single day has the same start and end date.
+  - It closes the whole org by default, or one branch when `branchId` is given.
+  - Holidays aren't tied to academic years, since a break can cross the boundary between two
+    years.
+  - `GET /holidays?branchId=X` returns what closes branch X: its own holidays plus the org-wide
+    ones. `?from` and `?to` keep holidays that touch the range.
+  - There's no `PATCH /holidays/{holidayId}` (it isn't in the endpoint list): delete the holiday
+    and add it again.
+- **Consequences:**
+  - Session generation (TUI-31) must skip a date when it falls in a holiday that is org-wide or
+    for the class's branch.
+  - Deleting a branch is also refused (422) while it has its own holidays; org-wide holidays
+    don't block it. This extends D-034's branch-deletion rules. Assumption: recorded from the
+    implementation; the owner hasn't stated this rule.
+- **Tasks:** TUI-28 (and TUI-31).
+
+## D-039 · 2026-10-08 · Tax rates: owner writes, every role reads; percent is a decimal string
+
+- **Context:** TUI-35. Handoff §6's "Org settings, tax, plan" row gave the owner full access, the
+  accountant read access and other roles none.
+- **Decision:** The owner decided:
+  - Every role reads tax rates (`org:read`); only the owner writes them (`org:write`), the same
+    as setup data in D-033. This replaces the tax part of the §6 row.
+  - `percent` is a decimal string (`"15"`, `"8.875"`), from 0 to 100 with up to 3 decimals. A
+    JSON number is rejected, so a rate is never a float.
+  - Rates are stored as integer thousandths of a percent (`rate_milli_percent`: 8.875% = 8875)
+    and returned in shortest form (`"15.0"` comes back as `"15"`).
+  - Every rate has a required `inclusive` flag.
+  - No tax rates means no tax, which is a valid setup.
+  - Invoices show the org's existing `taxNumber`.
+- **Consequences:** Parents and teachers can see the org's tax rates. Shared helpers in
+  `packages/shared` convert between the string and the stored integer. Deleting a tax rate
+  doesn't yet check whether it's in use; price rules (TUI-36) will need that check.
+- **Tasks:** TUI-35 (and TUI-36, TUI-37).
+
+## D-040 · 2026-10-08 · Calendar and tax-rate lists, names, dates and permissions
+
+- **Context:** Rules the TUI-28 and TUI-35 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - Academic years, terms and holidays: every role reads (`org:read`), only the owner writes
+    (`org:write`), as for setup data (D-033).
+  - Academic years, terms and holidays are listed by start date, then id, with normal cursor
+    paging; the cursor holds both. Tax rates are listed oldest first by id.
+  - Academic year and tax rate names are unique per org, and term names within their academic
+    year, ignoring case and deleted rows (`409 conflict`, as in D-034). Holiday names can repeat.
+  - Date ranges include both ends. An end date before the start date is
+    `400 validation_failed` on `endDate`, including a PATCH whose new end falls before the stored
+    start. A malformed date gets only its own format error.
+- **Consequences:** Deleting a term doesn't yet check whether it's in use; classes (TUI-31) will
+  need that check. Assumption: recorded from the implementation; the owner hasn't stated these
+  rules.
+- **Tasks:** TUI-28, TUI-35 (and TUI-31).

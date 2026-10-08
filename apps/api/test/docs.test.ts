@@ -22,6 +22,14 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/grade-levels/{gradeLevelId}',
         '/api/v1/orgs/{orgId}/subjects',
         '/api/v1/orgs/{orgId}/subjects/{subjectId}',
+        '/api/v1/orgs/{orgId}/academic-years',
+        '/api/v1/orgs/{orgId}/academic-years/{academicYearId}',
+        '/api/v1/orgs/{orgId}/terms',
+        '/api/v1/orgs/{orgId}/terms/{termId}',
+        '/api/v1/orgs/{orgId}/holidays',
+        '/api/v1/orgs/{orgId}/holidays/{holidayId}',
+        '/api/v1/orgs/{orgId}/tax-rates',
+        '/api/v1/orgs/{orgId}/tax-rates/{taxRateId}',
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);
