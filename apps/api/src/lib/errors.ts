@@ -32,5 +32,9 @@ export const conflict = (message: string, fields?: FieldErrors) =>
 export const staleData = () =>
   new ApiError(409, 'stale_data', 'This record was changed by someone else. Reload and try again.');
 
+/** A 400 the schema can't catch, e.g. a PATCH whose new end date is before the stored start. */
+export const validationFailed = (fields: FieldErrors) =>
+  new ApiError(400, 'validation_failed', 'Request validation failed', fields);
+
 export const unprocessable = (message: string, fields?: FieldErrors) =>
   new ApiError(422, 'unprocessable', message, fields);

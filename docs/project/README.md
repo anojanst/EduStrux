@@ -38,11 +38,16 @@ pnpm board --all            # include done and deferred
 pnpm board --phase P2       # one phase; also --module billing, --status todo
 pnpm board --json           # every task as JSON
 pnpm board --check          # validate the task files
+pnpm board:web              # local web board on http://127.0.0.1:4600 (board.md)
 ```
 
 `pnpm board` reads the task files, then adds what's happening now: a local branch for a task shows
 it as _in progress_, and an open pull request shows it as _in review_. It uses `gh` for PR state
 and still works without it (`--offline`).
+
+`pnpm board:web` shows the same task files as columns in the browser, with the same live branch
+and PR state (`boardmd.config.json`). Dragging a card changes only its `status:` line, and that
+edit still ships in a `chore/board-<slug>` PR.
 
 ## A task file
 

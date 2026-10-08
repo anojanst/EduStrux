@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-07 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-08 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -102,7 +102,7 @@ tuition-app/
 └─ turbo.json
 ```
 
-Inside `apps/api`, organise **by module, not by layer**: orgs, branches, people, curriculum, classes, enrolment, attendance, learning, billing, comms, portal, reports, platform. Each module owns its routes, services and repositories. Modules call each other only through services, never by reading each other's tables. Any module can be split out later if needed.
+Inside `apps/api`, organise **by module, not by layer**: orgs, branches, calendar, people, curriculum, classes, enrolment, attendance, learning, billing, comms, portal, reports, platform. Each module owns its routes, services and repositories. Modules call each other only through services, never by reading each other's tables. Any module can be split out later if needed.
 
 ### No microservices
 Microservices would add deploy, debugging and data-consistency overhead with no benefit at this stage. Reasons to split something out later: heavy or slow processing (bulk PDFs, the AI add-on), an isolated outside integration (WhatsApp webhooks), or a second developer owning a module.
@@ -148,10 +148,10 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 |---|---|
 | Base path | `/api/v1`; org data under `/orgs/{orgId}`; current user under `/me`; public forms under `/public/{orgSlug}`. Orgs are addressed by path, not subdomain. Public web pages use the slug too, e.g. `/f/{orgSlug}/…` for enquiry and enrolment forms (later the parent portal link); a vanity subdomain may come later as a redirect (D-020). |
 | Format | JSON, camelCase |
-| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `stu_`, `fam_`, `crs_`, `cls_`, `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
-| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). |
+| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `crs_`, `cls_`, `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
+| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update; one that sends only `updatedAt` changes nothing and returns the record (D-034). `DELETE` is a soft delete (`deleted_at`) and returns 204. |
-| Unique names | Setup names (branches, grade levels, subjects; rooms within a branch) are unique per org, ignoring case and deleted rows. A clash is 409 `conflict` with `fields.name` (D-034). |
+| Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). |
 | Actions | Verb sub-path with `POST`, e.g. `POST /terms/{id}/generate-invoices` |
 | Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` until `succeeded` or `failed`. Starting a job writes a `job.started` audit row. A failed try is retried up to 3 times, so job handlers must be idempotent (D-017). |
 | Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
@@ -159,7 +159,8 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. `code` (and field error codes) is the stable key the client translates; `message` is English, for developers (D-015). |
 | Language | The API is locale-neutral: no `Accept-Language`, no translated responses. It returns raw values (money in minor units + ISO 4217 code, UTC timestamps, `YYYY-MM-DD` dates) and clients format them with shared helpers in `packages/shared`, which the API also uses for emails, PDFs and crons. User-facing strings go through `t('key')` with a single `en` catalog: the web app's, and one for server-rendered text (system emails, PDFs). Org-authored content is never translated (D-015). |
 | Money | Integer minor units + currency: `{ "amount": 2490, "currency": "NZD" }`. Decimal places per currency come from a fixed ISO 4217 table (JPY 0, KWD 3), not runtime `Intl` data. |
-| Dates/times | Lessons store a local date and time (`"date": "2026-10-14", "start": "16:00"`) plus the org's timezone, so lessons stay at 4 pm across daylight-saving changes. A local time skipped when clocks go forward moves forward by the gap; one that happens twice resolves to the earlier instant (D-016). Weekdays are ISO: 1 = Monday … 7 = Sunday. Event timestamps are ISO UTC. |
+| Tax rates | `rateBps`: an integer in basis points, 0–10000 (1500 = 15%, 1250 = 12.5%, 0 = zero-rated), an integer like money's minor units. Only 2 decimals of a percent are supported (8.875% can't be entered). Non-integers, strings, negatives and values over 10000 are 400 (D-039). |
+| Dates/times | Lessons store a local date and time (`"date": "2026-10-14", "start": "16:00"`) plus the org's timezone, so lessons stay at 4 pm across daylight-saving changes. A local time skipped when clocks go forward moves forward by the gap; one that happens twice resolves to the earlier instant (D-016). Weekdays are ISO: 1 = Monday … 7 = Sunday. Event timestamps are ISO UTC. Date ranges (`startDate`, `endDate`) include both ends; one day has the same start and end. An end before the start is 400 on `endDate`, including a PATCH whose new end falls before the stored start (D-040). |
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |
@@ -172,8 +173,9 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 
 | Area | Owner | Branch manager | Front desk | Teacher | Parent | Accountant |
 |---|---|---|---|---|---|---|
-| Org settings, tax, plan | Full | — | — | — | — | Read |
-| Branches, rooms, grade levels, subjects (D-033) | Full | Read | Read | Read | Read | Read |
+| Org settings, plan | Full | — | — | — | — | Read |
+| Branches, rooms, grade levels, subjects, academic years, terms, holidays (D-033, D-040) | Full | Read | Read | Read | Read | Read |
+| Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
 | Families and students | Full | Branch | Branch | Own classes, read | Own family | — |
 | Classes and timetable | Full | Branch | Branch | Own classes, read | Own children, read | — |
@@ -183,7 +185,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Reports | Full | Branch | Limited | Own classes | — | Money only |
 | Audit log (D-030) | Full | — | — | — | — | — |
 
-Setup data (branches, rooms, grade levels, subjects) is read org-wide, so a branch manager sees every branch, not only theirs (D-033).
+Setup data (branches, rooms, grade levels, subjects, the calendar and tax rates) is read org-wide, so a branch manager sees every branch, not only theirs (D-033).
 
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
@@ -199,11 +201,11 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 
 | Area | Tables | Key columns |
 |---|---|---|
-| Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale (formatting region, `en-*` only, D-015), date format (overrides the locale's default), plan, status, slug, single-tutor mode (one branch only, D-032); branch name, address (every org starts with "Main", D-031); room → branch, capacity; tax rate %, inclusive flag |
+| Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale (formatting region, `en-*` only, D-015), date format (overrides the locale's default), plan, status, slug, single-tutor mode (one branch only, D-032); branch name, address (every org starts with "Main", D-031); room → branch, capacity; tax rate name, rate in basis points (`rate_bps`, 1500 = 15%), inclusive flag (D-039) |
 | People and access | `users`, `memberships`, `invitations` | `clerk_user_id`; role, branch ids, status |
-| Calendar | `academic_years`, `terms`, `holidays` | start/end dates; term → academic year |
+| Calendar | `academic_years`, `terms`, `holidays` | name, start/end dates; academic years never overlap; term → academic year, inside it, no overlapping terms (D-037); holiday date range, optional branch (null = org-wide) (D-038) |
 | Curriculum | `grade_levels`, `subjects`, `courses` | grade name, sort order (from 1, gaps allowed, at most 100 grades per org, D-035); subject name; **course = subject × grade** (+ optional curriculum, teaching medium, default price, duration) |
-| Classes | `classes`, `class_schedules`, `sessions` | course, term, branch, room, teacher, capacity; weekly recurrence rule; dated session (local date/time, status) |
+| Classes | `classes`, `class_schedules`, `sessions` | course, term (optional: no term = open-ended from its start date, billed monthly, D-036), branch, room, teacher, capacity; weekly recurrence rule; dated session (local date/time, status) |
 | Families | `families`, `guardians`, `students`, `student_grades` | billing contact, preferred channel, language (stored only; unused in the MVP, D-015); consents; **grade per academic year**; normalised (lower-case, accent-stripped) name columns for search and duplicate warnings (D-026) |
 | Enrolment | `enrolments`, `enrolment_requests` | student, class, start/end, price override, status |
 | Attendance | `attendance`, `absence_notices`, `makeup_policies`, `makeup_credits`, `makeup_bookings` | session, student, status; credit source, expiry, used-by |
@@ -225,7 +227,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 ## 8. MVP feature scope
 
 ### In the MVP
-- **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly), locale settings (formatting region; UI in English, D-015), tax settings, academic years, grade levels and subjects.
+- **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly: terms are optional per class, D-036), locale settings (formatting region; UI in English, D-015), tax settings, academic years, grade levels and subjects.
 - **People:** family records, student profiles, emergency contacts and consents, staff profiles, prefix search with duplicate warnings (D-026).
 - **Enquiry and enrolment:** enquiry form (embeddable/link), online enrolment form with staff approval, enrol/transfer/withdraw with pro-rata, year-end promotion.
 - **Courses and pricing:** courses, class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing and bundles.
@@ -260,13 +262,13 @@ Paths are relative to `/api/v1/orgs/{orgId}` unless they start with `/api/v1`. A
 - `PATCH /`: turning on single-tutor mode is refused (422) while the org has more than one branch (D-032)
 
 ### Setup
-Branches, rooms, grade levels and subjects: every role reads, only the owner writes (D-033).
-- `GET|POST /branches` · `PATCH|DELETE /branches/{branchId}`: `POST` is refused (422) in single-tutor mode (D-032). `DELETE` is refused (422) for the org's last branch, a branch with rooms, or one a membership's `branch_ids` lists (D-034).
+Branches, rooms, grade levels, subjects, the calendar and tax rates: every role reads, only the owner writes (D-033, D-039, D-040).
+- `GET|POST /branches` · `PATCH|DELETE /branches/{branchId}`: `POST` is refused (422) in single-tutor mode (D-032). `DELETE` is refused (422) for the org's last branch, a branch with rooms or its own holidays, or one a membership's `branch_ids` lists (D-034, D-038).
 - `GET|POST /branches/{branchId}/rooms` · `PATCH|DELETE /rooms/{roomId}`: a room can't move to another branch (D-034)
-- `GET|POST /tax-rates` · `PATCH|DELETE /tax-rates/{id}`
-- `GET|POST /academic-years` · `PATCH /academic-years/{id}`
-- `GET|POST /terms` · `PATCH|DELETE /terms/{id}`
-- `GET|POST /holidays` · `DELETE /holidays/{id}`
+- `GET|POST /tax-rates` · `PATCH|DELETE /tax-rates/{taxRateId}`: `rateBps` is an integer in basis points (1500 = 15%); no tax rates means no tax (D-039)
+- `GET|POST /academic-years` · `PATCH /academic-years/{academicYearId}`: no `DELETE`. Years can't overlap; a date change that would overlap another year or leave a term outside is refused (422) (D-037)
+- `GET|POST /terms` (`GET` filter `?academicYearId`) · `PATCH|DELETE /terms/{termId}`: a term sits inside its academic year and can't overlap another term (422); `PATCH` can't move it to another year (D-037)
+- `GET|POST /holidays` (`GET` filters `?from`, `?to`, `?branchId`) · `DELETE /holidays/{holidayId}`: org-wide, or one branch with `branchId`. `?branchId=X` returns X's own holidays plus org-wide ones; `?from`/`?to` keep holidays that touch the range. No `PATCH`: delete and re-add (D-038)
 - `GET|POST /grade-levels` · `PATCH|DELETE /grade-levels/{gradeLevelId}` · `PUT /grade-levels/order`: `GET` returns the whole list in grade order, not paged; `PUT` must list every grade exactly once (D-035)
 - `GET|POST /subjects` · `PATCH|DELETE /subjects/{subjectId}`
 
@@ -323,7 +325,7 @@ Branches, rooms, grade levels and subjects: every role reads, only the owner wri
 ### Fees and payments
 - `GET|POST /price-rules` · `PATCH|DELETE /price-rules/{id}`
 - `GET|POST /discount-rules` · `PATCH|DELETE /discount-rules/{id}`
-- `POST /terms/{id}/generate-invoices` (job)
+- `POST /terms/{id}/generate-invoices` (job). Classes with no term are billed monthly, so TUI-37 also needs a month-based action; its path isn't decided yet (D-036)
 - `GET /invoices` · `GET|PATCH /invoices/{id}`
 - `POST /invoices/{id}/issue`
 - `POST /invoices/{id}/void`
