@@ -119,8 +119,8 @@ export const taxRates = sqliteTable(
   {
     ...orgColumns(),
     name: text('name').notNull(),
-    // Thousandths of a percent, so rates like 8.875% stay exact: 15% = 15000.
-    rateMilliPercent: integer('rate_milli_percent').notNull(),
+    // Basis points (hundredths of a percent): 15% = 1500. Integers, like money's minor units.
+    rateBps: integer('rate_bps').notNull(),
     // true = prices already include this tax.
     inclusive: integer('inclusive', { mode: 'boolean' }).notNull(),
   },

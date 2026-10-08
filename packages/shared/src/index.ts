@@ -10,4 +10,3 @@ export * from './schemas/curriculum';
 export * from './schemas/orgs';
 export * from './schemas/platform';
 export * from './schemas/tax';
-export * from './tax';

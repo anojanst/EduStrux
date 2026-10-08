@@ -1,29 +1,13 @@
-import {
-  milliToPercent,
-  newId,
-  percentToMilli,
-  type CreateTaxRate,
-  type TaxRate,
-  type UpdateTaxRate,
-} from '@edustrux/shared';
+import { newId, type CreateTaxRate, type TaxRate, type UpdateTaxRate } from '@edustrux/shared';
 import type { OrgCtx } from '../../db/scope';
 import { conflict, notFound, staleData } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as repo from './repository';
 
 export function toTaxRate(row: repo.TaxRateRow): TaxRate {
-  return {
-    id: row.id,
-    name: row.name,
-    percent: milliToPercent(row.rateMilliPercent),
-    inclusive: row.inclusive,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
+  const { orgId: _org, deletedAt: _deleted, ...rate } = row;
+  return rate;
 }
-
-/** The schema has already checked the format, so this always gives a number. */
-const milli = (percent: string) => percentToMilli(percent) ?? 0;
 
 const nameTaken = () => conflict('A tax rate with that name already exists', { name: ['Taken'] });
 
@@ -52,7 +36,7 @@ export async function createTaxRate(ctx: OrgCtx, input: CreateTaxRate): Promise<
     id,
     orgId: ctx.orgId,
     name: input.name,
-    rateMilliPercent: milli(input.percent),
+    rateBps: input.rateBps,
     inclusive: input.inclusive,
   });
   return getTaxRate(ctx, id);
@@ -65,11 +49,7 @@ export async function updateTaxRate(
 ): Promise<TaxRate> {
   const before = await findTaxRateOr404(ctx, id);
   if (before.updatedAt !== input.updatedAt) throw staleData();
-  const { updatedAt: _ignored, percent, ...rest } = input;
-  const changes: repo.TaxRateChanges = {
-    ...rest,
-    ...(percent !== undefined ? { rateMilliPercent: milli(percent) } : {}),
-  };
+  const { updatedAt: _ignored, ...changes } = input;
   if (Object.keys(changes).length === 0) return toTaxRate(before);
 
   if (changes.name !== undefined && (await repo.taxRateNameTaken(ctx, changes.name, id))) {

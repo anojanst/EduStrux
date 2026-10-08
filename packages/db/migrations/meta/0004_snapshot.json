@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b80e91ef-686e-4327-8269-a414cb623ac1",
+  "id": "bbd386ed-9501-4994-8bea-c91d3cf92e46",
   "prevId": "984860af-915e-4034-b2f0-59f6f4b5d6f4",
   "tables": {
     "audit_log": {
@@ -1187,8 +1187,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "rate_milli_percent": {
-          "name": "rate_milli_percent",
+        "rate_bps": {
+          "name": "rate_bps",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

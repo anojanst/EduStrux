@@ -30,7 +30,7 @@ const createTaxRateRoute = createRoute({
   tags: ['Billing'],
   summary: 'Add a tax rate',
   description:
-    '`percent` is a decimal string ("15", "8.875"). Names are unique in the org, ignoring case (409). ' +
+    '`rateBps` is the rate in basis points (1500 = 15%). Names are unique in the org, ignoring case (409). ' +
     'The tax number shown on invoices is the org’s `taxNumber`.',
   middleware: orgAccess('org:write'),
   request: { params: OrgParams, body: jsonBody(CreateTaxRate) },

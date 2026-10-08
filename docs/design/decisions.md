@@ -523,23 +523,24 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     implementation; the owner hasn't stated this rule.
 - **Tasks:** TUI-28 (and TUI-31).
 
-## D-039 · 2026-10-08 · Tax rates: owner writes, every role reads; percent is a decimal string
+## D-039 · 2026-10-08 · Tax rates: owner writes, every role reads; rate in basis points
 
 - **Context:** TUI-35. Handoff §6's "Org settings, tax, plan" row gave the owner full access, the
   accountant read access and other roles none.
 - **Decision:** The owner decided:
   - Every role reads tax rates (`org:read`); only the owner writes them (`org:write`), the same
     as setup data in D-033. This replaces the tax part of the §6 row.
-  - `percent` is a decimal string (`"15"`, `"8.875"`), from 0 to 100 with up to 3 decimals. A
-    JSON number is rejected, so a rate is never a float.
-  - Rates are stored as integer thousandths of a percent (`rate_milli_percent`: 8.875% = 8875)
-    and returned in shortest form (`"15.0"` comes back as `"15"`).
+  - A rate is `rateBps`, an integer in basis points from 0 to 10000 (1500 = 15%, 1250 = 12.5%,
+    0 = zero-rated), stored as-is in `rate_bps`. The owner chose this for consistency with money,
+    which is also an integer (minor units). Non-integers, strings, negatives and values over
+    10000 are 400.
+  - Only 2 decimals of a percent are supported: 8.875% can't be entered (it would be 887 or 888).
   - Every rate has a required `inclusive` flag.
   - No tax rates means no tax, which is a valid setup.
   - Invoices show the org's existing `taxNumber`.
-- **Consequences:** Parents and teachers can see the org's tax rates. Shared helpers in
-  `packages/shared` convert between the string and the stored integer. Deleting a tax rate
-  doesn't yet check whether it's in use; price rules (TUI-36) will need that check.
+- **Consequences:** Parents and teachers can see the org's tax rates. Rates need no conversion
+  between the API and the database. Deleting a tax rate doesn't yet check whether it's in use;
+  price rules (TUI-36) will need that check.
 - **Tasks:** TUI-35 (and TUI-36, TUI-37).
 
 ## D-040 · 2026-10-08 · Calendar and tax-rate lists, names, dates and permissions

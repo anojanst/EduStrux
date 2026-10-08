@@ -4,9 +4,7 @@ import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type TaxRateRow = typeof taxRates.$inferSelect;
 export type NewTaxRateRow = typeof taxRates.$inferInsert;
-export type TaxRateChanges = Partial<
-  Pick<NewTaxRateRow, 'name' | 'rateMilliPercent' | 'inclusive'>
->;
+export type TaxRateChanges = Partial<Pick<NewTaxRateRow, 'name' | 'rateBps' | 'inclusive'>>;
 
 /** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
 export function listTaxRates(ctx: OrgCtx, limit: number, afterId?: string) {

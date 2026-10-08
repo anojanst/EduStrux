@@ -31,7 +31,7 @@ CREATE TABLE `tax_rates` (
 	`updated_at` text NOT NULL,
 	`deleted_at` text,
 	`name` text NOT NULL,
-	`rate_milli_percent` integer NOT NULL,
+	`rate_bps` integer NOT NULL,
 	`inclusive` integer NOT NULL
 );
 --> statement-breakpoint
