@@ -13,6 +13,15 @@ describe('API docs', () => {
         '/api/v1/orgs',
         '/api/v1/orgs/{orgId}',
         '/api/v1/orgs/{orgId}/audit-log',
+        '/api/v1/orgs/{orgId}/branches',
+        '/api/v1/orgs/{orgId}/branches/{branchId}',
+        '/api/v1/orgs/{orgId}/branches/{branchId}/rooms',
+        '/api/v1/orgs/{orgId}/rooms/{roomId}',
+        '/api/v1/orgs/{orgId}/grade-levels',
+        '/api/v1/orgs/{orgId}/grade-levels/order',
+        '/api/v1/orgs/{orgId}/grade-levels/{gradeLevelId}',
+        '/api/v1/orgs/{orgId}/subjects',
+        '/api/v1/orgs/{orgId}/subjects/{subjectId}',
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);

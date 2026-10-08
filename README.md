@@ -62,6 +62,8 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Request pipeline** for `/api/v1/orgs/{orgId}/…`: `orgAccess('<permission>')` runs Clerk
   auth → membership (404 for non-members) → the route's single permission (403).
 - **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
+- **D1 limit:** at most 100 bound values per SQL statement. Insert many rows, or pass long
+  `inArray` lists, in chunks.
 - **Modules** (`apps/api/src/modules/<name>/`) own their routes, service and repository, and call
   each other only through services.
 - **API format**: JSON, camelCase, locale-neutral (no `Accept-Language`, no translated text).

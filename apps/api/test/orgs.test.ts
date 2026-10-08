@@ -110,6 +110,17 @@ describe('orgs', () => {
     expect(stale.body.error.code).toBe('stale_data');
   });
 
+  it('returns the org unchanged when a PATCH changes nothing', async () => {
+    const { token } = await newUser();
+    const org = await newOrg(token);
+    const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(org);
+  });
+
   it('pages the audit log with a cursor', async () => {
     const { token } = await newUser();
     const org = await newOrg(token);

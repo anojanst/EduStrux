@@ -15,6 +15,20 @@
       "when": 1791343614749,
       "tag": "0001_jobs_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791363039075,
+      "tag": "0002_setup_branches_rooms_grades_subjects",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791363047046,
+      "tag": "0003_backfill_default_branches",
+      "breakpoints": true
     }
   ]
 }
