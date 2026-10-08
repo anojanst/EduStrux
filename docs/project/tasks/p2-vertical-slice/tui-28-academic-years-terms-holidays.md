@@ -14,7 +14,7 @@ endpoints:
   - GET|POST /holidays
   - DELETE /holidays/{id}
 branch: task/tui-28-35-calendar-tax-rates
-pr:
+pr: 13
 ---
 
 # TUI-28 Academic years, terms and holidays

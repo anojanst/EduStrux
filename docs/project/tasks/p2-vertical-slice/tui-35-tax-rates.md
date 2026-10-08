@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /tax-rates
   - PATCH|DELETE /tax-rates/{id}
 branch: task/tui-28-35-calendar-tax-rates
-pr:
+pr: 13
 ---
 
 # TUI-35 Tax rates settings
