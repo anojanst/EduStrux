@@ -15,8 +15,8 @@ importers:
         specifier: ^24.19.1
         version: 24.19.1
       board.md:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       prettier:
         specifier: ^3.6.0
         version: 3.9.9
@@ -148,6 +148,7 @@ packages:
 
   '@cloudflare/vitest-pool-workers@0.22.0':
     resolution: {integrity: sha512-OJv/qikkOgxnKxJ5xrLS7zuOLZhc/6iziU+llqZm4tiQf2CJUYwlMuXN68VaWIQebORd1AUx4w6A0oy8XRbuaQ==}
+    deprecated: '@cloudflare/vitest-pool-workers has been renamed to @cloudflare/vitest-plugin. This package will not receive future updates.'
     peerDependencies:
       '@vitest/runner': ^4.1.0
       '@vitest/snapshot': ^4.1.0
@@ -1570,8 +1571,8 @@ packages:
   blake3-wasm@2.1.5:
     resolution: {integrity: sha512-F1+K8EbfOZE49dtoPtmxUQrpXaBIl3ICvasLh+nJta0xkz+9kF/7uet9fLnwKqhDrmj6g+6K3Tw9yQPUg2ka5g==}
 
-  board.md@0.1.0:
-    resolution: {integrity: sha512-QcsTZ2jL6EaKnZGva2nHjquKqln70LX8llHD7gmy5IJ20tnL0ZlUieSVowJWNh/9i5tCYaBa3HHSxilj93GvFw==}
+  board.md@0.2.0:
+    resolution: {integrity: sha512-wdDO3fcTqAkN+SP/BVEnnzPsc251wZNYeM6jJBQ+a7jymlNwO56UXEV/a8EJvcbW4Iil3bE6+27hx0DBdOl/FA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -3067,7 +3068,7 @@ snapshots:
 
   blake3-wasm@2.1.5: {}
 
-  board.md@0.1.0:
+  board.md@0.2.0:
     dependencies:
       marked: 18.1.0
       yaml: 2.9.1
