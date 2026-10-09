@@ -21,29 +21,35 @@
         "P1": "Foundation",
         "P2": "Vertical slice",
         "P3": "Core modules",
-        "P4": "Background & comms",
-        "P5": "SaaS layer",
+        "P4": "Background comms",
+        "P5": "Saas layer",
         "P6": "Launch hardening",
         "P7": "UI"
-      }
+      },
+      "required": true
     },
-    "module": { "label": "Module", "filter": true },
+    "module": { "label": "Module", "filter": true, "required": true },
     "priority": {
       "label": "Priority",
       "badge": true,
-      "values": { "P0": "Must", "P1": "Should", "P2": "Could" }
+      "values": { "P0": "P0", "P1": "P1", "P2": "P2" },
+      "required": true
     },
-    "size": { "label": "Size", "badge": true, "values": { "S": "S", "M": "M", "L": "L" } },
-    "endpoints": { "label": "Endpoints", "list": true }
+    "size": {
+      "label": "Size",
+      "badge": true,
+      "values": { "S": "S", "M": "M", "L": "L" },
+      "required": true
+    },
+    "endpoints": { "label": "Endpoints", "list": true, "required": true }
   },
+  "newTask": { "folderBy": "phase", "fileName": "{id-lower}-{slug}.md" },
   "live": {
     "baseBranch": "main",
-    "branchPattern": "^(?:task|docs|fix)/tui-(\\d+(?:-\\d+)*)-[a-z]",
-    "rangePrefixes": ["docs/"],
+    "branchPattern": "^(?:[\\w.-]+/)?tui[-_](\\d+(?:-\\d+)*)(?:[-_]|$)",
+    "rangePrefixes": [],
     "branchField": "branch",
     "prField": "pr",
     "ignoreStatuses": ["done", "deferred"]
-  },
-  "checkCommand": "pnpm -s board --check",
-  "afterEditHint": "Commit status changes in a chore/board-<slug> PR (see docs/project/README.md)."
+  }
 }
