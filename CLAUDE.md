@@ -104,3 +104,14 @@ reviews as themselves.
 | GitHub ruleset         | Everyone: PR with 1 approval required (admins may bypass approval on a PR, never direct pushes), no force-push or deletion, conversations resolved | `.github/rulesets/protect-main.json`, active on GitHub (ruleset 24489131) |
 
 Don't try to work around a block (another flag, `git -c`, the API). Stop and tell the user.
+
+<!-- boardmd:start -->
+## Tasks (board.md)
+
+Tasks are markdown files in `docs/project/tasks/`, shown as a board by `pnpm board:web`. Before creating or changing tasks, run `pnpm boardmd guide` for this repo's fields and rules. Use the CLI rather than editing frontmatter by hand:
+
+- `pnpm boardmd list --json`: tasks with live branch and PR state
+- `pnpm boardmd new "<title>" --set phase=P1 --set module=decisions --set priority=P1 --set size=M`: create a task (next id, folder and file name)
+- `pnpm boardmd set TUI-1 status=…`: change fields; only those lines change
+- `pnpm boardmd check`: validate the task files
+<!-- boardmd:end -->
