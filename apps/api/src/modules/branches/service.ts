@@ -12,6 +12,7 @@ import type { OrgCtx } from '../../db/scope';
 import { conflict, notFound, staleData, unprocessable } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as calendar from '../calendar/service';
+import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
 import * as repo from './repository';
 
@@ -95,7 +96,7 @@ export async function updateBranch(ctx: OrgCtx, id: string, input: UpdateBranch)
 
 /**
  * Soft-deletes a branch. Refused while anything still depends on it: the org must keep one
- * branch; its rooms and its own holidays must be deleted first; and staff limited to the
+ * branch; its rooms, classes and own holidays must be deleted first; and staff limited to the
  * branch must be moved first.
  */
 export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
@@ -107,6 +108,10 @@ export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
   const roomCount = await repo.countRooms(ctx, id);
   if (roomCount > 0) {
     throw unprocessable(`Delete this branch's ${roomCount} room(s) first.`);
+  }
+  const classCount = await classes.countClasses(ctx, { branchId: id });
+  if (classCount > 0) {
+    throw unprocessable(`Delete this branch's ${classCount} class(es) first.`);
   }
   const holidayCount = await calendar.countBranchHolidays(ctx, id);
   if (holidayCount > 0) {
@@ -173,7 +178,12 @@ export async function updateRoom(ctx: OrgCtx, id: string, input: UpdateRoom): Pr
   return getRoom(ctx, id);
 }
 
+/** Refused while a class is held in the room. */
 export async function deleteRoom(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findRoomOr404(ctx, id);
+  const classCount = await classes.countClasses(ctx, { roomId: id });
+  if (classCount > 0) {
+    throw unprocessable(`${classCount} class(es) use this room. Move them to another room first.`);
+  }
   await repo.softDeleteRoom(ctx, before);
 }

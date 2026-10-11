@@ -72,7 +72,8 @@ const deleteBranchRoute = createRoute({
   tags: ['Branches'],
   summary: 'Delete a branch',
   description:
-    'Refused with 422 if it is the last branch, still has rooms, or staff are limited to it.',
+    'Refused with 422 if it is the last branch, still has rooms, classes or its own holidays, ' +
+    'or staff are limited to it.',
   middleware: orgAccess('org:write'),
   request: { params: BranchParams },
   responses: {
@@ -129,11 +130,12 @@ const deleteRoomRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/rooms/{roomId}',
   tags: ['Branches'],
   summary: 'Delete a room',
+  description: 'Refused (422) while a class is held in the room.',
   middleware: orgAccess('org:write'),
   request: { params: RoomParams },
   responses: {
     ...deleted,
-    ...errors(401, 403, 404),
+    ...errors(401, 403, 404, 422),
   },
 });
 

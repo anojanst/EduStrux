@@ -127,11 +127,12 @@ const deleteTermRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/terms/{termId}',
   tags: ['Calendar'],
   summary: 'Delete a term',
+  description: 'Refused (422) while a class runs in the term.',
   middleware: orgAccess('org:write'),
   request: { params: TermParams },
   responses: {
     ...deleted,
-    ...errors(401, 403, 404),
+    ...errors(401, 403, 404, 422),
   },
 });
 
@@ -158,7 +159,8 @@ const createHolidayRoute = createRoute({
   summary: 'Add a holiday',
   description:
     'A closed date range (a single day has the same start and end). Closes the whole ' +
-    'organisation, or only `branchId`.',
+    'organisation, or only `branchId`. Sessions already generated on those dates, and not ' +
+    'yet started, are removed.',
   middleware: orgAccess('org:write'),
   request: { params: OrgParams, body: jsonBody(CreateHoliday) },
   responses: {

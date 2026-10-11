@@ -55,6 +55,15 @@ export async function insertOrgWithOwner(
   );
 }
 
+/** A membership in the org, whatever its role or status. */
+export function findMembership(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select({ id: memberships.id, role: memberships.role, status: memberships.status })
+    .from(memberships)
+    .where(inOrg(ctx, memberships, eq(memberships.id, id)))
+    .get();
+}
+
 /** Active memberships whose branch list includes this branch (null branch lists mean all). */
 export async function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
   const row = await ctx.db

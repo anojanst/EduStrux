@@ -43,6 +43,13 @@
       "when": 1791683475455,
       "tag": "0005_courses",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791704160439,
+      "tag": "0006_classes_schedules_sessions",
+      "breakpoints": true
     }
   ]
 }
