@@ -65,6 +65,39 @@ export const subjects = sqliteTable(
   ],
 );
 
+// A course is a subject taught at a grade level, optionally narrowed by curriculum and teaching
+// medium. That combination is unique per org, ignoring case and deleted rows; a missing
+// curriculum or medium counts as its own value.
+export const courses = sqliteTable(
+  'courses',
+  {
+    ...orgColumns(),
+    subjectId: text('subject_id').notNull(),
+    gradeLevelId: text('grade_level_id').notNull(),
+    curriculum: text('curriculum'),
+    teachingMedium: text('teaching_medium'),
+    // Minor units plus currency. Both null = no default price.
+    defaultPriceAmount: integer('default_price_amount'),
+    defaultPriceCurrency: text('default_price_currency'),
+    // Default lesson length.
+    durationMinutes: integer('duration_minutes'),
+  },
+  (t) => [
+    index('courses_org_grade_idx').on(t.orgId, t.gradeLevelId),
+    // NULLs are distinct in a unique index, so a missing value is indexed as ''. Written with
+    // CASE, not coalesce(): drizzle-kit splits an index expression at its commas.
+    uniqueIndex('courses_org_subject_grade_curriculum_medium_uq')
+      .on(
+        t.orgId,
+        t.subjectId,
+        t.gradeLevelId,
+        sql`(case when ${t.curriculum} is null then '' else lower(${t.curriculum}) end)`,
+        sql`(case when ${t.teachingMedium} is null then '' else lower(${t.teachingMedium}) end)`,
+      )
+      .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
 // Calendar. Dates are local `YYYY-MM-DD` text, which sorts and compares correctly as text.
 
 export const academicYears = sqliteTable(

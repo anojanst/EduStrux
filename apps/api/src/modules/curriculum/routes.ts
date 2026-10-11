@@ -1,5 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  Course,
+  CourseQuery,
+  CreateCourse,
   CreateGradeLevel,
   CreateSubject,
   GradeLevel,
@@ -7,6 +10,7 @@ import {
   GradeLevelOrder,
   PageQuery,
   Subject,
+  UpdateCourse,
   UpdateGradeLevel,
   UpdateSubject,
   page,
@@ -22,6 +26,9 @@ const GradeLevelParams = OrgParams.extend({
 });
 const SubjectParams = OrgParams.extend({
   subjectId: z.string().openapi({ param: { name: 'subjectId', in: 'path' } }),
+});
+const CourseParams = OrgParams.extend({
+  courseId: z.string().openapi({ param: { name: 'courseId', in: 'path' } }),
 });
 const deleted = { 204: { description: 'Deleted' } };
 
@@ -90,11 +97,12 @@ const deleteGradeLevelRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/grade-levels/{gradeLevelId}',
   tags: ['Curriculum'],
   summary: 'Delete a grade level',
+  description: 'Refused (422) while a course is taught at this grade level.',
   middleware: orgAccess('org:write'),
   request: { params: GradeLevelParams },
   responses: {
     ...deleted,
-    ...errors(401, 403, 404),
+    ...errors(401, 403, 404, 422),
   },
 });
 
@@ -145,8 +153,73 @@ const deleteSubjectRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/subjects/{subjectId}',
   tags: ['Curriculum'],
   summary: 'Delete a subject',
+  description: 'Refused (422) while a course teaches this subject.',
   middleware: orgAccess('org:write'),
   request: { params: SubjectParams },
+  responses: {
+    ...deleted,
+    ...errors(401, 403, 404, 422),
+  },
+});
+
+// Every role reads courses, like the rest of the setup data. The owner, branch managers and
+// front desk write them (`classes:write`); a course has no branch, so that permission's branch
+// scope doesn't apply and a change is org-wide.
+
+const listCoursesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/courses',
+  tags: ['Curriculum'],
+  summary: 'List courses',
+  description: 'Oldest first. Filter by `subjectId`, `gradeLevelId` or both; an unknown id is 404.',
+  middleware: orgAccess('org:read'),
+  request: { params: OrgParams, query: CourseQuery },
+  responses: {
+    200: json(page(Course).openapi('CoursePage'), 'A page of courses'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const createCourseRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/courses',
+  tags: ['Curriculum'],
+  summary: 'Add a course',
+  description:
+    'A course is a subject taught at a grade level, optionally narrowed by curriculum and ' +
+    'teaching medium. That combination is unique in the org, ignoring case (409). ' +
+    'A default price must be in the organisation’s currency (400).',
+  middleware: orgAccess('classes:write'),
+  request: { params: OrgParams, body: jsonBody(CreateCourse) },
+  responses: {
+    201: json(Course, 'The new course'),
+    ...errors(400, 401, 403, 404, 409),
+  },
+});
+
+const updateCourseRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/courses/{courseId}',
+  tags: ['Curriculum'],
+  summary: 'Update a course',
+  description:
+    'A course keeps its subject and grade level. Send null to clear a field. ' +
+    'Send the `updatedAt` you last read; a newer one on the server returns 409.',
+  middleware: orgAccess('classes:write'),
+  request: { params: CourseParams, body: jsonBody(UpdateCourse) },
+  responses: {
+    200: json(Course, 'The updated course'),
+    ...errors(400, 401, 403, 404, 409),
+  },
+});
+
+const deleteCourseRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/orgs/{orgId}/courses/{courseId}',
+  tags: ['Curriculum'],
+  summary: 'Delete a course',
+  middleware: orgAccess('classes:write'),
+  request: { params: CourseParams },
   responses: {
     ...deleted,
     ...errors(401, 403, 404),
@@ -189,5 +262,20 @@ export const curriculumRoutes = createRouter()
   })
   .openapi(deleteSubjectRoute, async (c) => {
     await service.deleteSubject(orgCtx(c), c.req.valid('param').subjectId);
+    return c.body(null, 204);
+  })
+  .openapi(listCoursesRoute, async (c) => {
+    const { limit, cursor, ...filter } = c.req.valid('query');
+    return c.json(await service.listCourses(orgCtx(c), limit, cursor, filter), 200);
+  })
+  .openapi(createCourseRoute, async (c) => {
+    return c.json(await service.createCourse(orgCtx(c), c.req.valid('json')), 201);
+  })
+  .openapi(updateCourseRoute, async (c) => {
+    const { courseId } = c.req.valid('param');
+    return c.json(await service.updateCourse(orgCtx(c), courseId, c.req.valid('json')), 200);
+  })
+  .openapi(deleteCourseRoute, async (c) => {
+    await service.deleteCourse(orgCtx(c), c.req.valid('param').courseId);
     return c.body(null, 204);
   });

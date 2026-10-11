@@ -1,10 +1,20 @@
-import { gradeLevels } from '@edustrux/db';
+import { courses, gradeLevels, memberships } from '@edustrux/db';
 import { MAX_GRADE_LEVELS, newId, type Role } from '@edustrux/shared';
 import { describe, expect, it } from 'vitest';
 import { addMember, call, db, newOrg, newUser } from './helpers';
 
 type Grade = { id: string; name: string; sortOrder: number; updatedAt: string };
 type Subject = { id: string; name: string; updatedAt: string };
+type Course = {
+  id: string;
+  subjectId: string;
+  gradeLevelId: string;
+  curriculum: string | null;
+  teachingMedium: string | null;
+  defaultPrice: { amount: number; currency: string } | null;
+  durationMinutes: number | null;
+  updatedAt: string;
+};
 
 async function setup() {
   const owner = await newUser('owner');
@@ -22,9 +32,22 @@ async function setup() {
     if (res.status !== 201) throw new Error(`subject create failed: ${JSON.stringify(res.body)}`);
     return res.body as Subject;
   };
+  const addCourse = async (body: Record<string, unknown>) => {
+    const res = await api('POST', '/courses', body);
+    if (res.status !== 201) throw new Error(`course create failed: ${JSON.stringify(res.body)}`);
+    return res.body as Course;
+  };
   const gradeNames = async () =>
     (await api('GET', '/grade-levels')).body.data.map((g: Grade) => g.name) as string[];
-  return { owner, org, base, api, addGrade, addSubject, gradeNames };
+  return { owner, org, base, api, addGrade, addSubject, addCourse, gradeNames };
+}
+
+/** An org with one subject and one grade level, ready for courses. */
+async function courseSetup() {
+  const org = await setup();
+  const maths = await org.addSubject('Mathematics');
+  const y10 = await org.addGrade('Year 10');
+  return { ...org, maths, y10, pair: { subjectId: maths.id, gradeLevelId: y10.id } };
 }
 
 async function auditActions(base: string, token: string) {
@@ -298,6 +321,412 @@ describe('subjects', () => {
   });
 });
 
+describe('courses', () => {
+  it('adds a course with every field, lists, updates and deletes it, with audit rows', async () => {
+    const { owner, base, api, maths, y10, pair } = await courseSetup();
+
+    const created = await api('POST', '/courses', {
+      ...pair,
+      curriculum: 'Cambridge',
+      teachingMedium: 'English',
+      defaultPrice: { amount: 4500, currency: 'NZD' },
+      durationMinutes: 60,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      id: expect.stringMatching(/^crs_/),
+      subjectId: maths.id,
+      gradeLevelId: y10.id,
+      curriculum: 'Cambridge',
+      teachingMedium: 'English',
+      defaultPrice: { amount: 4500, currency: 'NZD' },
+      durationMinutes: 60,
+    });
+    for (const hidden of ['orgId', 'deletedAt', 'defaultPriceAmount', 'defaultPriceCurrency']) {
+      expect(created.body).not.toHaveProperty(hidden);
+    }
+
+    const list = await api('GET', '/courses');
+    expect(list.status).toBe(200);
+    expect(list.body).toEqual({ data: [created.body], nextCursor: null });
+
+    const updated = await api('PATCH', `/courses/${created.body.id}`, {
+      updatedAt: created.body.updatedAt,
+      curriculum: 'NCEA',
+      defaultPrice: { amount: 5000, currency: 'NZD' },
+      durationMinutes: 90,
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      curriculum: 'NCEA',
+      teachingMedium: 'English',
+      defaultPrice: { amount: 5000, currency: 'NZD' },
+      durationMinutes: 90,
+    });
+
+    expect((await api('DELETE', `/courses/${created.body.id}`)).status).toBe(204);
+    expect((await api('GET', '/courses')).body.data).toEqual([]);
+
+    const audit = await call('GET', `${base}/audit-log?limit=3`, { token: owner.token });
+    expect(audit.body.data.map((e: { action: string }) => e.action)).toEqual([
+      'course.deleted',
+      'course.updated',
+      'course.created',
+    ]);
+    expect(audit.body.data[1]).toMatchObject({
+      entityType: 'course',
+      entityId: created.body.id,
+      actorUserId: owner.userId,
+      before: { curriculum: 'Cambridge', defaultPriceAmount: 4500, durationMinutes: 60 },
+      after: {
+        curriculum: 'NCEA',
+        defaultPriceAmount: 5000,
+        defaultPriceCurrency: 'NZD',
+        durationMinutes: 90,
+      },
+    });
+  });
+
+  it('adds a course with only a subject and a grade level', async () => {
+    const { api, pair } = await courseSetup();
+    const res = await api('POST', '/courses', pair);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      ...pair,
+      curriculum: null,
+      teachingMedium: null,
+      defaultPrice: null,
+      durationMinutes: null,
+    });
+  });
+
+  it('accepts a free course: a default price of 0', async () => {
+    const { api, pair } = await courseSetup();
+    const res = await api('POST', '/courses', {
+      ...pair,
+      defaultPrice: { amount: 0, currency: 'NZD' },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.defaultPrice).toEqual({ amount: 0, currency: 'NZD' });
+  });
+
+  it('filters by subject and grade level, and pages with a cursor', async () => {
+    const { api, addSubject, addGrade, addCourse, maths, y10 } = await courseSetup();
+    const english = await addSubject('English');
+    const y9 = await addGrade('Year 9');
+    const mathsY10 = await addCourse({ subjectId: maths.id, gradeLevelId: y10.id });
+    const mathsY9 = await addCourse({ subjectId: maths.id, gradeLevelId: y9.id });
+    const englishY10 = await addCourse({ subjectId: english.id, gradeLevelId: y10.id });
+    const englishY9 = await addCourse({ subjectId: english.id, gradeLevelId: y9.id });
+    const ids = async (query: string) =>
+      (await api('GET', `/courses${query}`)).body.data.map((c: Course) => c.id) as string[];
+
+    expect(await ids('')).toEqual([mathsY10.id, mathsY9.id, englishY10.id, englishY9.id]);
+    expect(await ids(`?subjectId=${maths.id}`)).toEqual([mathsY10.id, mathsY9.id]);
+    expect(await ids(`?gradeLevelId=${y10.id}`)).toEqual([mathsY10.id, englishY10.id]);
+    expect(await ids(`?subjectId=${english.id}&gradeLevelId=${y9.id}`)).toEqual([englishY9.id]);
+
+    const first = await api('GET', '/courses?limit=3');
+    expect(first.body.data).toHaveLength(3);
+    const second = await api('GET', `/courses?limit=3&cursor=${first.body.nextCursor}`);
+    expect(second.body.data.map((c: Course) => c.id)).toEqual([englishY9.id]);
+    expect(second.body.nextCursor).toBeNull();
+
+    // The filters page too.
+    const page1 = await api('GET', `/courses?subjectId=${maths.id}&limit=1`);
+    expect(page1.body.data.map((c: Course) => c.id)).toEqual([mathsY10.id]);
+    expect(await ids(`?subjectId=${maths.id}&limit=1&cursor=${page1.body.nextCursor}`)).toEqual([
+      mathsY9.id,
+    ]);
+  });
+
+  it('returns 404 for a filter id the org does not have, and 400 for a bad limit', async () => {
+    const { api } = await courseSetup();
+    expect((await api('GET', '/courses?subjectId=sbj_nope')).status).toBe(404);
+    expect((await api('GET', '/courses?gradeLevelId=grd_nope')).status).toBe(404);
+    expect((await api('GET', '/courses?limit=0')).status).toBe(400);
+  });
+
+  it('keeps subject + grade + curriculum + medium unique, ignoring case', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    await addCourse(pair);
+
+    const dup = await api('POST', '/courses', pair);
+    expect(dup.status).toBe(409);
+    expect(dup.body.error).toMatchObject({ code: 'conflict', fields: { _: ['Taken'] } });
+
+    // A curriculum or a medium makes it a different course.
+    await addCourse({ ...pair, curriculum: 'Cambridge' });
+    await addCourse({ ...pair, curriculum: 'Cambridge', teachingMedium: 'Tamil' });
+    await addCourse({ ...pair, teachingMedium: 'Tamil' });
+
+    const sameCurriculum = await api('POST', '/courses', { ...pair, curriculum: 'cambridge' });
+    expect(sameCurriculum.status).toBe(409);
+    const sameBoth = await api('POST', '/courses', {
+      ...pair,
+      curriculum: 'CAMBRIDGE',
+      teachingMedium: 'tamil',
+    });
+    expect(sameBoth.status).toBe(409);
+    // null is the same as leaving the label out.
+    const explicitNulls = await api('POST', '/courses', {
+      ...pair,
+      curriculum: null,
+      teachingMedium: null,
+    });
+    expect(explicitNulls.status).toBe(409);
+  });
+
+  it('refuses a PATCH that would make two courses the same', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    await addCourse(pair);
+    await addCourse({ ...pair, curriculum: 'Cambridge' });
+    const ncea = await addCourse({ ...pair, curriculum: 'NCEA' });
+    const patch = (body: Record<string, unknown>) =>
+      api('PATCH', `/courses/${ncea.id}`, { updatedAt: ncea.updatedAt, ...body });
+
+    const taken = await patch({ curriculum: 'cambridge' });
+    expect(taken.status).toBe(409);
+    expect(taken.body.error).toMatchObject({ code: 'conflict', fields: { _: ['Taken'] } });
+    // Clearing the curriculum would collide with the plain course.
+    expect((await patch({ curriculum: null })).status).toBe(409);
+
+    // Changing only the case of its own label isn't a clash.
+    const recased = await patch({ curriculum: 'ncea' });
+    expect(recased.status).toBe(200);
+    expect(recased.body.curriculum).toBe('ncea');
+  });
+
+  it('allows the same curriculum and medium for another subject or grade', async () => {
+    const { addSubject, addGrade, addCourse, pair, maths, y10 } = await courseSetup();
+    const english = await addSubject('English');
+    const y9 = await addGrade('Year 9');
+    await addCourse({ ...pair, curriculum: 'Cambridge' });
+    await addCourse({ subjectId: english.id, gradeLevelId: y10.id, curriculum: 'Cambridge' });
+    await addCourse({ subjectId: maths.id, gradeLevelId: y9.id, curriculum: 'Cambridge' });
+  });
+
+  it('is also unique in the database, where a missing label counts as a value', async () => {
+    const { org, addCourse, pair } = await courseSetup();
+    await addCourse(pair);
+    await addCourse({ ...pair, curriculum: 'Cambridge' });
+    const row = (curriculum: string | null) => ({
+      id: newId('course'),
+      orgId: org.id,
+      ...pair,
+      curriculum,
+    });
+
+    // Drizzle wraps the D1 error, so the constraint is named in the cause.
+    const insert = (curriculum: string | null) =>
+      db()
+        .insert(courses)
+        .values(row(curriculum))
+        .then(
+          () => 'inserted',
+          (e: Error) => String(e.cause),
+        );
+
+    expect(await insert(null)).toMatch(/UNIQUE constraint failed/);
+    expect(await insert('CAMBRIDGE')).toMatch(/UNIQUE constraint failed/);
+    expect(await insert('NCEA')).toBe('inserted');
+  });
+
+  it('frees the combination when a course is deleted', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const course = await addCourse({ ...pair, curriculum: 'Cambridge' });
+    await api('DELETE', `/courses/${course.id}`);
+    expect((await api('POST', '/courses', { ...pair, curriculum: 'Cambridge' })).status).toBe(201);
+  });
+
+  const ids = { subjectId: 'sbj_x', gradeLevelId: 'grd_x' };
+  it.each<[Record<string, unknown>, string[]]>([
+    [{}, ['subjectId', 'gradeLevelId']],
+    [{ ...ids, curriculum: '  ' }, ['curriculum']],
+    [{ ...ids, teachingMedium: 'x'.repeat(61) }, ['teachingMedium']],
+    [{ ...ids, defaultPrice: { amount: -1, currency: 'NZD' } }, ['defaultPrice.amount']],
+    [{ ...ids, defaultPrice: { amount: 45.5, currency: 'NZD' } }, ['defaultPrice.amount']],
+    [{ ...ids, defaultPrice: { amount: '4500', currency: 'NZD' } }, ['defaultPrice.amount']],
+    [{ ...ids, defaultPrice: { amount: 4500, currency: 'nzd' } }, ['defaultPrice.currency']],
+    [{ ...ids, defaultPrice: { amount: 4500 } }, ['defaultPrice.currency']],
+    [{ ...ids, defaultPrice: 4500 }, ['defaultPrice']],
+    [{ ...ids, durationMinutes: 0 }, ['durationMinutes']],
+    [{ ...ids, durationMinutes: 601 }, ['durationMinutes']],
+    [{ ...ids, durationMinutes: 45.5 }, ['durationMinutes']],
+  ])('rejects an invalid course %j with 400', async (body, fields) => {
+    const { api } = await setup();
+    const res = await api('POST', '/courses', body);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_failed');
+    expect(Object.keys(res.body.error.fields)).toEqual(fields);
+  });
+
+  it('rejects a default price that is not in the organisation’s currency with 400', async () => {
+    const { api, addCourse, pair } = await courseSetup(); // the org's currency is NZD
+    const wrong = { 'defaultPrice.currency': ["Must be the organisation's currency, NZD"] };
+
+    const created = await api('POST', '/courses', {
+      ...pair,
+      defaultPrice: { amount: 4500, currency: 'AUD' },
+    });
+    expect(created.status).toBe(400);
+    expect(created.body.error).toMatchObject({ code: 'validation_failed', fields: wrong });
+
+    const course = await addCourse(pair);
+    const patched = await api('PATCH', `/courses/${course.id}`, {
+      updatedAt: course.updatedAt,
+      defaultPrice: { amount: 4500, currency: 'AUD' },
+    });
+    expect(patched.status).toBe(400);
+    expect(patched.body.error.fields).toEqual(wrong);
+    expect((await api('GET', '/courses')).body.data[0].defaultPrice).toBeNull();
+  });
+
+  it('returns 404 for a subject or grade level that is unknown, deleted or another org’s', async () => {
+    const { api, addSubject, addGrade, maths, y10 } = await courseSetup();
+    const goneSubject = await addSubject('Gone');
+    await api('DELETE', `/subjects/${goneSubject.id}`);
+    const goneGrade = await addGrade('Gone');
+    await api('DELETE', `/grade-levels/${goneGrade.id}`);
+    const bob = await courseSetup();
+
+    const results = await Promise.all([
+      api('POST', '/courses', { subjectId: 'sbj_nope', gradeLevelId: y10.id }),
+      api('POST', '/courses', { subjectId: maths.id, gradeLevelId: 'grd_nope' }),
+      api('POST', '/courses', { subjectId: goneSubject.id, gradeLevelId: y10.id }),
+      api('POST', '/courses', { subjectId: maths.id, gradeLevelId: goneGrade.id }),
+      api('POST', '/courses', { subjectId: bob.maths.id, gradeLevelId: y10.id }),
+      api('POST', '/courses', { subjectId: maths.id, gradeLevelId: bob.y10.id }),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404]);
+    expect((await api('GET', '/courses')).body.data).toEqual([]);
+  });
+
+  it('clears fields with null', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const course = await addCourse({
+      ...pair,
+      curriculum: 'Cambridge',
+      teachingMedium: 'English',
+      defaultPrice: { amount: 4500, currency: 'NZD' },
+      durationMinutes: 60,
+    });
+    const res = await api('PATCH', `/courses/${course.id}`, {
+      updatedAt: course.updatedAt,
+      curriculum: null,
+      teachingMedium: null,
+      defaultPrice: null,
+      durationMinutes: null,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      curriculum: null,
+      teachingMedium: null,
+      defaultPrice: null,
+      durationMinutes: null,
+    });
+  });
+
+  it('keeps the course’s subject and grade level: a PATCH can’t move it', async () => {
+    const { api, addSubject, addGrade, addCourse, pair } = await courseSetup();
+    const english = await addSubject('English');
+    const y9 = await addGrade('Year 9');
+    const course = await addCourse(pair);
+
+    const res = await api('PATCH', `/courses/${course.id}`, {
+      updatedAt: course.updatedAt,
+      subjectId: english.id,
+      gradeLevelId: y9.id,
+      durationMinutes: 45,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ...pair, durationMinutes: 45 });
+  });
+
+  it('rejects an invalid PATCH with 400', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const course = await addCourse(pair);
+    const noUpdatedAt = await api('PATCH', `/courses/${course.id}`, { durationMinutes: 45 });
+    expect(noUpdatedAt.status).toBe(400);
+    expect(Object.keys(noUpdatedAt.body.error.fields)).toEqual(['updatedAt']);
+    const badDuration = await api('PATCH', `/courses/${course.id}`, {
+      updatedAt: course.updatedAt,
+      durationMinutes: 4,
+    });
+    expect(badDuration.status).toBe(400);
+    expect(Object.keys(badDuration.body.error.fields)).toEqual(['durationMinutes']);
+  });
+
+  it('returns 409 when updatedAt is stale', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const c = await addCourse(pair);
+    await api('PATCH', `/courses/${c.id}`, { updatedAt: c.updatedAt, durationMinutes: 45 });
+    const stale = await api('PATCH', `/courses/${c.id}`, {
+      updatedAt: c.updatedAt,
+      durationMinutes: 50,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe('stale_data');
+  });
+
+  it('returns the course unchanged when a PATCH changes nothing', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const c = await addCourse({ ...pair, defaultPrice: { amount: 4500, currency: 'NZD' } });
+    const res = await api('PATCH', `/courses/${c.id}`, { updatedAt: c.updatedAt });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(c);
+  });
+
+  it('returns 404 for a course that is unknown or deleted', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    const c = await addCourse(pair);
+    await api('DELETE', `/courses/${c.id}`);
+    const results = await Promise.all([
+      api('PATCH', `/courses/${c.id}`, { updatedAt: c.updatedAt, durationMinutes: 45 }),
+      api('DELETE', `/courses/${c.id}`),
+      api('PATCH', '/courses/crs_nope', { updatedAt: c.updatedAt, durationMinutes: 45 }),
+      api('DELETE', '/courses/crs_nope'),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404]);
+  });
+});
+
+describe('grade levels and subjects in use', () => {
+  it('refuses to delete a grade level or subject that a course uses', async () => {
+    const { api, addSubject, addGrade, addCourse, maths, y10, pair, gradeNames } =
+      await courseSetup();
+    const english = await addSubject('English');
+    const y9 = await addGrade('Year 9');
+    const course = await addCourse(pair);
+    const second = await addCourse({ ...pair, curriculum: 'Cambridge' });
+
+    const grade = await api('DELETE', `/grade-levels/${y10.id}`);
+    expect(grade.status).toBe(422);
+    expect(grade.body.error).toMatchObject({
+      code: 'unprocessable',
+      message: "Delete this grade level's 2 course(s) first.",
+    });
+    const subject = await api('DELETE', `/subjects/${maths.id}`);
+    expect(subject.status).toBe(422);
+    expect(subject.body.error).toMatchObject({
+      code: 'unprocessable',
+      message: "Delete this subject's 2 course(s) first.",
+    });
+    expect(await gradeNames()).toEqual(['Year 10', 'Year 9']);
+
+    // Ones no course uses can still go.
+    expect((await api('DELETE', `/grade-levels/${y9.id}`)).status).toBe(204);
+    expect((await api('DELETE', `/subjects/${english.id}`)).status).toBe(204);
+
+    // Deleted courses don't count.
+    await api('DELETE', `/courses/${course.id}`);
+    expect((await api('DELETE', `/subjects/${maths.id}`)).status).toBe(422);
+    await api('DELETE', `/courses/${second.id}`);
+    expect((await api('DELETE', `/grade-levels/${y10.id}`)).status).toBe(204);
+    expect((await api('DELETE', `/subjects/${maths.id}`)).status).toBe(204);
+  });
+});
+
 describe('org isolation', () => {
   it("can't read or change another org's grade levels and subjects through any route", async () => {
     const alice = await setup();
@@ -317,6 +746,28 @@ describe('org isolation', () => {
 
     expect(await alice.gradeNames()).toEqual(['Year 1']);
     expect((await bob.api('GET', '/subjects')).body.data).toEqual([]);
+  });
+
+  it("can't read or change another org's courses through any route", async () => {
+    const alice = await courseSetup();
+    const course = await alice.addCourse(alice.pair);
+    const bob = await courseSetup();
+
+    const results = await Promise.all([
+      bob.api('PATCH', `/courses/${course.id}`, {
+        updatedAt: course.updatedAt,
+        durationMinutes: 45,
+      }),
+      bob.api('DELETE', `/courses/${course.id}`),
+      call('GET', `${alice.base}/courses`, { token: bob.owner.token }),
+      call('POST', `${alice.base}/courses`, { token: bob.owner.token, body: alice.pair }),
+      bob.api('GET', `/courses?subjectId=${alice.maths.id}`),
+      bob.api('GET', `/courses?gradeLevelId=${alice.y10.id}`),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404]);
+
+    expect((await alice.api('GET', '/courses')).body.data).toEqual([course]);
+    expect((await bob.api('GET', '/courses')).body.data).toEqual([]);
   });
 });
 
@@ -345,6 +796,81 @@ describe('permissions', () => {
         as('DELETE', `/subjects/${subject.id}`),
       ]);
       expect(writes.map((r) => r.status)).toEqual([403, 403, 403, 403, 403, 403, 403]);
+    },
+  );
+
+  it.each(['branch_manager', 'front_desk'] as Role[])(
+    '%s can add, change and delete courses',
+    async (role) => {
+      const { owner, org, base, pair } = await courseSetup();
+      const member = await newUser(role);
+      const token = await addMember(org.id, member.clerkUserId, role);
+      const as = (method: string, path: string, body?: unknown) =>
+        call(method, `${base}${path}`, { token, body });
+
+      const created = await as('POST', '/courses', { ...pair, durationMinutes: 60 });
+      expect(created.status).toBe(201);
+      const updated = await as('PATCH', `/courses/${created.body.id}`, {
+        updatedAt: created.body.updatedAt,
+        durationMinutes: 90,
+      });
+      expect(updated.status).toBe(200);
+      expect((await as('GET', '/courses')).body.data).toEqual([updated.body]);
+      expect((await as('DELETE', `/courses/${created.body.id}`)).status).toBe(204);
+
+      // The audit rows name the staff member, not the owner.
+      const audit = await call('GET', `${base}/audit-log?limit=3`, { token: owner.token });
+      expect(
+        audit.body.data.map((e: { action: string; actorUserId: string }) => [
+          e.action,
+          e.actorUserId,
+        ]),
+      ).toEqual([
+        ['course.deleted', member.userId],
+        ['course.updated', member.userId],
+        ['course.created', member.userId],
+      ]);
+    },
+  );
+
+  it('a manager limited to one branch still writes courses, which have no branch', async () => {
+    const { org, api, base, pair } = await courseSetup();
+    const branches = await api('GET', '/branches');
+    const member = await newUser('branch_manager');
+    await db()
+      .insert(memberships)
+      .values({
+        id: newId('membership'),
+        orgId: org.id,
+        userId: member.userId,
+        role: 'branch_manager',
+        branchIds: [branches.body.data[0].id],
+      });
+
+    const res = await call('POST', `${base}/courses`, { token: member.token, body: pair });
+    expect(res.status).toBe(201);
+  });
+
+  it.each(['teacher', 'parent', 'accountant'] as Role[])(
+    '%s can read courses but not change them',
+    async (role) => {
+      const { org, base, addCourse, pair } = await courseSetup();
+      const course = await addCourse(pair);
+      const member = await newUser(role);
+      const token = await addMember(org.id, member.clerkUserId, role);
+      const as = (method: string, path: string, body?: unknown) =>
+        call(method, `${base}${path}`, { token, body });
+
+      const list = await as('GET', '/courses');
+      expect(list.status).toBe(200);
+      expect(list.body.data).toEqual([course]);
+
+      const writes = await Promise.all([
+        as('POST', '/courses', { ...pair, curriculum: 'Nope' }),
+        as('PATCH', `/courses/${course.id}`, { updatedAt: course.updatedAt, durationMinutes: 45 }),
+        as('DELETE', `/courses/${course.id}`),
+      ]);
+      expect(writes.map((r) => r.status)).toEqual([403, 403, 403]);
     },
   );
 });

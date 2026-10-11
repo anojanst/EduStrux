@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-08 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-11 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -149,9 +149,9 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Base path | `/api/v1`; org data under `/orgs/{orgId}`; current user under `/me`; public forms under `/public/{orgSlug}`. Orgs are addressed by path, not subdomain. Public web pages use the slug too, e.g. `/f/{orgSlug}/…` for enquiry and enrolment forms (later the parent portal link); a vanity subdomain may come later as a redirect (D-020). |
 | Format | JSON, camelCase |
 | IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `crs_`, `cls_`, `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
-| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). |
+| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists and courses come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`) is 404 when the org doesn't have that id (D-043). |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update; one that sends only `updatedAt` changes nothing and returns the record (D-034). `DELETE` is a soft delete (`deleted_at`) and returns 204. |
-| Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). |
+| Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). A course has no name: it is unique on subject + grade level + curriculum + teaching medium, ignoring case and deleted rows. A clash is 409 `conflict` with `fields._`, the key for an error that belongs to no single field (D-041, D-043). |
 | Actions | Verb sub-path with `POST`, e.g. `POST /terms/{id}/generate-invoices` |
 | Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` until `succeeded` or `failed`. Starting a job writes a `job.started` audit row. A failed try is retried up to 3 times, so job handlers must be idempotent (D-017). |
 | Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
@@ -178,6 +178,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
 | Families and students | Full | Branch | Branch | Own classes, read | Own family | — |
+| Courses (D-041, D-042) | Full | Full, org-wide | Full, org-wide | Read | Read | Read |
 | Classes and timetable | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Attendance and notes | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
 | Fees and payments | Full | Branch | Branch | — | Own invoices, read | Read + export |
@@ -186,6 +187,8 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Audit log (D-030) | Full | — | — | — | — | — |
 
 Setup data (branches, rooms, grade levels, subjects, the calendar and tax rates) is read org-wide, so a branch manager sees every branch, not only theirs (D-033).
+
+Courses have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes courses for the whole org (D-041). Every role reads all courses, default prices included. That read rule is an assumption from the build, for the owner to confirm (D-042).
 
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
@@ -204,7 +207,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 | Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale (formatting region, `en-*` only, D-015), date format (overrides the locale's default), plan, status, slug, single-tutor mode (one branch only, D-032); branch name, address (every org starts with "Main", D-031); room → branch, capacity; tax rate name, rate in basis points (`rate_bps`, 1500 = 15%), inclusive flag (D-039) |
 | People and access | `users`, `memberships`, `invitations` | `clerk_user_id`; role, branch ids, status |
 | Calendar | `academic_years`, `terms`, `holidays` | name, start/end dates; academic years never overlap; term → academic year, inside it, no overlapping terms (D-037); holiday date range, optional branch (null = org-wide) (D-038) |
-| Curriculum | `grade_levels`, `subjects`, `courses` | grade name, sort order (from 1, gaps allowed, at most 100 grades per org, D-035); subject name; **course = subject × grade** (+ optional curriculum, teaching medium, default price, duration) |
+| Curriculum | `grade_levels`, `subjects`, `courses` | grade name, sort order (from 1, gaps allowed, at most 100 grades per org, D-035); subject name; **course = subject × grade**, with no name of its own; optional curriculum and teaching medium (free text), default price (minor units + currency, in the org's currency), usual lesson length in minutes; unique on subject + grade + curriculum + medium (D-041, D-043) |
 | Classes | `classes`, `class_schedules`, `sessions` | course, term (optional: no term = open-ended from its start date, billed monthly, D-036), branch, room, teacher, capacity; weekly recurrence rule; dated session (local date/time, status) |
 | Families | `families`, `guardians`, `students`, `student_grades` | billing contact, preferred channel, language (stored only; unused in the MVP, D-015); consents; **grade per academic year**; normalised (lower-case, accent-stripped) name columns for search and duplicate warnings (D-026) |
 | Enrolment | `enrolments`, `enrolment_requests` | student, class, start/end, price override, status |
@@ -217,6 +220,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 ### Grade and subject model
 - Each org defines its own ordered **grade levels** (NZ Year 1–13, US Grade K–12, Sri Lanka Grade 1–13 / O/L / A/L) and its **subjects**.
 - **Course = subject × grade** (e.g. "Year 10 Maths"). **Class** = one group of a course at a set time with a teacher (e.g. "Year 10 Maths – Group A – Tue 4pm").
+- A course has no name of its own. Clients build it from the grade level and subject, plus the curriculum and teaching medium when set, so "Year 10 Maths (Cambridge)" and "Year 10 Maths (NCEA)" can both exist (D-041).
 - A student takes several subjects as several enrolments.
 - `student_grades` stores the grade per academic year. **Year-end promotion** moves everyone up a grade, with exceptions.
 - **Per-subject pricing and bundles:** price by number of subjects (1, 2, 3+), monthly per subject, or grade bundles like "Year 10 core".
@@ -230,7 +234,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly: terms are optional per class, D-036), locale settings (formatting region; UI in English, D-015), tax settings, academic years, grade levels and subjects.
 - **People:** family records, student profiles, emergency contacts and consents, staff profiles, prefix search with duplicate warnings (D-026).
 - **Enquiry and enrolment:** enquiry form (embeddable/link), online enrolment form with staff approval, enrol/transfer/withdraw with pro-rata, year-end promotion.
-- **Courses and pricing:** courses, class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing and bundles.
+- **Courses and pricing:** courses (curriculum and teaching medium as optional plain-text labels, D-043), class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing and bundles.
 - **Timetable:** recurring schedules with holidays skipped, calendar views (day/week/month by branch, room, teacher, student), clash detection, one-off changes with family notices.
 - **Attendance and make-ups:** one-tap attendance on phone, parent absence notices, make-up policy, automatic make-up credits, staff make-up booking.
 - **Learning:** lesson notes (typed).
@@ -244,7 +248,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Import:** spreadsheet import with **manual** column mapping (kept in the MVP: centres won't retype 100 students, D-022). AI mapping is part of the AI add-on.
 
 ### Not in the MVP (v1.1 / Later / add-ons)
-- **v1.1:** term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing (moved from the MVP, D-022), roles and permissions UI (custom permission sets), custom fields, school-type templates (music, language/cultural, dance; academic tuition comes first, D-028), UI languages (English only in the MVP, D-015), one login across many orgs, document templates, curriculum/medium tags, grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export, shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
+- **v1.1:** term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing (moved from the MVP, D-022), roles and permissions UI (custom permission sets), custom fields, school-type templates (music, language/cultural, dance; academic tuition comes first, D-028), UI languages (English only in the MVP, D-015), one login across many orgs, document templates, curriculum/medium tags (managed tags and filtering; the MVP has plain-text labels, D-043), grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export, shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
 - **Later:** public class listing, prerequisites, timetable builder, check-in kiosk, external exam tracking, skill maps, practice logs, newsletters, student login, teacher invoices, parent–teacher meetings, performer line-ups, volunteer rosters, galleries, resource library, custom reports, public API and webhooks, native mobile apps, referral programme, large-class attendance (custom only).
 - **Paid add-ons:** WhatsApp, SMS, all AI features (report comment drafts, voice notes, translation, make-up matching, "ask your data", at-risk alerts, timetable suggestions, bank-match assist, AI import mapping).
 - **Out of scope for now:** online payments from parents.
@@ -269,8 +273,8 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `GET|POST /academic-years` · `PATCH /academic-years/{academicYearId}`: no `DELETE`. Years can't overlap; a date change that would overlap another year or leave a term outside is refused (422) (D-037)
 - `GET|POST /terms` (`GET` filter `?academicYearId`) · `PATCH|DELETE /terms/{termId}`: a term sits inside its academic year and can't overlap another term (422); `PATCH` can't move it to another year (D-037)
 - `GET|POST /holidays` (`GET` filters `?from`, `?to`, `?branchId`) · `DELETE /holidays/{holidayId}`: org-wide, or one branch with `branchId`. `?branchId=X` returns X's own holidays plus org-wide ones; `?from`/`?to` keep holidays that touch the range. No `PATCH`: delete and re-add (D-038)
-- `GET|POST /grade-levels` · `PATCH|DELETE /grade-levels/{gradeLevelId}` · `PUT /grade-levels/order`: `GET` returns the whole list in grade order, not paged; `PUT` must list every grade exactly once (D-035)
-- `GET|POST /subjects` · `PATCH|DELETE /subjects/{subjectId}`
+- `GET|POST /grade-levels` · `PATCH|DELETE /grade-levels/{gradeLevelId}` · `PUT /grade-levels/order`: `GET` returns the whole list in grade order, not paged; `PUT` must list every grade exactly once (D-035). `DELETE` is refused (422) while a course uses the grade level (D-043)
+- `GET|POST /subjects` · `PATCH|DELETE /subjects/{subjectId}`: `DELETE` is refused (422) while a course uses the subject (D-043)
 
 ### Staff
 - `GET /staff`
@@ -294,7 +298,8 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `POST /imports/{id}/commit` (job)
 
 ### Courses, classes and timetable
-- `GET|POST /courses` · `PATCH|DELETE /courses/{id}`
+Courses: every role reads (an assumption to confirm, D-042); the owner, branch managers and front desk write, for the whole org (D-041).
+- `GET|POST /courses` (`GET` filters `?subjectId`, `?gradeLevelId`) · `PATCH|DELETE /courses/{courseId}`: subject + grade level + curriculum + teaching medium must be unique (409). `PATCH` can't change the subject or grade level. `defaultPrice` must be in the org's currency (400); `durationMinutes` is the usual lesson length, 5 to 600. A `subjectId` or `gradeLevelId` the org doesn't have is 404, in a filter too (D-041, D-043)
 - `GET|POST /classes` · `GET|PATCH|DELETE /classes/{id}`
 - `PUT /classes/{id}/schedule` (regenerates future sessions)
 - `GET /sessions` (date range; filter by branch, room, teacher, grade, student)
@@ -394,6 +399,7 @@ Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
 - [ ] Accounting export format for v1.1: Xero, QuickBooks or CSV?
 - [x] Product name and domain. → EduStrux, edustrux.com; domain registration by the owner pending (D-023)
 - [x] Confirm the side-business and IP clauses in the employment agreement before building. → Confirmed by the owner (D-019)
+- [ ] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads.
 
 **Technical**
 - [x] Parent sign-in: Clerk accounts (they count toward the 50k free users) or our own magic-link tokens for the portal? → Clerk users with passwordless email code or link, linked to a `parent` membership (D-021)
