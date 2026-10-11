@@ -1,5 +1,5 @@
 import { z } from '../zod';
-import { Timestamp } from './common';
+import { CurrencyCode, Money, PageQuery, Timestamp } from './common';
 
 const Name = z.string().trim().min(1).max(120);
 const UpdatedAt = Timestamp.openapi({
@@ -76,3 +76,79 @@ export const UpdateSubject = z
   .required({ updatedAt: true })
   .openapi('UpdateSubject');
 export type UpdateSubject = z.infer<typeof UpdateSubject>;
+
+// ── Courses ─────────────────────────────────────────────────────────────────
+
+/** A short free-text label, e.g. a curriculum ("Cambridge") or a teaching medium ("English"). */
+const Label = z.string().trim().min(1).max(60).nullable();
+const Curriculum = Label.openapi({
+  example: 'Cambridge',
+  description: 'The curriculum the course follows. null = not set.',
+});
+const TeachingMedium = Label.openapi({
+  example: 'English',
+  description: 'The language the course is taught in. null = not set.',
+});
+/** A price can't be negative; 0 is free. The currency must be the organisation's. */
+const DefaultPrice = z
+  .object({
+    amount: z.number().int().min(0).openapi({ example: 4500 }),
+    currency: CurrencyCode,
+  })
+  .nullable()
+  .openapi({
+    description:
+      'The course’s list price, in the organisation’s currency. null = not set. ' +
+      'How it is charged (per term, per lesson, monthly) comes with price rules.',
+  });
+const DurationMinutes = z.number().int().min(5).max(600).nullable().openapi({
+  example: 60,
+  description: 'How long a lesson usually runs, in minutes. null = not set.',
+});
+
+export const Course = z
+  .object({
+    id: z.string().openapi({ example: 'crs_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    subjectId: z.string(),
+    gradeLevelId: z.string(),
+    curriculum: z.string().nullable(),
+    teachingMedium: z.string().nullable(),
+    // A union rather than Money.nullable(): the OpenAPI generator drops "or null" from a $ref.
+    defaultPrice: z.union([Money, z.null()]),
+    durationMinutes: z.number().int().nullable(),
+    createdAt: Timestamp,
+    updatedAt: Timestamp,
+  })
+  .openapi('Course');
+export type Course = z.infer<typeof Course>;
+
+export const CreateCourse = z
+  .object({
+    subjectId: z.string().openapi({ example: 'sbj_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    gradeLevelId: z.string().openapi({ example: 'grd_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    curriculum: Curriculum.optional(),
+    teachingMedium: TeachingMedium.optional(),
+    defaultPrice: DefaultPrice.optional(),
+    durationMinutes: DurationMinutes.optional(),
+  })
+  .openapi('CreateCourse');
+export type CreateCourse = z.infer<typeof CreateCourse>;
+
+/** A course keeps its subject and grade level: there's no subjectId or gradeLevelId here. */
+export const UpdateCourse = z
+  .object({
+    updatedAt: UpdatedAt,
+    curriculum: Curriculum,
+    teachingMedium: TeachingMedium,
+    defaultPrice: DefaultPrice,
+    durationMinutes: DurationMinutes,
+  })
+  .partial()
+  .required({ updatedAt: true })
+  .openapi('UpdateCourse');
+export type UpdateCourse = z.infer<typeof UpdateCourse>;
+
+export const CourseQuery = PageQuery.extend({
+  subjectId: z.string().optional().openapi({ description: 'Only this subject’s courses' }),
+  gradeLevelId: z.string().optional().openapi({ description: 'Only this grade level’s courses' }),
+});

@@ -430,6 +430,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   `org:read` isn't branch-scoped, a branch manager sees every branch, not only theirs. Letting
   other roles write setup data later needs a new permission and a new decision.
 - **Tasks:** TUI-27, TUI-29.
+- **Update 2026-10-11:** Courses are the one exception: the owner, branch managers and front
+  desk write them (D-041).
 
 ## D-034 · 2026-10-07 · Setup names, branch deletion and rooms
 
@@ -453,6 +455,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     (TUI-30) and classes (TUI-31) will need those checks once they reference them.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-27, TUI-29 (and TUI-30, TUI-31 for the in-use checks).
+- **Update 2026-10-11:** Deleting a grade level or subject is now refused (422) while a course
+  uses it (D-043). The room check is still open for TUI-31.
 
 ## D-035 · 2026-10-07 · Grade levels are one ordered list, not paged
 
@@ -560,3 +564,81 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   need that check. Assumption: recorded from the implementation; the owner hasn't stated these
   rules.
 - **Tasks:** TUI-28, TUI-35 (and TUI-31).
+
+## D-041 · 2026-10-11 · Courses: who writes them, what makes one unique, what duration means
+
+- **Context:** TUI-30. The handoff said a course is subject × grade with an optional curriculum,
+  teaching medium, default price and duration. It didn't say who writes courses, what makes one
+  unique or what duration means. The owner was asked three questions during the build.
+- **Decision:** The owner decided:
+  - The owner and branch staff write courses. Writes need `classes:write`, which the owner,
+    branch managers and front desk have; teachers, parents and accountants get 403. A course has
+    no branch, so that permission's `branch` scope isn't applied: a branch manager or front desk
+    member limited to one branch changes courses for the whole org.
+  - A course is unique on subject + grade level + curriculum + teaching medium, ignoring case and
+    deleted rows. It has no name of its own: clients build the display name from the grade level
+    and subject (e.g. "Year 10 Mathematics"), plus the curriculum and medium when set.
+  - Duration is the usual lesson length in minutes, stored and returned as `durationMinutes`.
+- **Consequences:**
+  - This departs from D-033's "only the owner writes setup data", for courses only. Branches,
+    rooms, grade levels, subjects, the calendar and tax rates stay owner-written.
+  - "Year 10 Maths (Cambridge)" and "Year 10 Maths (NCEA)" can both exist.
+  - `durationMinutes` will pre-fill a class's end time (TUI-31).
+- **Tasks:** TUI-30 (and TUI-31).
+
+## D-042 · 2026-10-11 · Every role reads courses (assumption, for the owner to confirm)
+
+- **Context:** When the owner chose "owner and branch staff" for course writes (D-041), the
+  option's text said accountants would lose read access: it assumed reads would move to
+  `classes:read`. The build kept `org:read` instead.
+- **Decision:** Reads need `org:read`, so every role (including teacher, parent and accountant)
+  reads all courses across the org, as for the rest of the setup data (D-033). The reasons
+  reported by the implementation: `classes:read` gives teachers and parents the `own` scope,
+  which can't be applied to courses before classes exist, and a course list is catalogue data
+  like subjects. **Assumption: recorded from the implementation. It differs from the option the
+  owner picked, so the owner needs to confirm it at review.**
+- **Consequences:** Teachers, parents and accountants can see every course, including its default
+  price. Restricting reads later means a different permission on `GET /courses` and a new
+  decision. Tracked as an open question in handoff §11.
+- **Tasks:** TUI-30.
+
+## D-043 · 2026-10-11 · Course fields, default price, filters and in-use checks
+
+- **Context:** Rules the TUI-30 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - A second course with the same subject, grade level, curriculum and teaching medium is
+    `409 conflict` with `fields._: ['Taken']`, since no single field is at fault (`_` is the
+    existing key for an error on the whole object). A partial unique index enforces it.
+  - A missing curriculum or medium counts as its own value: a course with no curriculum and one
+    with "Cambridge" are different, and null is the same as leaving the field out. A PATCH that
+    would make two courses identical is also 409; changing only the letter case of a course's
+    own label is allowed.
+  - A course keeps its subject and grade level: `PATCH /courses/{courseId}` takes no `subjectId`
+    or `gradeLevelId` and ignores them if sent. To change them, delete the course and add it
+    again, as for rooms (D-034) and terms (D-037).
+  - Curriculum and teaching medium are optional free-text labels, 1–60 characters, trimmed; null
+    clears one. The API field is `teachingMedium`. Handoff §7 put both on the course while §8
+    listed "curriculum/medium tags" under v1.1: the MVP has plain text, and the v1.1 item means
+    managed tags and filtering.
+  - `defaultPrice` is Money (`{ amount, currency }`) or null. The amount is an integer of 0 or
+    more (0 = free). The currency must be the org's, otherwise `400 validation_failed` on
+    `defaultPrice.currency`. It's stored as two columns (amount, currency), the first money
+    columns in the database.
+  - `durationMinutes` is an integer from 5 to 600.
+  - Deleting a grade level or subject is refused (`422 unprocessable`) while a non-deleted course
+    uses it. This is the TUI-30 part of the in-use checks D-034 left open.
+  - `GET /courses` is cursor-paged, oldest first by id, with filters `?subjectId` and
+    `?gradeLevelId` (either or both). A filter id the org doesn't have (unknown, deleted or
+    another org's) is 404, like `?academicYearId` on terms. So is such a `subjectId` or
+    `gradeLevelId` on `POST`.
+  - The path parameter is `{courseId}` (the handoff wrote `/courses/{id}`), following the other
+    setup routes. There's no `GET /courses/{courseId}`, as in the handoff's list.
+- **Consequences:**
+  - What the default price is charged for (per term, per lesson, per month) isn't defined. Price
+    rules (TUI-36) must define it.
+  - If the org's currency changes later, existing course prices keep the currency they were saved
+    with. Nothing converts them or blocks the change yet.
+  - Deleting a course doesn't yet check whether a class uses it; classes (TUI-31) will need that
+    check.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-30 (and TUI-31, TUI-36).

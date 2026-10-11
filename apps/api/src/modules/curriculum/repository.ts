@@ -1,11 +1,30 @@
-import { gradeLevels, now, subjects } from '@edustrux/db';
-import { asc, count, eq, gt, max, ne, sql } from 'drizzle-orm';
+import { courses, gradeLevels, now, subjects } from '@edustrux/db';
+import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type GradeLevelRow = typeof gradeLevels.$inferSelect;
 export type NewGradeLevelRow = typeof gradeLevels.$inferInsert;
 export type SubjectRow = typeof subjects.$inferSelect;
 export type NewSubjectRow = typeof subjects.$inferInsert;
+export type CourseRow = typeof courses.$inferSelect;
+export type NewCourseRow = typeof courses.$inferInsert;
+export type CourseChanges = Partial<
+  Pick<
+    NewCourseRow,
+    | 'curriculum'
+    | 'teachingMedium'
+    | 'defaultPriceAmount'
+    | 'defaultPriceCurrency'
+    | 'durationMinutes'
+  >
+>;
+export type CourseFilter = { subjectId?: string; gradeLevelId?: string };
+/** What makes a course unique in its org. */
+export type CourseKey = Pick<
+  CourseRow,
+  'subjectId' | 'gradeLevelId' | 'curriculum' | 'teachingMedium'
+>;
 
 // ── Grade levels ────────────────────────────────────────────────────────────
 
@@ -189,5 +208,106 @@ export async function softDeleteSubject(ctx: OrgCtx, before: SubjectRow) {
         .where(inOrg(ctx, subjects, eq(subjects.id, before.id))),
     ],
     { action: 'subject.deleted', entityType: 'subject', entityId: before.id, before },
+  );
+}
+
+// ── Courses ─────────────────────────────────────────────────────────────────
+
+const courseFilter = (filter: CourseFilter) => [
+  filter.subjectId ? eq(courses.subjectId, filter.subjectId) : undefined,
+  filter.gradeLevelId ? eq(courses.gradeLevelId, filter.gradeLevelId) : undefined,
+];
+
+/** Case-insensitive match on an optional label; "not set" only matches "not set". */
+const sameLabel = (column: SQLiteColumn, value: string | null) =>
+  value === null ? isNull(column) : sql`lower(${column}) = lower(${value})`;
+
+/** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listCourses(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  filter: CourseFilter,
+) {
+  return ctx.db
+    .select()
+    .from(courses)
+    .where(
+      inOrg(ctx, courses, ...courseFilter(filter), afterId ? gt(courses.id, afterId) : undefined),
+    )
+    .orderBy(asc(courses.id))
+    .limit(limit + 1);
+}
+
+export function findCourse(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(courses)
+    .where(inOrg(ctx, courses, eq(courses.id, id)))
+    .get();
+}
+
+/** How many courses use a subject or a grade level. Neither can be deleted while any do. */
+export async function countCourses(ctx: OrgCtx, filter: CourseFilter) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(courses)
+    .where(inOrg(ctx, courses, ...courseFilter(filter)))
+    .get();
+  return row?.n ?? 0;
+}
+
+/** Whether the org already has a course with this subject, grade level, curriculum and medium. */
+export async function courseTaken(ctx: OrgCtx, key: CourseKey, exceptId?: string) {
+  const row = await ctx.db
+    .select({ id: courses.id })
+    .from(courses)
+    .where(
+      inOrg(
+        ctx,
+        courses,
+        eq(courses.subjectId, key.subjectId),
+        eq(courses.gradeLevelId, key.gradeLevelId),
+        sameLabel(courses.curriculum, key.curriculum),
+        sameLabel(courses.teachingMedium, key.teachingMedium),
+        exceptId ? ne(courses.id, exceptId) : undefined,
+      ),
+    )
+    .get();
+  return row !== undefined;
+}
+
+export async function insertCourse(ctx: OrgCtx, course: NewCourseRow & { id: string }) {
+  await writeWithAudit(ctx, [ctx.db.insert(courses).values(course)], {
+    action: 'course.created',
+    entityType: 'course',
+    entityId: course.id,
+    after: course,
+  });
+}
+
+export async function updateCourse(ctx: OrgCtx, before: CourseRow, changes: CourseChanges) {
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(courses)
+        .set(changes)
+        .where(inOrg(ctx, courses, eq(courses.id, before.id))),
+    ],
+    { action: 'course.updated', entityType: 'course', entityId: before.id, before, after: changes },
+  );
+}
+
+export async function softDeleteCourse(ctx: OrgCtx, before: CourseRow) {
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(courses)
+        .set({ deletedAt: now() })
+        .where(inOrg(ctx, courses, eq(courses.id, before.id))),
+    ],
+    { action: 'course.deleted', entityType: 'course', entityId: before.id, before },
   );
 }

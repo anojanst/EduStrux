@@ -22,6 +22,8 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/grade-levels/{gradeLevelId}',
         '/api/v1/orgs/{orgId}/subjects',
         '/api/v1/orgs/{orgId}/subjects/{subjectId}',
+        '/api/v1/orgs/{orgId}/courses',
+        '/api/v1/orgs/{orgId}/courses/{courseId}',
         '/api/v1/orgs/{orgId}/academic-years',
         '/api/v1/orgs/{orgId}/academic-years/{academicYearId}',
         '/api/v1/orgs/{orgId}/terms',
