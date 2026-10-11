@@ -1,0 +1,432 @@
+import { classSchedules, classes, now, sessions } from '@edustrux/db';
+import { and, asc, count, eq, gt, gte, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
+import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import type { DateRange, LocalMoment } from './schedule';
+
+export type ClassRow = typeof classes.$inferSelect;
+export type NewClassRow = typeof classes.$inferInsert;
+export type ClassChanges = Partial<
+  Pick<
+    NewClassRow,
+    'roomId' | 'teacherMembershipId' | 'name' | 'capacity' | 'startDate' | 'endDate'
+  >
+>;
+export type SlotRow = typeof classSchedules.$inferSelect;
+export type NewSlotRow = typeof classSchedules.$inferInsert;
+export type SessionRow = typeof sessions.$inferSelect;
+export type NewSessionRow = typeof sessions.$inferInsert;
+
+/**
+ * The part of the org's classes a caller may see or change: every class when empty, else only
+ * those in `branchIds`, or taught by `teacherMembershipId`, or none at all.
+ */
+export type Reach = { branchIds?: string[]; teacherMembershipId?: string; nothing?: true };
+
+export type ClassFilter = {
+  branchId?: string;
+  termId?: string;
+  courseId?: string;
+  gradeLevelId?: string;
+  teacherId?: string;
+  roomId?: string;
+};
+export type SessionFilter = {
+  from: string;
+  to: string;
+  branchId?: string;
+  roomId?: string;
+  teacherId?: string;
+  gradeLevelId?: string;
+  classId?: string;
+};
+type SessionCursor = { date: string; time: string; id: string };
+
+/** Sessions to add and remove so a class's upcoming sessions match its schedule. */
+export type SessionPlan = { add: NewSessionRow[]; removeIds: string[] };
+
+// D1 binds at most 100 values per statement. A session row binds up to 11 and a slot row 8.
+const SESSIONS_PER_INSERT = 9;
+const SLOTS_PER_INSERT = 12;
+
+function chunks<T>(rows: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
+function within(reach: Reach): SQL | undefined {
+  if (reach.nothing) return sql`0`;
+  return and(
+    reach.branchIds ? inIds(classes.branchId, reach.branchIds) : undefined,
+    reach.teacherMembershipId
+      ? eq(classes.teacherMembershipId, reach.teacherMembershipId)
+      : undefined,
+  );
+}
+
+const classFilter = (filter: ClassFilter) => [
+  filter.branchId ? eq(classes.branchId, filter.branchId) : undefined,
+  filter.termId ? eq(classes.termId, filter.termId) : undefined,
+  filter.courseId ? eq(classes.courseId, filter.courseId) : undefined,
+  filter.gradeLevelId ? eq(classes.gradeLevelId, filter.gradeLevelId) : undefined,
+  filter.teacherId ? eq(classes.teacherMembershipId, filter.teacherId) : undefined,
+  filter.roomId ? eq(classes.roomId, filter.roomId) : undefined,
+];
+
+/** A session later than the local moment: it hasn't started. */
+const upcoming = (moment: LocalMoment) =>
+  or(
+    gt(sessions.date, moment.date),
+    and(eq(sessions.date, moment.date), gt(sessions.startTime, moment.time)),
+  );
+
+// ── Classes ─────────────────────────────────────────────────────────────────
+
+/** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listClasses(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  filter: ClassFilter,
+  reach: Reach,
+) {
+  return ctx.db
+    .select()
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        ...classFilter(filter),
+        within(reach),
+        afterId ? gt(classes.id, afterId) : undefined,
+      ),
+    )
+    .orderBy(asc(classes.id))
+    .limit(limit + 1);
+}
+
+export function findClass(ctx: OrgCtx, id: string, reach: Reach) {
+  return ctx.db
+    .select()
+    .from(classes)
+    .where(inOrg(ctx, classes, eq(classes.id, id), within(reach)))
+    .get();
+}
+
+/** How many classes use a course, term, branch or room. None of those can be deleted while any do. */
+export async function countClasses(ctx: OrgCtx, filter: ClassFilter) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(classes)
+    .where(inOrg(ctx, classes, ...classFilter(filter)))
+    .get();
+  return row?.n ?? 0;
+}
+
+/** Case-insensitive, among the course's classes in the same term and branch that aren't deleted. */
+export async function classNameTaken(
+  ctx: OrgCtx,
+  key: Pick<ClassRow, 'courseId' | 'termId' | 'branchId' | 'name'>,
+  exceptId?: string,
+) {
+  const row = await ctx.db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        eq(classes.courseId, key.courseId),
+        key.termId === null ? sql`${classes.termId} is null` : eq(classes.termId, key.termId),
+        eq(classes.branchId, key.branchId),
+        sql`lower(${classes.name}) = lower(${key.name})`,
+        exceptId ? ne(classes.id, exceptId) : undefined,
+      ),
+    )
+    .get();
+  return row !== undefined;
+}
+
+export async function insertClass(ctx: OrgCtx, row: NewClassRow & { id: string }) {
+  await writeWithAudit(ctx, [ctx.db.insert(classes).values(row)], {
+    action: 'class.created',
+    entityType: 'class',
+    entityId: row.id,
+    after: row,
+  });
+}
+
+/**
+ * Updates the class and, in the same batch, its upcoming sessions: `restaff` gives those still
+ * scheduled the class's new room and teacher, and `plan` adds and removes sessions after a
+ * change of dates.
+ */
+export async function updateClass(
+  ctx: OrgCtx,
+  before: ClassRow,
+  changes: ClassChanges,
+  sessionChanges?: {
+    from: LocalMoment;
+    restaff?: Pick<ClassRow, 'roomId' | 'teacherMembershipId'>;
+    plan?: SessionPlan;
+  },
+) {
+  const { from, restaff, plan } = sessionChanges ?? {};
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(classes)
+        .set(changes)
+        .where(inOrg(ctx, classes, eq(classes.id, before.id))),
+      ...(from && restaff
+        ? [
+            ctx.db
+              .update(sessions)
+              .set(restaff)
+              .where(
+                inOrg(
+                  ctx,
+                  sessions,
+                  eq(sessions.classId, before.id),
+                  eq(sessions.status, 'scheduled'),
+                  upcoming(from),
+                ),
+              ),
+          ]
+        : []),
+      ...(plan ? sessionStatements(ctx, plan) : []),
+    ],
+    {
+      action: 'class.updated',
+      entityType: 'class',
+      entityId: before.id,
+      before,
+      after: plan
+        ? { ...changes, sessionsAdded: plan.add.length, sessionsRemoved: plan.removeIds.length }
+        : changes,
+    },
+  );
+}
+
+/** Soft-deletes the class with its weekly slots and every one of its sessions. */
+export async function softDeleteClass(ctx: OrgCtx, before: ClassRow) {
+  const deletedAt = now();
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(classes)
+        .set({ deletedAt })
+        .where(inOrg(ctx, classes, eq(classes.id, before.id))),
+      ctx.db
+        .update(classSchedules)
+        .set({ deletedAt })
+        .where(inOrg(ctx, classSchedules, eq(classSchedules.classId, before.id))),
+      ctx.db
+        .update(sessions)
+        .set({ deletedAt })
+        .where(inOrg(ctx, sessions, eq(sessions.classId, before.id))),
+    ],
+    { action: 'class.deleted', entityType: 'class', entityId: before.id, before },
+  );
+}
+
+// ── Weekly slots ────────────────────────────────────────────────────────────
+
+/** The weekly slots of the given classes, each class's in weekday then start-time order. */
+export function listSlots(ctx: OrgCtx, classIds: string[]) {
+  return ctx.db
+    .select()
+    .from(classSchedules)
+    .where(inOrg(ctx, classSchedules, inIds(classSchedules.classId, classIds)))
+    .orderBy(
+      asc(classSchedules.classId),
+      asc(classSchedules.weekday),
+      asc(classSchedules.startTime),
+    );
+}
+
+/**
+ * Applies a schedule change as one batch with one audit row: replaces the class's weekly slots
+ * (`slots: null` leaves them as they are) and adds and removes the sessions in `plan`.
+ */
+export async function setSchedule(
+  ctx: OrgCtx,
+  classId: string,
+  before: SlotRow[],
+  slots: (NewSlotRow & { id: string })[] | null,
+  plan: SessionPlan,
+) {
+  const slotOf = (s: Pick<SlotRow, 'weekday' | 'startTime' | 'endTime'>) => ({
+    weekday: s.weekday,
+    startTime: s.startTime,
+    endTime: s.endTime,
+  });
+  await writeWithAudit(
+    ctx,
+    [
+      ...(slots
+        ? [
+            ctx.db
+              .update(classSchedules)
+              .set({ deletedAt: now() })
+              .where(inOrg(ctx, classSchedules, eq(classSchedules.classId, classId))),
+            ...chunks(slots, SLOTS_PER_INSERT).map((rows) =>
+              ctx.db.insert(classSchedules).values(rows),
+            ),
+          ]
+        : []),
+      ...sessionStatements(ctx, plan),
+    ],
+    {
+      action: 'class.schedule_set',
+      entityType: 'class',
+      entityId: classId,
+      before: { slots: before.map(slotOf) },
+      after: {
+        slots: (slots ?? before).map(slotOf),
+        sessionsAdded: plan.add.length,
+        sessionsRemoved: plan.removeIds.length,
+      },
+    },
+  );
+}
+
+// ── Sessions ────────────────────────────────────────────────────────────────
+
+/** Removals first: a replaced session frees its (class, date, start time) for the new one. */
+function sessionStatements(ctx: OrgCtx, plan: SessionPlan): BatchItem<'sqlite'>[] {
+  return [
+    ...(plan.removeIds.length
+      ? [
+          ctx.db
+            .update(sessions)
+            .set({ deletedAt: now() })
+            .where(inOrg(ctx, sessions, inIds(sessions.id, plan.removeIds))),
+        ]
+      : []),
+    ...chunks(plan.add, SESSIONS_PER_INSERT).map((rows) => ctx.db.insert(sessions).values(rows)),
+  ];
+}
+
+/** Every session of the class that hasn't started, whatever its status. */
+export function upcomingSessions(ctx: OrgCtx, classId: string, from: LocalMoment) {
+  return ctx.db
+    .select()
+    .from(sessions)
+    .where(inOrg(ctx, sessions, eq(sessions.classId, classId), upcoming(from)));
+}
+
+// A session is read with what a timetable needs from its class.
+const sessionWithClass = {
+  session: sessions,
+  className: classes.name,
+  courseId: classes.courseId,
+  branchId: classes.branchId,
+};
+
+/** In date, start-time, then id order. Fetches `limit + 1` rows to tell if there's another page. */
+export function listSessions(
+  ctx: OrgCtx,
+  limit: number,
+  cursor: SessionCursor | undefined,
+  filter: SessionFilter,
+  reach: Reach,
+) {
+  const after = cursor
+    ? or(
+        gt(sessions.date, cursor.date),
+        and(eq(sessions.date, cursor.date), gt(sessions.startTime, cursor.time)),
+        and(
+          eq(sessions.date, cursor.date),
+          eq(sessions.startTime, cursor.time),
+          gt(sessions.id, cursor.id),
+        ),
+      )
+    : undefined;
+  return ctx.db
+    .select(sessionWithClass)
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          sessions,
+          gte(sessions.date, filter.from),
+          lte(sessions.date, filter.to),
+          filter.roomId ? eq(sessions.roomId, filter.roomId) : undefined,
+          filter.teacherId ? eq(sessions.teacherMembershipId, filter.teacherId) : undefined,
+          filter.classId ? eq(sessions.classId, filter.classId) : undefined,
+          after,
+        ),
+        inOrg(
+          ctx,
+          classes,
+          ...classFilter({ branchId: filter.branchId, gradeLevelId: filter.gradeLevelId }),
+          within(reach),
+        ),
+      ),
+    )
+    .orderBy(asc(sessions.date), asc(sessions.startTime), asc(sessions.id))
+    .limit(limit + 1);
+}
+
+export function findSession(ctx: OrgCtx, id: string, reach: Reach) {
+  return ctx.db
+    .select(sessionWithClass)
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(and(inOrg(ctx, sessions, eq(sessions.id, id)), inOrg(ctx, classes, within(reach))))
+    .get();
+}
+
+/**
+ * Scheduled sessions that haven't started, on dates a holiday closes: in every branch, or only
+ * the holiday's own.
+ */
+function closedBy(
+  ctx: OrgCtx,
+  holiday: DateRange & { branchId: string | null },
+  from: LocalMoment,
+) {
+  return inOrg(
+    ctx,
+    sessions,
+    eq(sessions.status, 'scheduled'),
+    gte(sessions.date, holiday.startDate),
+    lte(sessions.date, holiday.endDate),
+    upcoming(from),
+    holiday.branchId
+      ? sql`${sessions.classId} in (select ${classes.id} from ${classes} where ${classes.orgId} = ${ctx.orgId} and ${classes.branchId} = ${holiday.branchId})`
+      : undefined,
+  );
+}
+
+export async function countSessionsClosedBy(
+  ctx: OrgCtx,
+  holiday: DateRange & { branchId: string | null },
+  from: LocalMoment,
+) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(sessions)
+    .where(closedBy(ctx, holiday, from))
+    .get();
+  return row?.n ?? 0;
+}
+
+/** The statement that removes them, for the caller to run in its own batch. */
+export function removeSessionsClosedBy(
+  ctx: OrgCtx,
+  holiday: DateRange & { branchId: string | null },
+  from: LocalMoment,
+): BatchItem<'sqlite'> {
+  return ctx.db
+    .update(sessions)
+    .set({ deletedAt: now() })
+    .where(closedBy(ctx, holiday, from));
+}

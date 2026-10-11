@@ -35,3 +35,12 @@ export function decodeStartDateCursor(cursor: string | undefined) {
   const [date, id] = decodeCursor(cursor)?.split('~') ?? [];
   return date && id ? { date, id } : undefined;
 }
+
+// Sessions are listed by date, start time, then id: `<date>~<time>~<id>`.
+export const byDateTime = (row: { date: string; startTime: string; id: string }) =>
+  `${row.date}~${row.startTime}~${row.id}`;
+
+export function decodeDateTimeCursor(cursor: string | undefined) {
+  const [date, time, id] = decodeCursor(cursor)?.split('~') ?? [];
+  return date && time && id ? { date, time, id } : undefined;
+}

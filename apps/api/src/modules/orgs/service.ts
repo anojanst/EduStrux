@@ -101,3 +101,8 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
 export function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
   return repo.countMembersLimitedToBranch(ctx, branchId);
 }
+
+/** A member of the org by membership id: their role and status, or undefined. */
+export function findMember(ctx: OrgCtx, membershipId: string) {
+  return repo.findMembership(ctx, membershipId);
+}

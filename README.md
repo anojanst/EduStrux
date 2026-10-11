@@ -60,10 +60,15 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   Only repositories (`apps/api/src/modules/*/repository.ts`) query D1, and every repository
   function takes an `OrgCtx`. Use `inOrg(ctx, table, …)` in every org-scoped `where`.
 - **Request pipeline** for `/api/v1/orgs/{orgId}/…`: `orgAccess('<permission>')` runs Clerk
-  auth → membership (404 for non-members) → the route's single permission (403).
+  auth → membership (404 for non-members) → the route's single permission (403). Where that
+  permission's scope is `branch` or `own`, pass `access(c)` to the service, which narrows its
+  queries to the caller's branches or own records and returns 404 outside them (D-048).
 - **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
-- **D1 limit:** at most 100 bound values per SQL statement. Insert many rows, or pass long
-  `inArray` lists, in chunks.
+- **D1 limit:** at most 100 bound values per SQL statement. Insert many rows in chunks, and pass
+  a long id list with `inIds(column, ids)`, which binds it as one JSON value.
+- **Bulk writes:** a change that adds or removes many sessions writes one audit row with the
+  counts, not one per session (D-045). Other bulk writes follow that unless the owner decides
+  otherwise.
 - **Modules** (`apps/api/src/modules/<name>/`) own their routes, service and repository, and call
   each other only through services.
 - **API format**: JSON, camelCase, locale-neutral (no `Accept-Language`, no translated text).

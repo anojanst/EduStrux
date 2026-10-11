@@ -19,6 +19,7 @@ export const ID_PREFIXES = {
   guardian: 'gdn',
   course: 'crs',
   class: 'cls',
+  classSchedule: 'csl',
   session: 'ses',
   enrolment: 'enr',
   invoice: 'inv',

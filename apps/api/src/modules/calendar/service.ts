@@ -13,6 +13,7 @@ import type { OrgCtx } from '../../db/scope';
 import { conflict, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
 import { byStartDate, decodeStartDateCursor, toPage } from '../../lib/pagination';
 import * as branches from '../branches/service';
+import * as classes from '../classes/service';
 import * as repo from './repository';
 
 export function toAcademicYear(row: repo.AcademicYearRow): AcademicYear {
@@ -136,7 +137,7 @@ async function findTermOr404(ctx: OrgCtx, id: string) {
   return row;
 }
 
-async function getTerm(ctx: OrgCtx, id: string): Promise<Term> {
+export async function getTerm(ctx: OrgCtx, id: string): Promise<Term> {
   return toTerm(await findTermOr404(ctx, id));
 }
 
@@ -194,8 +195,13 @@ export async function updateTerm(ctx: OrgCtx, id: string, input: UpdateTerm): Pr
   return getTerm(ctx, id);
 }
 
+/** Refused while a class runs in the term. */
 export async function deleteTerm(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findTermOr404(ctx, id);
+  const classCount = await classes.countClasses(ctx, { termId: id });
+  if (classCount > 0) {
+    throw unprocessable(`Delete this term's ${classCount} class(es) first.`);
+  }
   await repo.softDeleteTerm(ctx, before);
 }
 
@@ -219,21 +225,30 @@ async function findHolidayOr404(ctx: OrgCtx, id: string) {
   return row;
 }
 
-/** Holidays aren't tied to an academic year, so a break can span the end of one. */
+/**
+ * Holidays aren't tied to an academic year, so a break can span the end of one. Sessions already
+ * generated on the closed dates, and not yet started, are removed with it.
+ */
 export async function createHoliday(ctx: OrgCtx, input: CreateHoliday): Promise<Holiday> {
   const branchId = input.branchId ?? null;
   if (branchId) await branches.getBranch(ctx, branchId);
 
   const id = newId('holiday');
-  await repo.insertHoliday(ctx, {
+  const holiday = {
     id,
     orgId: ctx.orgId,
     name: input.name,
     startDate: input.startDate,
     endDate: input.endDate,
     branchId,
-  });
+  };
+  await repo.insertHoliday(ctx, holiday, await classes.sessionsClosedBy(ctx, holiday));
   return toHoliday(await findHolidayOr404(ctx, id));
+}
+
+/** The date ranges on which a branch is closed between two dates: its own holidays and org-wide ones. */
+export function closedRanges(ctx: OrgCtx, branchId: string, from: string, to: string) {
+  return repo.closedRanges(ctx, branchId, from, to);
 }
 
 export async function deleteHoliday(ctx: OrgCtx, id: string): Promise<void> {

@@ -457,6 +457,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Tasks:** TUI-27, TUI-29 (and TUI-30, TUI-31 for the in-use checks).
 - **Update 2026-10-11:** Deleting a grade level or subject is now refused (422) while a course
   uses it (D-043). The room check is still open for TUI-31.
+- **Update 2026-10-11 (TUI-31):** Deleting a room is now refused (422) while a class uses it, and
+  so is deleting a branch that has classes (D-050). The in-use checks left open here are all
+  done.
 
 ## D-035 · 2026-10-07 · Grade levels are one ordered list, not paged
 
@@ -490,6 +493,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - TUI-37 needs a month-based "generate invoices" action next to
     `POST /terms/{id}/generate-invoices`. Its path isn't decided yet.
 - **Tasks:** TUI-28 (and TUI-31, TUI-36, TUI-37).
+- **Update 2026-10-11:** Built in TUI-31. A class's `termId` is optional; a class without one
+  needs a `startDate` (D-049) and has its sessions generated 13 weeks ahead (D-044).
 
 ## D-037 · 2026-10-08 · Academic year and term rules
 
@@ -526,6 +531,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     don't block it. This extends D-034's branch-deletion rules. Assumption: recorded from the
     implementation; the owner hasn't stated this rule.
 - **Tasks:** TUI-28 (and TUI-31).
+- **Update 2026-10-11:** Session generation skips holidays (D-047). A holiday added after
+  sessions were generated removes the sessions it closes; deleting one doesn't put them back
+  (D-046).
 
 ## D-039 · 2026-10-08 · Tax rates: owner writes, every role reads; rate in basis points
 
@@ -564,6 +572,7 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   need that check. Assumption: recorded from the implementation; the owner hasn't stated these
   rules.
 - **Tasks:** TUI-28, TUI-35 (and TUI-31).
+- **Update 2026-10-11:** Deleting a term is now refused (422) while a class uses it (D-050).
 
 ## D-041 · 2026-10-11 · Courses: who writes them, what makes one unique, what duration means
 
@@ -585,6 +594,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - "Year 10 Maths (Cambridge)" and "Year 10 Maths (NCEA)" can both exist.
   - `durationMinutes` will pre-fill a class's end time (TUI-31).
 - **Tasks:** TUI-30 (and TUI-31).
+- **Update 2026-10-11:** Built in TUI-31. A weekly slot sent without an `endTime` ends
+  `durationMinutes` after its `startTime` (D-050).
 
 ## D-042 · 2026-10-11 · Every role reads courses (assumption, for the owner to confirm)
 
@@ -642,3 +653,204 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     check.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-30 (and TUI-31, TUI-36).
+- **Update 2026-10-11:** Deleting a course is now refused (422) while a class uses it (D-050).
+
+## D-044 · 2026-10-11 · Sessions for a class with no term are generated 13 weeks ahead
+
+- **Context:** TUI-31 turns a class's weekly schedule into dated sessions. A class in a term ends
+  with its term, but a class with no term runs open-ended (D-036), so the generator needed a
+  limit. The owner was asked during the build.
+- **Decision:** The owner decided sessions for a class with no term are generated 3 months ahead.
+  It's built as 91 days (13 weeks) from today in the org's timezone, or up to the class's
+  `endDate` when that comes first. A class in a term always generates to the end of its term, or
+  to its own `endDate` when that is earlier.
+- **Consequences:**
+  - The daily cron (TUI-68) will keep extending open-ended classes. Until it exists, nothing
+    extends them automatically: saving the class's schedule again tops its sessions up.
+  - The 91 days count from today, not from the class's start date, so a class that starts further
+    ahead than that has no sessions yet.
+  - `PUT /classes/{classId}/schedule` returns `sessions.through`, the last date sessions are
+    generated up to.
+- **Tasks:** TUI-31 (and TUI-68).
+
+## D-045 · 2026-10-11 · One audit row per schedule change, not one per session
+
+- **Context:** Every write so far has carried its own audit row. Saving a schedule can add and
+  remove a few hundred sessions at once, the first bulk write in the build. The owner had
+  deferred the question of audit-log growth on 2026-10-07 (the "To revisit" note in the TUI-79
+  task file, where this is option 2), so it was put to the owner during the TUI-31 build.
+- **Decision:** The owner decided a schedule change writes one audit row, not one per session.
+  `class.schedule_set` records the weekly slots before and after, plus `sessionsAdded` and
+  `sessionsRemoved`. The other TUI-31 writes that touch many sessions were built the same way
+  (recorded from the implementation):
+  - `class.updated` carries `sessionsAdded` and `sessionsRemoved` when a change of the class's
+    dates adds and removes sessions. The sessions a new room or teacher is copied onto aren't
+    listed or counted.
+  - `class.deleted` is one row for the class, its weekly slots and all its sessions.
+  - `holiday.created` carries `after.sessionsRemoved` (D-046).
+- **Consequences:**
+  - The audit log says how many sessions a change added or removed, not which ones.
+  - This settles option 2 in the TUI-79 note ("one audit row per bulk action") for session
+    generation. Attendance marking (TUI-34) and invoice runs (TUI-37) should follow the same
+    rule unless the owner says otherwise.
+  - The other two options there stay deferred: storing only the changed fields in
+    `before`/`after`, and archiving old audit rows to R2.
+- **Tasks:** TUI-31 (and TUI-34, TUI-37, TUI-79).
+
+## D-046 · 2026-10-11 · A holiday added later removes the sessions it closes
+
+- **Context:** D-038 said session generation skips holidays. TUI-31 raised what happens when a
+  holiday is added after sessions were already generated on its dates. The owner was asked during
+  the build.
+- **Decision:** The owner decided:
+  - `POST /holidays` removes (soft-deletes) the sessions the holiday closes that are still
+    `scheduled` and haven't started: every branch's for an org-wide holiday, one branch's for a
+    branch holiday.
+  - They're removed in the same batch as the holiday. The count is recorded as
+    `after.sessionsRemoved` on the `holiday.created` audit row, with no row per session (D-045).
+  - Deleting a holiday doesn't put sessions back by itself. They return when the class's schedule
+    is saved again, and later through the daily cron (TUI-68).
+- **Consequences:**
+  - This extends D-038. Sessions that have started, and sessions with another status, stay.
+  - Until TUI-68, getting sessions back after deleting a holiday means saving each affected
+    class's schedule again.
+  - Things later attached to an upcoming session (absence notices, make-up bookings, one-off
+    moves in TUI-49) need a rule for when a holiday or a schedule change removes that session.
+    Not decided yet.
+- **Tasks:** TUI-31 (and TUI-49, TUI-68).
+
+## D-047 · 2026-10-11 · How sessions are generated: upcoming only, by diff, stored in local time
+
+- **Context:** Rules the TUI-31 implementation settled for turning weekly slots into sessions.
+  The task said only that saving the schedule regenerates future sessions.
+- **Decision:**
+  - Started sessions never change. The generator only touches sessions that haven't started,
+    judged in the org's timezone: a date after today, or today with a start time after now. It
+    never creates a session in the past either.
+  - Regeneration is a diff, not a wipe. On `PUT /classes/{classId}/schedule`, and on a change of
+    the class's dates, upcoming sessions that already match a wanted date, start time and end
+    time are kept with their ids; `scheduled` ones that no longer match are soft-deleted; missing
+    ones are added. A changed end time replaces the session (new id).
+  - A session's `status` is `scheduled` or `cancelled`. Only `scheduled` is written so far;
+    `cancelled` is for TUI-49. The generator never removes a session with any status other than
+    `scheduled`. It keeps its slot, so no second session is created at the same date and start
+    time.
+  - Saving the same slots twice changes nothing and writes no audit row.
+  - A date closed by a holiday, org-wide or for the class's branch, gets no session (D-038).
+  - Sessions store the local date and the local start and end times only; no UTC columns. The
+    API returns `date`, `startTime` and `endTime` (local) plus `startsAt` and `endsAt` (UTC),
+    worked out when read from the org's current timezone with the D-016 rule. The handoff §5
+    example used `"start": "16:00"`.
+  - A partial unique index on org, class, date and start time stops the same session being
+    created twice.
+  - Generation runs inside the request, not as a job: one batch of at most a few hundred rows.
+- **Consequences:**
+  - A 4 pm class stays at 4 pm across daylight saving, and `startsAt`/`endsAt` follow a later
+    change of the org's timezone.
+  - A class whose term has already begun gets sessions from now on only. Past lessons can't be
+    back-filled yet.
+  - Changing a term's dates (`PATCH /terms/{termId}`) doesn't regenerate its classes' sessions:
+    staff save the schedule again. Nothing stops a term shrinking under a class's own dates.
+  - Anything later attached to an upcoming session needs a rule for when a schedule change
+    removes it (see D-046).
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-31 (and TUI-49, TUI-68).
+
+## D-048 · 2026-10-11 · Who reaches classes and sessions
+
+- **Context:** Handoff §6's "Classes and timetable" row gives each role a reach: full, branch,
+  own classes (read), own children (read) or none. TUI-31 is the first module to apply the
+  `branch` and `own` scopes, so it settled what they mean in the API.
+- **Decision:**
+  - Owner: every class and session, read and write.
+  - Branch manager and front desk: read and write, only the classes in their membership's
+    branches and those classes' sessions. A membership with no branch list (null) reaches every
+    branch; an empty list reaches none.
+  - Teacher: read only, and only the classes they teach and those classes' sessions. A write is
+    refused with 403.
+  - Accountant: 403 on every class and session route.
+  - Parent: lists return 200 with no rows, and a single class or session is 404. "Own children"
+    needs enrolments, so TUI-33 must wire it.
+  - A class or session outside the caller's reach is 404, as if it didn't exist. So is a
+    `?classId` filter on `GET /sessions` for such a class.
+  - The exception is `POST /classes` with a `branchId` outside a branch-limited member's
+    branches: 403, since they can see that the branch exists (D-033).
+- **Consequences:**
+  - A teacher's reach follows the class's teacher, not the teacher copied onto each session
+    (D-049).
+  - Until TUI-33, parents see no classes or sessions through these routes, and `GET /sessions`
+    has no `?student` filter.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-31 (and TUI-33).
+
+## D-049 · 2026-10-11 · Class rules: what a class keeps, its name, dates, teacher and room
+
+- **Context:** Rules the TUI-31 implementation settled for classes that the handoff didn't cover.
+- **Decision:**
+  - A class keeps its course, term and branch: `PATCH /classes/{classId}` takes no `courseId`,
+    `termId` or `branchId` and ignores them if sent. To change them, delete the class and add it
+    again, as for courses (D-043). PATCH can change `name`, `roomId`, `teacherId`, `capacity`,
+    `startDate` and `endDate`.
+  - A class stores its course's grade level (`gradeLevelId`). A course never changes its grade
+    (D-043), so classes and sessions filter by grade without reading the curriculum tables.
+  - The name (e.g. "Group A") is required, 1–120 characters, and unique among the same course's
+    classes in the same term and branch, ignoring case and deleted rows: `409 conflict` with
+    `fields.name: ['Taken']`. Two open-ended classes of the same course and branch also clash. A
+    partial unique index enforces it.
+  - Dates. In a term, `startDate` and `endDate` are optional and narrow the term; they must fall
+    inside it (`422 unprocessable` with `['Outside the term']` on `fields.startDate` or
+    `fields.endDate`). Without a term, `startDate` is required (400) and a null `endDate` means
+    until further notice. An `endDate` before the `startDate` is 400.
+  - Changing the dates adds and removes upcoming sessions (D-047). The counts go in the
+    `class.updated` audit row (D-045).
+  - The teacher is a membership id, exposed as `teacherId`. Any active member who isn't a parent
+    can teach, whatever their role: a solo tutor is the owner. An unknown or other org's id is
+    404; a parent or a suspended member is 422 on `fields.teacherId`.
+  - A room must be in the class's branch, otherwise 422 with
+    `fields.roomId: ['In another branch']`. The room is per class, not per weekly slot.
+  - `capacity` is 1–1000, or null for no limit. Room, teacher and capacity are all optional.
+  - A session carries its own room and teacher, copied from the class when the session is
+    generated. Changing the class's room or teacher also updates its upcoming `scheduled`
+    sessions in the same batch; sessions that have started keep the old ones.
+  - `DELETE /classes/{classId}` soft-deletes the class, its weekly slots and all its sessions,
+    past ones too, with one `class.deleted` audit row.
+- **Consequences:**
+  - Enrolments (TUI-33) and attendance (TUI-34) must refuse deleting a class that has enrolments
+    or attendance.
+  - Removing or suspending a staff member (TUI-42) must deal with the classes and upcoming
+    sessions they teach.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-31 (and TUI-33, TUI-34, TUI-42).
+
+## D-050 · 2026-10-11 · Schedule slots, class and session lists, in-use checks and paths
+
+- **Context:** More rules the TUI-31 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - `PUT /classes/{classId}/schedule` takes the class's whole weekly schedule as
+    `{ slots: [{ weekday, startTime, endTime? }] }` and returns
+    `{ class, sessions: { added, removed, kept, through } }`. A class has at most 14 slots.
+    Weekdays are ISO, 1–7. It takes no `updatedAt`.
+  - `endTime` is optional and defaults to `startTime` plus the course's `durationMinutes`
+    (D-041). With no duration on the course it is 400 on `slots.N.endTime`, as is a lesson that
+    would run past midnight. `endTime` must be after `startTime`.
+  - Two slots on the same weekday can't overlap (400 on `slots.N`). Back-to-back is fine.
+  - An empty list clears the schedule and removes the class's upcoming sessions.
+  - `GET /classes` is cursor-paged, oldest first by id, and each class carries its weekly
+    `schedule`. Filters: `?branchId`, `?termId`, `?courseId`, `?gradeLevelId`, `?teacherId`.
+  - `GET /sessions` needs `from` and `to` (local dates, both included); a `to` before `from` is
+    refused with 400. Sessions come by date, start time, then id, and the cursor holds all three.
+    Filters: `?branchId`, `?roomId`, `?teacherId`, `?gradeLevelId`, `?classId`.
+  - A filter id the org doesn't have is 404 on both lists, as for courses (D-043).
+  - A course, term, room or branch can't be deleted while a non-deleted class uses it
+    (`422 unprocessable`). This closes the in-use checks D-034 (rooms), D-040 (terms) and D-043
+    (courses) left open, and adds classes to D-034's branch-deletion rules.
+  - The path parameters are `{classId}` and `{sessionId}` (the handoff wrote `{id}`).
+  - A weekly slot row has the new id prefix `csl_`.
+  - Not built here, as planned: `PATCH /sessions/{sessionId}` (TUI-49), `GET /timetable/clashes`
+    (TUI-50) and the `?student` filter on `GET /sessions` (TUI-33).
+- **Consequences:**
+  - A lesson can't cross midnight.
+  - Saving a schedule has no stale-data check, so when two people save one class's schedule the
+    later save wins.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-31 (and TUI-33, TUI-49, TUI-50).

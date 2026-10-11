@@ -1,5 +1,6 @@
 import { academicYears, holidays, now, terms } from '@edustrux/db';
 import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
@@ -295,12 +296,35 @@ export async function countBranchHolidays(ctx: OrgCtx, branchId: string) {
   return row?.n ?? 0;
 }
 
-export async function insertHoliday(ctx: OrgCtx, holiday: NewHolidayRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(holidays).values(holiday)], {
+/** Every holiday that closes the branch on a date from `from` to `to`, org-wide ones included. */
+export function closedRanges(ctx: OrgCtx, branchId: string, from: string, to: string) {
+  return ctx.db
+    .select({ startDate: holidays.startDate, endDate: holidays.endDate })
+    .from(holidays)
+    .where(
+      inOrg(
+        ctx,
+        holidays,
+        overlapping(holidays, from, to),
+        or(isNull(holidays.branchId), eq(holidays.branchId, branchId)),
+      ),
+    );
+}
+
+/**
+ * `closing` removes the sessions the holiday closes, in the same batch; how many is recorded in
+ * the holiday's audit row.
+ */
+export async function insertHoliday(
+  ctx: OrgCtx,
+  holiday: NewHolidayRow & { id: string },
+  closing: { count: number; statements: BatchItem<'sqlite'>[] },
+) {
+  await writeWithAudit(ctx, [ctx.db.insert(holidays).values(holiday), ...closing.statements], {
     action: 'holiday.created',
     entityType: 'holiday',
     entityId: holiday.id,
-    after: holiday,
+    after: { ...holiday, sessionsRemoved: closing.count },
   });
 }
 
