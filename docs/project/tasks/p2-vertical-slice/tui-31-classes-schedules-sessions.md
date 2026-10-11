@@ -13,7 +13,7 @@ endpoints:
   - GET /sessions
   - GET /sessions/{id}
 branch: task/tui-31-classes-schedules-sessions
-pr:
+pr: 16
 ---
 
 # TUI-31 Classes + weekly schedule + session generation
