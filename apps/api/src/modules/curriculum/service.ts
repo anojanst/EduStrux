@@ -16,6 +16,7 @@ import { conflict, notFound, staleData, unprocessable, validationFailed } from '
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
+import * as people from '../people/service';
 import * as repo from './repository';
 
 export function toGradeLevel(row: repo.GradeLevelRow): GradeLevel {
@@ -102,12 +103,18 @@ export async function updateGradeLevel(
   return getGradeLevel(ctx, id);
 }
 
-/** Refused while a course is taught at this grade level. */
+/** Refused while a course is taught at this grade level, or a student has been in it. */
 export async function deleteGradeLevel(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findGradeLevelOr404(ctx, id);
   const courseCount = await repo.countCourses(ctx, { gradeLevelId: id });
   if (courseCount > 0) {
     throw unprocessable(`Delete this grade level's ${courseCount} course(s) first.`);
+  }
+  const studentCount = await people.countStudentsInGrade(ctx, id);
+  if (studentCount > 0) {
+    throw unprocessable(
+      `${studentCount} student grade record(s) use this grade level. Change them first.`,
+    );
   }
   await repo.softDeleteGradeLevel(ctx, before);
 }

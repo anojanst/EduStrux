@@ -47,6 +47,15 @@ export function listAcademicYears(ctx: OrgCtx, limit: number, cursor?: DateCurso
     .limit(limit + 1);
 }
 
+/** Every academic year in start-date order. There is one a year, so this isn't paged. */
+export function allAcademicYears(ctx: OrgCtx) {
+  return ctx.db
+    .select()
+    .from(academicYears)
+    .where(inOrg(ctx, academicYears))
+    .orderBy(asc(academicYears.startDate), asc(academicYears.id));
+}
+
 export function findAcademicYear(ctx: OrgCtx, id: string) {
   return ctx.db
     .select()

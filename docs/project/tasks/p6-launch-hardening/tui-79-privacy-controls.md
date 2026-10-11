@@ -13,6 +13,16 @@ pr:
 
 # TUI-79 Privacy controls: consents, retention, delete a family
 
+## Consents: to define here
+
+Decided by the owner on 2026-10-11 (D-052): TUI-32 added no consent fields, so families,
+guardians and students carry no consent columns yet. This task must define which consents exist
+(photo and medical consent were the ones raised) and where they're recorded, and add them with a
+migration.
+
+Deleting a family or a student is a soft delete today (TUI-32, D-057). Hard delete and
+anonymising are this task's.
+
 ## To revisit: audit log growth
 
 Raised 2026-10-07 and deferred by the owner. `audit_log` lives in the one shared D1 database

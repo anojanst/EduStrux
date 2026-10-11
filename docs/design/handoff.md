@@ -148,10 +148,10 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 |---|---|
 | Base path | `/api/v1`; org data under `/orgs/{orgId}`; current user under `/me`; public forms under `/public/{orgSlug}`. Orgs are addressed by path, not subdomain. Public web pages use the slug too, e.g. `/f/{orgSlug}/…` for enquiry and enrolment forms (later the parent portal link); a vanity subdomain may come later as a redirect (D-020). |
 | Format | JSON, camelCase |
-| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `crs_`, `cls_`, `csl_` (a class's weekly slot), `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
-| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists, courses and classes come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). Sessions come by date, start time, then id, and `GET /sessions` needs `from` and `to` (D-050). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`, `?termId`, `?courseId`, `?roomId`, `?teacherId`, `?classId`) is 404 when the org doesn't have that id (D-043, D-050). |
+| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `gdn_` (guardian), `sgr_` (a student's grade for one academic year), `crs_`, `cls_`, `csl_` (a class's weekly slot), `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
+| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists, courses and classes come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). Sessions come by date, start time, then id, and `GET /sessions` needs `from` and `to` (D-050). Families come in name order, and students by last name, then first name, then id. The order uses normalised names, so case and accents don't change it, and the cursor holds every sort key (D-056). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`, `?termId`, `?courseId`, `?roomId`, `?teacherId`, `?classId`, `?familyId`) is 404 when the org doesn't have that id (D-043, D-050, D-057). |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update; one that sends only `updatedAt` changes nothing and returns the record (D-034). `DELETE` is a soft delete (`deleted_at`) and returns 204. |
-| Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). A course has no name: it is unique on subject + grade level + curriculum + teaching medium, ignoring case and deleted rows. A clash is 409 `conflict` with `fields._`, the key for an error that belongs to no single field (D-041, D-043). A class name is unique among its course's classes in the same term and branch; a clash is 409 with `fields.name` (D-049). |
+| Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). A course has no name: it is unique on subject + grade level + curriculum + teaching medium, ignoring case and deleted rows. A clash is 409 `conflict` with `fields._`, the key for an error that belongs to no single field (D-041, D-043). A class name is unique among its course's classes in the same term and branch; a clash is 409 with `fields.name` (D-049). Family names can repeat (D-057). |
 | Actions | Verb sub-path with `POST`, e.g. `POST /terms/{id}/generate-invoices` |
 | Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` until `succeeded` or `failed`. Starting a job writes a `job.started` audit row. A failed try is retried up to 3 times, so job handlers must be idempotent (D-017). |
 | Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
@@ -177,7 +177,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Branches, rooms, grade levels, subjects, academic years, terms, holidays (D-033, D-040) | Full | Read | Read | Read | Read | Read |
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
-| Families and students | Full | Branch | Branch | Own classes, read | Own family | — |
+| Families and students (D-051, D-053) | Full | Branch | Branch | Own classes, read | Own family, read | — |
 | Courses (D-041, D-042) | Full | Full, org-wide | Full, org-wide | Read | Read | Read |
 | Classes and timetable (D-048) | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Attendance and notes | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
@@ -197,9 +197,17 @@ Classes and sessions (D-048):
 - A class or session outside the caller's reach is 404, as if it didn't exist. Adding a class in a branch outside the member's branches is 403.
 - An accountant gets 403. A parent gets empty lists and 404 until enrolments (TUI-33) define "own children".
 
+Families, guardians and students (D-051, D-053):
+
+- A family has a home branch, and its guardians and students go with it. A branch manager or front desk member reads and writes only the families whose home branch is one of their membership's branches. No branch list means every branch.
+- A child in a class at another branch shows on that class's roster through enrolments (TUI-33). Only the home branch, the owner and staff with no branch limit change the family record.
+- A parent reads only the families where one of the guardians is linked to their membership (the guardian's `membershipId`), and changes nothing.
+- A teacher gets empty lists and 404 until enrolments (TUI-33) define "own classes". An accountant gets 403.
+- A family, guardian or student outside the caller's reach is 404, as if it didn't exist. Adding a family to a branch outside the member's branches, or moving one there, is 403.
+
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
-Parents are Clerk users, signing in passwordless by email code or magic link. Accepting an invite links them to a `parent` membership (D-021).
+Parents are Clerk users, signing in passwordless by email code or magic link. Accepting an invite links them to a `parent` membership (D-021). A guardian row points at that membership, which is what "own family" means. Nothing sets that link yet: invites will (TUI-42, TUI-72) (D-053).
 
 Student logins come later (v1.1+). The super-admin console sits outside org routes, and every access is logged, including impersonation.
 
@@ -216,7 +224,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 | Calendar | `academic_years`, `terms`, `holidays` | name, start/end dates; academic years never overlap; term → academic year, inside it, no overlapping terms (D-037); holiday date range, optional branch (null = org-wide) (D-038) |
 | Curriculum | `grade_levels`, `subjects`, `courses` | grade name, sort order (from 1, gaps allowed, at most 100 grades per org, D-035); subject name; **course = subject × grade**, with no name of its own; optional curriculum and teaching medium (free text), default price (minor units + currency, in the org's currency), usual lesson length in minutes; unique on subject + grade + curriculum + medium (D-041, D-043) |
 | Classes | `classes`, `class_schedules`, `sessions` | class → course (with the course's grade level copied on), term (optional: no term = open-ended from its start date, billed monthly, D-036), branch; name (unique per course, term and branch); optional room, teacher (a membership), capacity and start/end dates (D-049); one row per weekly slot: ISO weekday, local start and end time (D-050); session → class, with its own room and teacher (copied from the class when generated), local date, start and end time, status (`scheduled`, `cancelled`), no UTC columns (D-047) |
-| Families | `families`, `guardians`, `students`, `student_grades` | billing contact, preferred channel, language (stored only; unused in the MVP, D-015); consents; **grade per academic year**; normalised (lower-case, accent-stripped) name columns for search and duplicate warnings (D-026) |
+| Families | `families`, `guardians`, `students`, `student_grades` | family name, home branch (required, D-051), address, billing contact (one of its guardians: the first added, until another is chosen, D-054); guardian → family, first and last name, relationship, email, phone, preferred channel (`email`, `sms` or `whatsapp`; stored only), language (stored only; unused in the MVP, D-015), emergency-contact flag, the `parent` membership they sign in with (D-053); student → family, first and last name, date of birth, notes; **grade per academic year**: one `student_grades` row per student and year (D-055); normalised (lower-case, accent-stripped) name columns on all three, for name-order lists now and for search and duplicate warnings later (D-026, D-056); no consent columns yet: privacy controls (TUI-79) define them (D-052) |
 | Enrolment | `enrolments`, `enrolment_requests` | student, class, start/end, price override, status |
 | Attendance | `attendance`, `absence_notices`, `makeup_policies`, `makeup_credits`, `makeup_bookings` | session, student, status; credit source, expiry, used-by |
 | Learning | `lesson_notes` | session, per-student note, homework text |
@@ -229,7 +237,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Course = subject × grade** (e.g. "Year 10 Maths"). **Class** = one group of a course at a set time with a teacher (e.g. "Year 10 Maths – Group A – Tue 4pm").
 - A course has no name of its own. Clients build it from the grade level and subject, plus the curriculum and teaching medium when set, so "Year 10 Maths (Cambridge)" and "Year 10 Maths (NCEA)" can both exist (D-041).
 - A student takes several subjects as several enrolments.
-- `student_grades` stores the grade per academic year. **Year-end promotion** moves everyone up a grade, with exceptions.
+- `student_grades` stores the grade per academic year. A student's current grade is the one for the current academic year: the year today falls in, else the one that ended most recently, else the first one to start, worked out in the org's timezone (D-055). **Year-end promotion** moves everyone up a grade, with exceptions.
 - **Per-subject pricing and bundles:** price by number of subjects (1, 2, 3+), monthly per subject, or grade bundles like "Year 10 core".
 - **Grade timetable view** (v1.1, D-022): a school-style weekly grid per grade that warns when one grade's subjects overlap.
 
@@ -239,7 +247,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 
 ### In the MVP
 - **Org and setup:** profile and branding, single-tutor mode, branches and rooms, terms and holidays (or rolling monthly: terms are optional per class, D-036), locale settings (formatting region; UI in English, D-015), tax settings, academic years, grade levels and subjects.
-- **People:** family records, student profiles, emergency contacts and consents, staff profiles, prefix search with duplicate warnings (D-026).
+- **People:** family records, each with a home branch (D-051); student profiles; emergency contacts, kept as guardians with an emergency-contact flag (D-054); consents, which come with privacy controls (TUI-79; no consent fields on records until then, D-052); staff profiles; prefix search with duplicate warnings (D-026).
 - **Enquiry and enrolment:** enquiry form (embeddable/link), online enrolment form with staff approval, enrol/transfer/withdraw with pro-rata, year-end promotion.
 - **Courses and pricing:** courses (curriculum and teaching medium as optional plain-text labels, D-043), class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing and bundles.
 - **Timetable:** recurring schedules with holidays skipped, including holidays added later (D-046); sessions generated to the end of the term, or 13 weeks ahead for a class with no term (D-044); calendar views (day/week/month by branch, room, teacher, student), clash detection, one-off changes with family notices.
@@ -274,13 +282,13 @@ Paths are relative to `/api/v1/orgs/{orgId}` unless they start with `/api/v1`. A
 
 ### Setup
 Branches, rooms, grade levels, subjects, the calendar and tax rates: every role reads, only the owner writes (D-033, D-039, D-040).
-- `GET|POST /branches` · `PATCH|DELETE /branches/{branchId}`: `POST` is refused (422) in single-tutor mode (D-032). `DELETE` is refused (422) for the org's last branch, a branch with rooms, classes or its own holidays, or one a membership's `branch_ids` lists (D-034, D-038, D-050).
+- `GET|POST /branches` · `PATCH|DELETE /branches/{branchId}`: `POST` is refused (422) in single-tutor mode (D-032). `DELETE` is refused (422) for the org's last branch, a branch with rooms, classes or its own holidays, a family's home branch, or one a membership's `branch_ids` lists (D-034, D-038, D-050, D-057).
 - `GET|POST /branches/{branchId}/rooms` · `PATCH|DELETE /rooms/{roomId}`: a room can't move to another branch (D-034). `DELETE` is refused (422) while a class uses the room (D-050)
 - `GET|POST /tax-rates` · `PATCH|DELETE /tax-rates/{taxRateId}`: `rateBps` is an integer in basis points (1500 = 15%); no tax rates means no tax (D-039)
 - `GET|POST /academic-years` · `PATCH /academic-years/{academicYearId}`: no `DELETE`. Years can't overlap; a date change that would overlap another year or leave a term outside is refused (422) (D-037)
 - `GET|POST /terms` (`GET` filter `?academicYearId`) · `PATCH|DELETE /terms/{termId}`: a term sits inside its academic year and can't overlap another term (422); `PATCH` can't move it to another year (D-037). `DELETE` is refused (422) while a class uses the term (D-050)
 - `GET|POST /holidays` (`GET` filters `?from`, `?to`, `?branchId`) · `DELETE /holidays/{holidayId}`: org-wide, or one branch with `branchId`. `?branchId=X` returns X's own holidays plus org-wide ones; `?from`/`?to` keep holidays that touch the range. No `PATCH`: delete and re-add (D-038). `POST` also removes the sessions already generated on the closed dates that are still scheduled and haven't started; `DELETE` doesn't put them back (D-046)
-- `GET|POST /grade-levels` · `PATCH|DELETE /grade-levels/{gradeLevelId}` · `PUT /grade-levels/order`: `GET` returns the whole list in grade order, not paged; `PUT` must list every grade exactly once (D-035). `DELETE` is refused (422) while a course uses the grade level (D-043)
+- `GET|POST /grade-levels` · `PATCH|DELETE /grade-levels/{gradeLevelId}` · `PUT /grade-levels/order`: `GET` returns the whole list in grade order, not paged; `PUT` must list every grade exactly once (D-035). `DELETE` is refused (422) while a course or a student grade record uses the grade level (D-043, D-057)
 - `GET|POST /subjects` · `PATCH|DELETE /subjects/{subjectId}`: `DELETE` is refused (422) while a course uses the subject (D-043)
 
 ### Staff
@@ -291,9 +299,11 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `DELETE /staff/{membershipId}`
 
 ### Families and students
-- `GET|POST /families` · `GET|PATCH|DELETE /families/{id}`
-- `POST /families/{id}/guardians` · `PATCH|DELETE /guardians/{id}`
-- `GET|POST /students` · `GET|PATCH|DELETE /students/{id}`
+The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only). A teacher gets empty lists until enrolments (TUI-33), and an accountant 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053).
+
+- `GET|POST /families` (`GET` filter `?branchId`) · `GET|PATCH|DELETE /families/{familyId}`: in name order. Every response carries the family's `guardians` and `students`. `branchId`, the home branch, is required, and `PATCH` can move the family to another branch; branch-limited staff adding or moving a family to a branch outside theirs get 403. `billingGuardianId` must be one of the family's guardians (422) and can't be set to null. `DELETE` is refused (422) while the family has students; otherwise it also deletes the guardians (D-051, D-054, D-057)
+- `POST /families/{familyId}/guardians` · `PATCH|DELETE /guardians/{guardianId}`: any contact person, with an `emergencyContact` flag (default true). The family's first guardian becomes its billing contact. `email` and `phone` are optional; `preferredChannel` is `email` (default), `sms` or `whatsapp`; `membershipId` is read-only. `PATCH` can't move a guardian to another family. `DELETE` is refused (422) for the billing contact (D-053, D-054)
+- `GET|POST /students` (`GET` filters `?familyId`, `?branchId`, `?gradeLevelId` with optional `?academicYearId`) · `GET|PATCH|DELETE /students/{studentId}`: by last name, then first name. `gradeLevelId`, with an optional `academicYearId`, sets the student's grade for that academic year, or for the current one; `PATCH` with `gradeLevelId: null` removes it; with no academic year in the org it is 422. Each student carries `gradeLevelId` (the current year's grade), `grades` (every year on record) and `branchId` (the family's home branch). `dateOfBirth` can't be in the future (400). `PATCH` can't move a student to another family. `DELETE` also deletes the student's grade records (D-055, D-057)
 - `GET /students/{id}/timeline` (v1.1, D-022)
 - `POST /students/promote` (job)
 - `GET /search?q=` (prefix search, D-026)
@@ -410,6 +420,7 @@ Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
 - [x] Product name and domain. → EduStrux, edustrux.com; domain registration by the owner pending (D-023)
 - [x] Confirm the side-business and IP clauses in the employment agreement before building. → Confirmed by the owner (D-019)
 - [ ] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads.
+- [ ] Cross-branch enrolment: staff limited to one branch can't see a student whose family's home branch is another one, so they can't enrol that student in a class at their own branch (D-051). Enrolments (TUI-33) must decide how this works.
 
 **Technical**
 - [x] Parent sign-in: Clerk accounts (they count toward the 50k free users) or our own magic-link tokens for the portal? → Clerk users with passwordless email code or link, linked to a `parent` membership (D-021)

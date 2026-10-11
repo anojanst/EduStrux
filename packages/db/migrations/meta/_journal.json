@@ -50,6 +50,13 @@
       "when": 1791704160439,
       "tag": "0006_classes_schedules_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791706954847,
+      "tag": "0007_families_guardians_students",
+      "breakpoints": true
     }
   ]
 }
