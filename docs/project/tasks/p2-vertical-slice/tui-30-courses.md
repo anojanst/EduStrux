@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /courses
   - PATCH|DELETE /courses/{id}
 branch: task/tui-30-courses
-pr:
+pr: 15
 ---
 
 # TUI-30 Courses (subject × grade)
