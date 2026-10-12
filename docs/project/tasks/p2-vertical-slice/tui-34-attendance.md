@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|PUT /sessions/{id}/attendance
 branch: task/tui-34-attendance
-pr:
+pr: 23
 ---
 
 # TUI-34 Attendance: mark a session
