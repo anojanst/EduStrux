@@ -1335,6 +1335,9 @@ is the only deployed environment).
 - **Tasks:** TUI-24 (and TUI-3).
 - **Update 2026-10-12:** The owner set `CLERK_SECRET_KEY` on the Worker, so the "no Clerk key"
   consequence above no longer holds (D-068).
+- **Update 2026-10-12:** The Worker's workers.dev address is no longer public. The owner put the
+  Worker behind Cloudflare Access until the app is finalised, so every request needs an Access
+  sign-in first, including `GET /api/v1/health` (D-069).
 
 ## D-067 · 2026-10-12 · Wrangler config: the top level is local, `env.production` is deployed
 
@@ -1385,3 +1388,49 @@ is the only deployed environment).
     set on the Worker yet" no longer holds. `CLERK_AUTHORIZED_PARTIES` is still empty. A call
     with a real token isn't among the checks above.
 - **Tasks:** TUI-24 (and TUI-86).
+- **Update 2026-10-12:** The docs are still on (`ENABLE_DOCS` is `true`), but they are no longer
+  public. The Worker is behind Cloudflare Access, so "anyone with the URL can read the API's
+  shape" doesn't hold while Access is on, and the checks above now return 302 to the Access
+  sign-in page from outside. Launch has two manual steps: turn the docs off and remove or narrow
+  Access (D-069).
+
+## D-069 · 2026-10-12 · Production is behind Cloudflare Access until the app is finalised
+
+- **Context:** Production is on a public workers.dev address (D-066), with Swagger on there until
+  launch (D-068). The owner asked: "can we enable zero trust to restrict the public access until
+  we finalise the app. if zer trust is free".
+- **Decision:**
+  - The production API is behind Cloudflare Access until the app is finalised.
+  - The owner enabled Zero Trust on the Cloudflare account and put the Worker `edustrux` behind
+    Access, both in the Cloudflare dashboard. Claude did neither step.
+- **Consequences:**
+  - Nothing on the deployed API is public any more, including the health check and the Swagger
+    docs. Checked by Claude from outside on 2026-10-12, with no sign-in, on
+    https://edustrux.edustrux-api.workers.dev: `GET /`, `/api/v1/health`, `/api/docs`,
+    `/api/openapi.json` and `/api/v1/me` all return 302 to the Cloudflare Access sign-in page.
+    Before Access was applied, the same calls returned 404, 200, 200, 200 and 401.
+  - This removes the exposure D-068 accepted (anyone with the URL could read the API's shape) for
+    as long as Access is on.
+  - A browser signs in through Access once. Swagger then works as before, because its calls go to
+    the same origin. Clerk sign-in still applies on top for the API's own routes.
+  - Non-browser clients (curl, scripts, a mobile app, an uptime monitor) are blocked until they
+    send an Access service token. That affects monitoring (TUI-83) if it is set up before launch.
+  - Incoming webhooks are blocked while Access covers all traffic. The Paddle, Clerk and Resend
+    callbacks need a bypass for their paths when those tasks are built (TUI-71, TUI-73).
+  - The Worker's code is unchanged and doesn't check the Access identity (`ctx.access`).
+    Cloudflare enforces Access in front of the Worker.
+  - The web app will be served by the same Worker, so Access must be removed or narrowed before
+    launch, or real customers are blocked. This is a manual step in the Cloudflare dashboard,
+    alongside turning the docs off (D-068). Launch task: TUI-86.
+  - The Access setup lives only in the Cloudflare dashboard. It isn't in the repo, so nothing in
+    `wrangler.jsonc` or a deploy recreates or removes it.
+  - Claude can't see the Access configuration: it has no Access tools, and wrangler's login
+    doesn't cover Access. So these are not verified:
+    - Which Zero Trust plan the owner picked. Cloudflare's setup needs a plan and payment details
+      even for the Free plan, which says it won't charge. The owner did this step, so D-065 is
+      respected.
+    - Who the Access policy lets in.
+    - That a signed-in browser reaches Swagger and the API.
+    - That the crons and queue consumers still run. They aren't web requests, so they should be
+      unaffected, but Cloudflare's docs page doesn't say so and it wasn't tested.
+- **Tasks:** TUI-24 (and TUI-71, TUI-73, TUI-83, TUI-86).

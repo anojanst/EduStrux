@@ -15,5 +15,9 @@ pr:
 
 Toward the 26–30 centres target. Needs the owner.
 
-Before launch: turn the API docs off in production again (`ENABLE_DOCS` to `false` under
-`env.production`, then redeploy). They are on until launch (D-068).
+Before launch, two manual steps:
+
+- Turn the API docs off in production again (`ENABLE_DOCS` to `false` under `env.production`,
+  then redeploy). They are on until launch (D-068).
+- Remove or narrow Cloudflare Access on the Worker `edustrux`, in the Cloudflare dashboard. It
+  covers all traffic until the app is finalised and would block real customers (D-069).
