@@ -1258,3 +1258,95 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - Student caps (TUI-74) can define an "active" student from enrolments (D-055).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-33 (and TUI-34, TUI-46, TUI-47, TUI-74).
+
+## D-064 · 2026-10-12 · One deployed environment for now: production
+
+- **Context:** TUI-24 planned two deployed environments, staging and production. When the deploy
+  half of TUI-24 was built, the owner decided: "we will only have prod now. when we start working
+  on v1.1 then we will introduce dev env".
+- **Decision:** Production is the only deployed environment for now. There is no staging. A dev
+  environment comes when work on v1.1 starts.
+- **Consequences:**
+  - TUI-24's "staging & prod" becomes production only.
+  - Changes are checked locally and by the test suite. There is no deployed environment to try
+    them on before production.
+  - D-002 is unchanged: `ENABLE_DOCS` stays `false` in production. D-002 expected the docs to be
+    on in dev and staging. With no staging, Swagger UI and `/api/openapi.json` are available
+    locally only.
+  - Open, not decided: whether to turn the docs on in production while it is the only deployed
+    environment. Tracked as an open question in handoff §11.
+- **Tasks:** TUI-24.
+
+## D-065 · 2026-10-12 · Anything that results in billing goes through the owner
+
+- **Context:** Deploying to Cloudflare creates resources, and some can cost money. The owner set
+  a rule: "keep a strict rule. all changes which will results in billing need to go throught me.
+  no auto resource upgrade."
+- **Decision:**
+  - No cloud resource is created, no plan is changed and no paid product is enabled without the
+    owner's approval.
+  - A deploy never creates resources by itself. Wrangler (4.147) creates missing KV, R2, D1 and
+    queue resources on deploy by default, so deploys run with
+    `--no-x-provision --no-x-auto-create`. Both flags are built into `pnpm deploy:production`.
+  - Never run a bare `wrangler deploy`.
+- **Consequences:**
+  - A binding to a resource that doesn't exist now fails the deploy instead of creating it. New
+    resources are created on purpose, after the owner approves.
+  - The rule covers anything that results in billing, not only Cloudflare resources. The CI
+    pipeline (the other half of TUI-24) waits for the owner's go-ahead: GitHub Actions minutes on
+    a private repo are a billing matter.
+- **Tasks:** TUI-24.
+
+## D-066 · 2026-10-12 · Production on Cloudflare: the resources created
+
+- **Context:** The deploy half of TUI-24 (D-064). Under D-065 the owner first authorised one
+  Worker and one D1 database, then approved the R2 bucket and the two queues when asked.
+- **Decision:** Production is these resources, all created on 2026-10-12:
+  - Worker `edustrux`, at https://edustrux.edustrux-api.workers.dev. It is on workers.dev only:
+    there is no custom domain yet, because TUI-3 is still blocked on the domain (D-023). Crons
+    `0 * * * *` and `0 3 * * *`. Observability (Workers Logs) is on.
+  - D1 database `edustrux`, in Oceania (D-024), id `c2fea74c-1256-4a13-9d77-05f5ac0cc71d`.
+    Migrations 0000–0008 (9 files) are applied, which gives 24 tables.
+  - R2 bucket `edustrux-files`, location hint Oceania.
+  - Queues `edustrux-email` and `edustrux-jobs`. The Worker is the producer and the consumer of
+    both, with the same batch size and retries as local: email 10 and 5, jobs 1 and 3.
+- **Consequences:**
+  - The R2 bucket's region was chosen by Claude during the deploy, not by the owner. It is
+    Oceania for the same reason as D-024 (the first centres are in NZ/AU), because a bucket's
+    location can't be changed later.
+  - The account had no workers.dev subdomain. Wrangler registered `edustrux-api` during the first
+    deploy, without prompting. It is free and can be changed in the Cloudflare dashboard; the
+    Worker's URL changes with it.
+  - No Clerk key is set on the Worker yet. Until the owner sets `CLERK_SECRET_KEY` or
+    `CLERK_JWT_KEY`, authenticated routes fail and only `GET /api/v1/health` works.
+  - `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp`
+    claim isn't checked.
+  - A custom domain follows TUI-3.
+  - Not known: the account's Cloudflare Workers plan couldn't be seen, and nothing about the plan
+    was changed. The handoff's cost model assumes Workers Paid at $5/month. If the account is on
+    the Free plan, the limits differ: for example queue messages are kept for 24 hours, there are
+    10,000 queue operations a day, and the daily request and D1 limits fail rather than bill. The
+    owner needs to confirm the plan. Tracked as an open question in handoff §11.
+- **Tasks:** TUI-24 (and TUI-3).
+
+## D-067 · 2026-10-12 · Wrangler config: the top level is local, `env.production` is deployed
+
+- **Context:** One config file, `apps/api/wrangler.jsonc`, serves local development, the tests
+  and the deployed Worker (D-064).
+- **Decision:**
+  - The top level is local development and tests: the name `edustrux-local`, a placeholder D1
+    id, `ENVIRONMENT=development` and `ENABLE_DOCS=true`.
+  - The deployed Worker is `env.production`: `"name": "edustrux"`, `ENVIRONMENT=production`,
+    `ENABLE_DOCS=false`, `CLERK_AUTHORIZED_PARTIES=""` and every binding repeated.
+  - Vars and bindings aren't inherited by a wrangler environment, so they are repeated. Crons and
+    observability are inherited.
+  - The scripts are `pnpm db:migrate:production`, then `pnpm deploy:production`. The old `deploy`
+    and `db:migrate:remote` scripts are gone.
+- **Consequences:**
+  - A new var or binding has to be added in both places, or the deployed Worker won't have it.
+  - The queue settings are written twice. The `jobs` retry limit is now in three places that must
+    stay in step: the code, the top-level config and `env.production`. This extends D-017, which
+    named two.
+  - The top level is named `edustrux-local`, not `edustrux`, so a bare `wrangler deploy` can't
+    aim the local config at the production Worker. It is still never run (D-065).
+- **Tasks:** TUI-24.
