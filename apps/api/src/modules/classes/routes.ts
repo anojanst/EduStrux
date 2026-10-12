@@ -25,8 +25,9 @@ const SessionParams = OrgParams.extend({
 const deleted = { 204: { description: 'Deleted' } };
 
 // Who reaches what: the owner every class; branch managers and front desk the classes in their
-// branches; a teacher the classes they teach, read-only; a parent none until enrolments exist.
-// A class outside the caller's reach is 404, like one that doesn't exist.
+// branches; a teacher the classes they teach and a parent the classes their children are
+// enrolled in, both read-only. A class outside the caller's reach is 404, like one that doesn't
+// exist.
 
 const listClassesRoute = createRoute({
   method: 'get',
@@ -35,7 +36,8 @@ const listClassesRoute = createRoute({
   summary: 'List classes',
   description:
     'Oldest first, with each class’s weekly schedule. Branch staff see their branches’ ' +
-    'classes and teachers the classes they teach. A filter id the org doesn’t have is 404.',
+    'classes, teachers the classes they teach and parents the classes their children are ' +
+    'enrolled in. A filter id the org doesn’t have is 404.',
   middleware: orgAccess('classes:read'),
   request: { params: OrgParams, query: ClassQuery },
   responses: {
@@ -97,12 +99,14 @@ const deleteClassRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/classes/{classId}',
   tags: ['Classes'],
   summary: 'Delete a class',
-  description: 'Also deletes its weekly schedule and all its sessions.',
+  description:
+    'Also deletes its weekly schedule and all its sessions. Refused (422) while the class ' +
+    'has enrolments.',
   middleware: orgAccess('classes:write'),
   request: { params: ClassParams },
   responses: {
     ...deleted,
-    ...errors(401, 403, 404),
+    ...errors(401, 403, 404, 422),
   },
 });
 
@@ -133,7 +137,9 @@ const listSessionsRoute = createRoute({
   description:
     'From `from` to `to` (both included), in date then start-time order. Dates and times are ' +
     'local to the organisation; `startsAt` and `endsAt` are the same moments in UTC. Branch ' +
-    'staff see their branches’ sessions and teachers their own classes’.',
+    'staff see their branches’ sessions, teachers their own classes’ and parents their ' +
+    'children’s classes’. `studentId` gives one student’s timetable: the sessions of the ' +
+    'classes they are enrolled in, on the dates each enrolment covers.',
   middleware: orgAccess('classes:read'),
   request: { params: OrgParams, query: SessionQuery },
   responses: {

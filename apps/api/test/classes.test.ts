@@ -1235,7 +1235,7 @@ describe('permissions', () => {
     expect(writes.map((r) => r.status)).toEqual([403, 403, 403, 403]);
   });
 
-  it('shows a parent no classes or sessions until enrolments exist', async () => {
+  it('shows a parent with no enrolled children no classes or sessions', async () => {
     const { member, mainClass, mainSession, range } = await twoBranches();
     const { as } = await member('parent');
 

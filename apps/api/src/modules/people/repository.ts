@@ -27,9 +27,10 @@ export type NewGradeRow = typeof studentGrades.$inferInsert;
 /**
  * The part of the org's families a caller may see or change: every family when empty, else only
  * those whose home branch is in `branchIds`, or that have a guardian signed in as
- * `guardianMembershipId`, or none at all. Guardians and students are reached through their family.
+ * `guardianMembershipId`. Guardians and students are reached through their family. `studentIds`
+ * narrows to those students alone, with their families and guardians but not their siblings.
  */
-export type Reach = { branchIds?: string[]; guardianMembershipId?: string; nothing?: true };
+export type Reach = { branchIds?: string[]; guardianMembershipId?: string; studentIds?: string[] };
 
 export type StudentFilter = {
   familyId?: string;
@@ -50,14 +51,20 @@ export type GradeChange = {
 };
 
 function within(ctx: OrgCtx, reach: Reach): SQL | undefined {
-  if (reach.nothing) return sql`0`;
   return and(
     reach.branchIds ? inIds(families.branchId, reach.branchIds) : undefined,
     reach.guardianMembershipId
       ? sql`${families.id} in (select ${guardians.familyId} from ${guardians} where ${guardians.orgId} = ${ctx.orgId} and ${guardians.membershipId} = ${reach.guardianMembershipId} and ${guardians.deletedAt} is null)`
       : undefined,
+    reach.studentIds
+      ? sql`${families.id} in (select ${students.familyId} from ${students} where ${students.orgId} = ${ctx.orgId} and ${inIds(students.id, reach.studentIds)} and ${students.deletedAt} is null)`
+      : undefined,
   );
 }
+
+/** The students of a family within reach that the caller may see: all of them, or `studentIds`. */
+const studentWithin = (reach: Reach) =>
+  reach.studentIds ? inIds(students.id, reach.studentIds) : undefined;
 
 // ── Families ────────────────────────────────────────────────────────────────
 
@@ -270,6 +277,7 @@ export function listStudents(
           students,
           filter.familyId ? eq(students.familyId, filter.familyId) : undefined,
           inGrade,
+          studentWithin(reach),
           afterCursor,
         ),
         inOrg(
@@ -289,17 +297,40 @@ export function findStudent(ctx: OrgCtx, id: string, reach: Reach) {
     .select(studentWithBranch)
     .from(students)
     .innerJoin(families, eq(families.id, students.familyId))
-    .where(and(inOrg(ctx, students, eq(students.id, id)), inOrg(ctx, families, within(ctx, reach))))
+    .where(
+      and(
+        inOrg(ctx, students, eq(students.id, id), studentWithin(reach)),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
     .get();
 }
 
-/** The students of the given families, in name order. */
-export function studentsOfFamilies(ctx: OrgCtx, familyIds: string[]) {
+/** The students of the given families that are within reach, in name order. */
+export function studentsOfFamilies(ctx: OrgCtx, familyIds: string[], reach: Reach) {
   return ctx.db
     .select()
     .from(students)
-    .where(inOrg(ctx, students, inIds(students.familyId, familyIds)))
+    .where(inOrg(ctx, students, inIds(students.familyId, familyIds), studentWithin(reach)))
     .orderBy(asc(students.lastNameNorm), asc(students.firstNameNorm), asc(students.id));
+}
+
+/** The ids of every student within reach. */
+export async function studentIds(ctx: OrgCtx, reach: Reach) {
+  const rows = await ctx.db
+    .select({ id: students.id })
+    .from(students)
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(and(inOrg(ctx, students), inOrg(ctx, families, within(ctx, reach))));
+  return rows.map((row) => row.id);
+}
+
+/** The names of the given students. */
+export function studentNames(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({ id: students.id, firstName: students.firstName, lastName: students.lastName })
+    .from(students)
+    .where(inOrg(ctx, students, inIds(students.id, ids)));
 }
 
 export async function countStudents(ctx: OrgCtx, familyId: string) {

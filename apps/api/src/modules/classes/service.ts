@@ -25,7 +25,9 @@ import { byDateTime, decodeCursor, decodeDateTimeCursor, toPage } from '../../li
 import * as branches from '../branches/service';
 import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
+import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
+import * as people from '../people/service';
 import * as repo from './repository';
 import {
   notStarted,
@@ -63,11 +65,10 @@ export function toSession(row: SessionWithClass, timezone: string): Session {
 }
 
 /**
- * A role's scope as a filter on classes. Branch staff reach the classes in their branches and a
- * teacher the classes they teach. A parent reaches their children's classes, which needs
- * enrolments; until those exist a parent reaches none.
+ * A role's scope as a filter on classes. Branch staff reach the classes in their branches, a
+ * teacher the classes they teach, and a parent the classes their children are enrolled in.
  */
-function reachOf(access: Access): repo.Reach {
+async function reachOf(ctx: OrgCtx, access: Access): Promise<repo.Reach> {
   switch (access.scope) {
     case 'all':
       return {};
@@ -76,7 +77,7 @@ function reachOf(access: Access): repo.Reach {
     case 'own':
       return access.role === 'teacher'
         ? { teacherMembershipId: access.membershipId }
-        : { nothing: true };
+        : { classIds: await enrolment.classIdsOfChildren(ctx, access.membershipId) };
   }
 }
 
@@ -163,7 +164,13 @@ export async function listClasses(
     throw notFound('Teacher');
   }
 
-  const rows = await repo.listClasses(ctx, limit, decodeCursor(cursor), filter, reachOf(access));
+  const rows = await repo.listClasses(
+    ctx,
+    limit,
+    decodeCursor(cursor),
+    filter,
+    await reachOf(ctx, access),
+  );
   const { data, nextCursor } = toPage(rows, limit);
   const slots = data.length
     ? await repo.listSlots(
@@ -183,8 +190,38 @@ export async function listClasses(
 }
 
 export async function getClass(ctx: OrgCtx, access: Access, id: string): Promise<Class> {
-  const row = await findClassOr404(ctx, id, reachOf(access));
+  const row = await findClassOr404(ctx, id, await reachOf(ctx, access));
   return toClass(row, await repo.listSlots(ctx, [id]));
+}
+
+/** The classes in these branches. */
+export function classIdsInBranches(ctx: OrgCtx, branchIds: string[]) {
+  return repo.classIds(ctx, { branchIds });
+}
+
+/** The classes this member teaches. */
+export function classIdsTaughtBy(ctx: OrgCtx, teacherMembershipId: string) {
+  return repo.classIds(ctx, { teacherMembershipId });
+}
+
+/** What a record that points at a class shows of it, by class id, whoever is asking. */
+export async function classLabels(ctx: OrgCtx, ids: string[]) {
+  return new Map((await repo.classLabels(ctx, ids)).map(({ id, ...label }) => [id, label]));
+}
+
+/**
+ * The first and last day a class runs: its own dates, else its term's. A null end means until
+ * further notice, which only a class with no term can have.
+ */
+export async function classDates(
+  ctx: OrgCtx,
+  klass: Pick<Class, 'termId' | 'startDate' | 'endDate'>,
+) {
+  const term = klass.termId ? await calendar.getTerm(ctx, klass.termId) : null;
+  return {
+    startDate: klass.startDate ?? term?.startDate ?? null,
+    endDate: klass.endDate ?? term?.endDate ?? null,
+  };
 }
 
 /** How many classes use a course, term, branch or room. None can be deleted while any do. */
@@ -240,7 +277,7 @@ export async function updateClass(
   id: string,
   input: UpdateClass,
 ): Promise<Class> {
-  const before = await findClassOr404(ctx, id, reachOf(access));
+  const before = await findClassOr404(ctx, id, await reachOf(ctx, access));
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
   const { updatedAt: _ignored, teacherId, ...rest } = input;
@@ -276,9 +313,13 @@ export async function updateClass(
   return getClass(ctx, access, id);
 }
 
-/** Deletes the class with its schedule and all its sessions. */
+/** Deletes the class with its schedule and all its sessions. Refused while it has enrolments. */
 export async function deleteClass(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  const before = await findClassOr404(ctx, id, reachOf(access));
+  const before = await findClassOr404(ctx, id, await reachOf(ctx, access));
+  const enrolmentCount = await enrolment.countEnrolments(ctx, { classId: id });
+  if (enrolmentCount > 0) {
+    throw unprocessable(`This class has ${enrolmentCount} enrolment(s), so it can't be deleted.`);
+  }
   await repo.softDeleteClass(ctx, before);
 }
 
@@ -370,7 +411,7 @@ export async function setSchedule(
   classId: string,
   input: SetSchedule,
 ): Promise<ScheduleResult> {
-  const klass = await findClassOr404(ctx, classId, reachOf(access));
+  const klass = await findClassOr404(ctx, classId, await reachOf(ctx, access));
   const course = await curriculum.getCourse(ctx, klass.courseId);
   const resolved = resolveSlots(input.slots, course.durationMinutes);
   if ('errors' in resolved) throw validationFailed(resolved.errors);
@@ -423,9 +464,10 @@ export async function listSessions(
   access: Access,
   limit: number,
   cursor: string | undefined,
-  filter: repo.SessionFilter,
+  query: Omit<repo.SessionFilter, 'spans'> & { studentId?: string },
 ) {
-  const reach = reachOf(access);
+  const reach = await reachOf(ctx, access);
+  const { studentId, ...filter } = query;
   if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
   if (filter.roomId) await branches.getRoom(ctx, filter.roomId);
   if (filter.gradeLevelId) await curriculum.getGradeLevel(ctx, filter.gradeLevelId);
@@ -433,9 +475,21 @@ export async function listSessions(
   if (filter.teacherId && !(await orgs.findMember(ctx, filter.teacherId))) {
     throw notFound('Teacher');
   }
+  // A student's timetable: their classes' sessions, on the dates each enrolment covers.
+  let spans: repo.EnrolledSpan[] | undefined;
+  if (studentId) {
+    await people.getStudent(ctx, access, studentId);
+    spans = await enrolment.spansOf(ctx, studentId);
+  }
 
   const { timezone } = await orgClock(ctx);
-  const rows = await repo.listSessions(ctx, limit, decodeDateTimeCursor(cursor), filter, reach);
+  const rows = await repo.listSessions(
+    ctx,
+    limit,
+    decodeDateTimeCursor(cursor),
+    { ...filter, spans },
+    reach,
+  );
   const { data, nextCursor } = toPage(
     rows.map((row) => ({ ...row, id: row.session.id })),
     limit,
@@ -445,7 +499,7 @@ export async function listSessions(
 }
 
 export async function getSession(ctx: OrgCtx, access: Access, id: string): Promise<Session> {
-  const row = await repo.findSession(ctx, id, reachOf(access));
+  const row = await repo.findSession(ctx, id, await reachOf(ctx, access));
   if (!row) throw notFound('Session');
   const { timezone } = await orgClock(ctx);
   return toSession(row, timezone);

@@ -1042,7 +1042,7 @@ describe('permissions', () => {
     expect((await writesOnMain(as, t)).map((r) => r.status)).toEqual(Array(9).fill(403));
   });
 
-  it('shows a teacher no families or students until enrolments exist, and lets them change nothing', async () => {
+  it('shows a teacher with no enrolled students no families or students, and lets them change nothing', async () => {
     const t = await twoBranches();
     const { as } = await t.member('teacher');
     expect(await familyNames(as)).toEqual([]);

@@ -35,6 +35,7 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/guardians/{guardianId}',
         '/api/v1/orgs/{orgId}/students',
         '/api/v1/orgs/{orgId}/students/{studentId}',
+        '/api/v1/orgs/{orgId}/enrolments',
         '/api/v1/orgs/{orgId}/academic-years',
         '/api/v1/orgs/{orgId}/academic-years/{academicYearId}',
         '/api/v1/orgs/{orgId}/terms',

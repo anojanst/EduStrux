@@ -32,8 +32,10 @@ const deleted = { 204: { description: 'Deleted' } };
 
 // Who reaches what: the owner every family; branch managers and front desk the families whose
 // home branch is one of theirs; a parent the families they are a signed-in guardian of,
-// read-only; a teacher none until enrolments exist. Guardians and students are reached through
-// their family, and anything outside the caller's reach is 404, like something that doesn't exist.
+// read-only; a teacher the students enrolled in the classes they teach, with those students'
+// families and guardians but not their siblings, read-only. Guardians and students are reached
+// through their family, and anything outside the caller's reach is 404, like something that
+// doesn't exist.
 
 const listFamiliesRoute = createRoute({
   method: 'get',
@@ -42,7 +44,8 @@ const listFamiliesRoute = createRoute({
   summary: 'List families',
   description:
     'In name order, each with its guardians and students. Branch staff see the families of ' +
-    'their branches and a parent their own. A `branchId` the org doesn’t have is 404.',
+    'their branches, a parent their own, and a teacher the families of the students in their ' +
+    'classes, showing only those students. A `branchId` the org doesn’t have is 404.',
   middleware: orgAccess('people:read'),
   request: { params: OrgParams, query: FamilyQuery },
   responses: {
@@ -227,12 +230,12 @@ const deleteStudentRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/students/{studentId}',
   tags: ['People'],
   summary: 'Delete a student',
-  description: 'Also deletes their grade history.',
+  description: 'Also deletes their grade history. Refused (422) while the student has enrolments.',
   middleware: orgAccess('people:write'),
   request: { params: StudentParams },
   responses: {
     ...deleted,
-    ...errors(401, 403, 404),
+    ...errors(401, 403, 404, 422),
   },
 });
 
