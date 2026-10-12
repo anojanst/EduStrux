@@ -23,9 +23,12 @@ and R2 `edustrux-files` (Oceania), queues `edustrux-email` and `edustrux-jobs`, 
 0000–0008 applied. Deploy with `pnpm db:migrate:production` then `pnpm deploy:production`.
 Recorded in D-064 to D-067.
 
+**Also done (2026-10-12):** the owner set `CLERK_SECRET_KEY` on the Worker. The API docs are on
+in production until launch (#20, D-068), and the owner put the Worker behind Cloudflare Access
+until the app is finalised (#21, D-069). Undoing both before launch is in TUI-86.
+
 **Left:**
 
 - The CI pipeline (typecheck, test). Needs the owner's go-ahead first: GitHub Actions minutes on
   a private repo are a billing matter.
-- Owner: set `CLERK_SECRET_KEY` (or `CLERK_JWT_KEY`) on the Worker.
 - Set `CLERK_AUTHORIZED_PARTIES` once the web app has an origin.
