@@ -1,4 +1,5 @@
 import {
+  localNow,
   newId,
   type AcademicYear,
   type CreateAcademicYear,
@@ -14,6 +15,7 @@ import { conflict, notFound, staleData, unprocessable, validationFailed } from '
 import { byStartDate, decodeStartDateCursor, toPage } from '../../lib/pagination';
 import * as branches from '../branches/service';
 import * as classes from '../classes/service';
+import * as orgs from '../orgs/service';
 import * as repo from './repository';
 
 export function toAcademicYear(row: repo.AcademicYearRow): AcademicYear {
@@ -62,8 +64,25 @@ async function findAcademicYearOr404(ctx: OrgCtx, id: string) {
   return row;
 }
 
-async function getAcademicYear(ctx: OrgCtx, id: string): Promise<AcademicYear> {
+export async function getAcademicYear(ctx: OrgCtx, id: string): Promise<AcademicYear> {
   return toAcademicYear(await findAcademicYearOr404(ctx, id));
+}
+
+/**
+ * Every academic year in start-date order, and which one is current: the year today falls in
+ * (in the org's timezone); between years, the one that ended last; before the first year, that
+ * first one. null only when the org has no academic years.
+ */
+export async function academicYears(ctx: OrgCtx) {
+  const years = (await repo.allAcademicYears(ctx)).map(toAcademicYear);
+  const { timezone } = await orgs.getOrg(ctx);
+  const today = localNow(timezone).date;
+  const current =
+    years.find((y) => y.startDate <= today && today <= y.endDate) ??
+    years.findLast((y) => y.endDate < today) ??
+    years[0] ??
+    null;
+  return { years, current };
 }
 
 async function refuseYearOverlap(ctx: OrgCtx, start: string, end: string, exceptId?: string) {

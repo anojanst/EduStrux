@@ -97,7 +97,8 @@ const deleteGradeLevelRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/grade-levels/{gradeLevelId}',
   tags: ['Curriculum'],
   summary: 'Delete a grade level',
-  description: 'Refused (422) while a course is taught at this grade level.',
+  description:
+    'Refused (422) while a course is taught at this grade level or a student has been in it.',
   middleware: orgAccess('org:write'),
   request: { params: GradeLevelParams },
   responses: {

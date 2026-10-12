@@ -14,6 +14,7 @@ import { decodeCursor, toPage } from '../../lib/pagination';
 import * as calendar from '../calendar/service';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
+import * as people from '../people/service';
 import * as repo from './repository';
 
 export const DEFAULT_BRANCH_NAME = 'Main';
@@ -96,8 +97,8 @@ export async function updateBranch(ctx: OrgCtx, id: string, input: UpdateBranch)
 
 /**
  * Soft-deletes a branch. Refused while anything still depends on it: the org must keep one
- * branch; its rooms, classes and own holidays must be deleted first; and staff limited to the
- * branch must be moved first.
+ * branch; its rooms, classes and own holidays must be deleted first; and the families whose home
+ * it is, and staff limited to it, must be moved first.
  */
 export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findBranchOr404(ctx, id);
@@ -112,6 +113,12 @@ export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
   const classCount = await classes.countClasses(ctx, { branchId: id });
   if (classCount > 0) {
     throw unprocessable(`Delete this branch's ${classCount} class(es) first.`);
+  }
+  const familyCount = await people.countFamilies(ctx, id);
+  if (familyCount > 0) {
+    throw unprocessable(
+      `${familyCount} family(ies) have this as their home branch. Move them to another branch first.`,
+    );
   }
   const holidayCount = await calendar.countBranchHolidays(ctx, id);
   if (holidayCount > 0) {

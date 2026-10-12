@@ -73,7 +73,7 @@ const deleteBranchRoute = createRoute({
   summary: 'Delete a branch',
   description:
     'Refused with 422 if it is the last branch, still has rooms, classes or its own holidays, ' +
-    'or staff are limited to it.',
+    'is a family’s home branch, or staff are limited to it.',
   middleware: orgAccess('org:write'),
   request: { params: BranchParams },
   responses: {

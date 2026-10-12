@@ -13,6 +13,7 @@ import { classRoutes } from './modules/classes/routes';
 import { curriculumRoutes } from './modules/curriculum/routes';
 import { meRoutes } from './modules/me/routes';
 import { orgRoutes } from './modules/orgs/routes';
+import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
@@ -32,6 +33,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', curriculumRoutes);
   app.route('/', calendarRoutes);
   app.route('/', classRoutes);
+  app.route('/', peopleRoutes);
   app.route('/', billingRoutes);
 
   // API docs: generated from the route definitions above.

@@ -264,6 +264,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   Assumption: Clerk sends the sign-in codes and links, so parent sign-in emails don't go through
   our `email` queue (D-015 listed sign-in links there); invite emails may still be ours.
 - **Tasks:** TUI-4 (and TUI-39, TUI-72).
+- **Update 2026-10-11:** The link to a family is `guardians.membership_id`: a guardian row points
+  at the parent's membership (D-053). Nothing sets it yet; accepting an invite will (TUI-42,
+  TUI-72).
 
 ## D-022 · 2026-10-07 · MVP cut: four P2 Could items move to v1.1
 
@@ -330,6 +333,10 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Consequences:** A search matches from the start of a name only, not words inside it. The
   normalised columns and their indexes need a migration with TUI-43.
 - **Tasks:** TUI-8 (and TUI-43).
+- **Update 2026-10-11:** The normalised name columns were created with the families, guardians
+  and students tables in TUI-32, so TUI-43 needs no backfill (D-056). The search indexes on
+  guardian names and email, phone normalisation, `GET /search` and duplicate warnings are still
+  TUI-43's.
 
 ## D-027 · 2026-10-07 · Annual billing at launch; USD base with local prices for NZ, AU and UK
 
@@ -460,6 +467,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Update 2026-10-11 (TUI-31):** Deleting a room is now refused (422) while a class uses it, and
   so is deleting a branch that has classes (D-050). The in-use checks left open here are all
   done.
+- **Update 2026-10-11 (TUI-32):** Deleting a branch is also refused (422) while it is a family's
+  home branch, and deleting a grade level while a student grade record uses it (D-057).
 
 ## D-035 · 2026-10-07 · Grade levels are one ordered list, not paged
 
@@ -511,6 +520,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   the wrong year is deleted and created again. There's no "current academic year" flag yet;
   families and students (TUI-32) will need one, worked out in the org's timezone.
 - **Tasks:** TUI-28 (and TUI-32).
+- **Update 2026-10-11:** TUI-32 defined the current academic year as a rule, not a stored flag:
+  the year today falls in, else the one that ended most recently, else the first one to start,
+  worked out in the org's timezone (D-055).
 
 ## D-038 · 2026-10-08 · Holidays: a date range, org-wide or for one branch
 
@@ -654,6 +666,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-30 (and TUI-31, TUI-36).
 - **Update 2026-10-11:** Deleting a course is now refused (422) while a class uses it (D-050).
+- **Update 2026-10-11 (TUI-32):** Deleting a grade level is also refused (422) while a student
+  grade record uses it (D-057).
 
 ## D-044 · 2026-10-11 · Sessions for a class with no term are generated 13 weeks ahead
 
@@ -782,6 +796,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     has no `?student` filter.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-31 (and TUI-33).
+- **Update 2026-10-11 (TUI-32):** Families, guardians and students follow the same pattern, with
+  the family's home branch as the branch (D-051, D-053). There a parent reads their own family,
+  and it's the teacher who gets empty lists until TUI-33.
 
 ## D-049 · 2026-10-11 · Class rules: what a class keeps, its name, dates, teacher and room
 
@@ -854,3 +871,206 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     later save wins.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-31 (and TUI-33, TUI-49, TUI-50).
+
+## D-051 · 2026-10-11 · A family has a home branch
+
+- **Context:** Handoff §6 gives branch managers and front desk "Branch" reach over families and
+  students, but nothing tied a family or a student to a branch. TUI-32 needed that link. The
+  owner was asked during the build.
+- **Decision:** The owner decided a family has a home branch: `branchId`, required. Its guardians
+  and students go with it. A branch manager or front desk member limited to some branches sees
+  and changes only the families whose home branch is one of theirs. The owner chose this over
+  "each student has a home branch" and "no branch on families".
+- **Consequences:**
+  - A child who attends a class at another branch will show on that class's roster through
+    enrolments (TUI-33). Only the home branch, the owner and staff with no branch limit change
+    the family record.
+  - A branch-limited member can't see a student whose family's home branch is another one, even
+    to enrol them in a class at their own branch. TUI-33 must decide how cross-branch enrolment
+    works. Tracked as an open question in handoff §11.
+  - Every student is returned with `branchId`, their family's home branch, and the family and
+    student lists filter by it.
+  - A branch can't be deleted while it is a family's home branch (D-057).
+- **Tasks:** TUI-32 (and TUI-33).
+
+## D-052 · 2026-10-11 · No consent fields yet: consents wait for privacy controls
+
+- **Context:** The handoff listed "consents" on family and student records (§7, §8) without
+  naming them. The owner was asked during the TUI-32 build whether to add photo or medical
+  consent now.
+- **Decision:** The owner decided to add none in TUI-32. Every consent field is left to privacy
+  controls (TUI-79).
+- **Consequences:** Families, guardians and students carry no consent columns yet. TUI-79 must
+  define which consents exist and where they're recorded, and add them with a migration. Consents
+  stay in the MVP (handoff §8).
+- **Tasks:** TUI-32 (and TUI-79).
+
+## D-053 · 2026-10-11 · Who reaches families, guardians and students
+
+- **Context:** Handoff §6's "Families and students" row gives each role a reach: full, branch,
+  own classes (read), own family or none. TUI-32 applied the `branch` and `own` scopes to people
+  as D-048 did for classes, using the home branch from D-051.
+- **Decision:**
+  - Owner: every family, guardian and student, read and write.
+  - Branch manager and front desk: read and write, only the families whose home branch is in
+    their membership's branches. A membership with no branch list (null) reaches every branch; an
+    empty list reaches none.
+  - Parent: read only, and only the families where one of the guardians is linked to the
+    parent's membership (a signed-in guardian). A write is refused with 403.
+  - Teacher: lists return 200 with no rows, and a single family or student is 404. "Own classes"
+    needs enrolments, so TUI-33 must wire it. A write is refused with 403.
+  - Accountant: 403 on every family, guardian and student route.
+  - Guardians and students are reached through their family.
+  - Anything outside the caller's reach is 404, as if it didn't exist (the D-048 rule). So is a
+    `?familyId` filter on `GET /students` for such a family.
+  - Two exceptions are 403, since the member can see that the branch exists (D-033):
+    `POST /families` with a `branchId` outside a branch-limited member's branches, and
+    `PATCH /families/{familyId}` moving a family to such a branch.
+  - The parent link is `guardians.membership_id`, returned read-only as `membershipId`. It ties a
+    guardian to a `parent` membership. One parent membership can be a guardian in more than one
+    family, and then reaches all of them.
+- **Consequences:**
+  - Nothing in the API sets `membershipId` yet: accepting an invite will (TUI-42, TUI-72). Until
+    then no parent reaches a family; the tests set the link directly.
+  - Removing a parent's membership (TUI-42) must clear `guardians.membership_id`.
+  - Teachers see no families or students until TUI-33.
+  - The handoff's "Own family" for parents is read-only. Parent profile updates are v1.1
+    (handoff §8).
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-32 (and TUI-33, TUI-42, TUI-72).
+
+## D-054 · 2026-10-11 · Guardians: contact fields, the billing contact and emergency contacts
+
+- **Context:** The TUI-32 task listed a billing contact, preferred channel, language and
+  emergency contacts without saying how they're stored. These are the rules the implementation
+  settled.
+- **Decision:**
+  - A guardian is any contact person for a family: a parent, or a grandparent or neighbour to
+    call in an emergency. `relationship` is optional free text (1–60 characters), and
+    `emergencyContact` is a flag, true by default. There is no separate emergency-contacts table
+    or list.
+  - First and last name are required, 1–80 characters each.
+  - `email` is optional, trimmed and stored lower-case. `phone` is optional, 3–30 characters:
+    digits, spaces and `+ ( ) . -`. Neither is required, and neither has to be unique.
+  - `preferredChannel` is `email`, `sms` or `whatsapp`, default `email`. It is a stored
+    preference only, since the MVP sends email only.
+  - `language` is a language tag such as `en`, `mi` or `si`. It is stored only (D-015).
+  - A guardian stays in their family: `PATCH /guardians/{guardianId}` takes no `familyId` and
+    ignores it if sent.
+  - The billing contact is `families.billingGuardianId`, which points at one guardian. The
+    family's first guardian becomes the billing contact automatically, in the same batch,
+    recorded as `after.billingContact: true` on the `guardian.created` audit row.
+  - `PATCH /families/{familyId}` can change it to another guardian of the same family. Any other
+    id is `422 unprocessable` with `fields.billingGuardianId: ['Not a guardian of this family']`.
+    It can't be set to null.
+  - The billing contact can't be deleted (422) until another guardian takes over.
+- **Consequences:**
+  - A family's last guardian goes only when the family is deleted. `billingGuardianId` is null
+    only while a family has no guardians.
+  - A guardian can have no email and no phone, so anything that contacts guardians must handle
+    that.
+  - The same person can be entered twice. Duplicate warnings are TUI-43's.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-32 (and TUI-43).
+
+## D-055 · 2026-10-11 · Students: fields, a grade per academic year, the current academic year
+
+- **Context:** The handoff says `student_grades` stores a student's grade per academic year, and
+  D-037 left the "current academic year" rule to TUI-32. These are the rules the implementation
+  settled.
+- **Decision:**
+  - First and last name are required, 1–80 characters each. `dateOfBirth` is optional and can't
+    be in the future, judged in the org's timezone (400). `notes` is optional free text, up to
+    2000 characters, visible to anyone who can read the student.
+  - A student stays in their family: `PATCH /students/{studentId}` takes no `familyId` and
+    ignores it if sent.
+  - A student has no status (active or inactive) field.
+  - `student_grades` holds at most one grade level per student per academic year. A partial
+    unique index enforces it.
+  - `POST /students` and `PATCH /students/{studentId}` take `gradeLevelId` and an optional
+    `academicYearId`. With no year named, the grade is for the current academic year. Setting a
+    grade for a year that already has one replaces it. `PATCH` with `gradeLevelId: null` removes
+    that year's grade. `academicYearId` without `gradeLevelId` is 400.
+  - A `familyId`, `gradeLevelId` or `academicYearId` the org doesn't have is 404 on these writes.
+    So is a `familyId` outside the caller's reach (D-053).
+  - `Student.gradeLevelId` is the grade in the current academic year, or null. `grades` lists
+    every year on record as `{ academicYearId, gradeLevelId }`, earliest year first.
+  - The student's `updatedAt` moves when only a grade changes.
+  - The current academic year, worked out in the org's timezone, is the year today falls in;
+    between years, the one that ended most recently; before the first year starts, that first
+    year. There is none only when the org has no academic years.
+  - With no academic year at all, giving a student a grade is `422 unprocessable` with
+    `fields.gradeLevelId: ['No academic year yet']`, and the `?gradeLevelId` filter returns an
+    empty list.
+- **Consequences:**
+  - During the break between two years, a new student's grade defaults to the year that just
+    ended, unless `academicYearId` names the coming one.
+  - When a new academic year starts, `Student.gradeLevelId` is null until the student has a
+    grade for that year. Year-end promotion is TUI-45.
+  - The current year is worked out when read. No flag is stored (D-037).
+  - Later tasks can work out whether a student is active from enrolments. Student caps (TUI-74)
+    will need a definition of "active".
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-32 (and TUI-45, TUI-74).
+
+## D-056 · 2026-10-11 · Normalised name columns now; families and students in name order
+
+- **Context:** D-026 planned the normalised name columns with a migration in TUI-43 (search).
+  TUI-32 creates the tables those columns sit on, and its lists needed an order.
+- **Decision:**
+  - The normalised columns are created with the tables, not in TUI-43: `families.name_norm`, and
+    `first_name_norm` and `last_name_norm` on both `guardians` and `students`. One shared helper
+    fills them on every write: lower-case, accents stripped, spaces collapsed.
+  - `GET /families` lists by name. `GET /students` lists by last name, then first name. Both use
+    the normalised columns, then the id. Case and accents don't change the order; names in other
+    scripts sort after Latin ones.
+  - The cursor holds every sort key, and works for names in any script.
+  - Inside a family, guardians come oldest first and students in name order.
+- **Consequences:**
+  - This departs from "oldest first by id", the order of the setup, course and class lists
+    (D-040, D-043, D-050).
+  - TUI-43 needs no backfill. It still adds the search indexes on guardian names and email,
+    phone normalisation, `GET /search` and duplicate warnings.
+  - The API and the web app must normalise names the same way, so the helper is in
+    `packages/shared`.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-32 (and TUI-43).
+
+## D-057 · 2026-10-11 · Family shape, moves, deletes, in-use checks, filters, paths and audit rows
+
+- **Context:** More rules the TUI-32 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - One Family shape everywhere: list, get, create and update all return the family with its
+    `guardians` and `students` nested. There is no `GET /guardians` list. A list page costs a
+    fixed number of extra queries, not one per family.
+  - A family's name is required, 1–120 characters, and doesn't have to be unique. `address` is
+    optional free text, up to 500 characters.
+  - A family can move to another home branch (`PATCH` with `branchId`), unlike a class (D-049).
+  - `DELETE /families/{familyId}` is refused (`422 unprocessable`) while the family has students.
+    Otherwise it soft-deletes the family and its guardians with one `family.deleted` audit row.
+  - `DELETE /students/{studentId}` soft-deletes the student and their grade rows with one
+    `student.deleted` audit row.
+  - A grade level can't be deleted while a non-deleted student grade record uses it, in any
+    academic year. A branch can't be deleted while it is a family's home branch. Both are
+    `422 unprocessable`. This adds to D-043's grade-level check and D-034's branch-deletion
+    rules.
+  - `GET /families` filters by `?branchId`. `GET /students` filters by `?familyId`, `?branchId`
+    (the family's home branch) and `?gradeLevelId` with an optional `?academicYearId` (default:
+    the current academic year, D-055). `?academicYearId` without `?gradeLevelId` is 400. A filter
+    id the org doesn't have is 404, as for courses (D-043).
+  - The path parameters are `{familyId}`, `{guardianId}` and `{studentId}` (the handoff wrote
+    `{id}`).
+  - Audit rows: one per write. `student.created` records the grade as `after.grade`.
+    `student.updated` records a grade change as `before.grade` and `after.grade`, each
+    `{ academicYearId, gradeLevelId }`.
+  - A student grade row has the new id prefix `sgr_`.
+  - Not built here, as planned: `GET /students/{id}/timeline` (v1.1, D-022),
+    `POST /students/promote` (TUI-45) and `GET /search` (TUI-43).
+- **Consequences:**
+  - Enrolments (TUI-33) must refuse deleting a student who has enrolments. Hard delete and
+    anonymising belong to privacy controls (TUI-79).
+  - The "unique bank reference per family" in handoff §7 isn't added here. Payments (TUI-38) add
+    it, with a backfill for the families that already exist.
+  - Student caps and plan limits (TUI-74) aren't enforced when a student is added.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-32 (and TUI-33, TUI-38, TUI-43, TUI-45, TUI-74, TUI-79).

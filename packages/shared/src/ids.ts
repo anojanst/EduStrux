@@ -17,6 +17,7 @@ export const ID_PREFIXES = {
   student: 'stu',
   family: 'fam',
   guardian: 'gdn',
+  studentGrade: 'sgr',
   course: 'crs',
   class: 'cls',
   classSchedule: 'csl',
