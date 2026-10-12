@@ -118,5 +118,8 @@ pnpm deploy:production
   `CLERK_JWT_KEY`).
 - Swagger is on in production for now, at `/api/docs`, because production is the only deployed
   environment (D-068).
-- Before launch: set `ENABLE_DOCS` back to `false` under `env.production`, and
-  `CLERK_AUTHORIZED_PARTIES` to the web app's origins.
+- The whole deployed API is behind Cloudflare Access until the app is finalised (D-069). A
+  browser signs in through Access first; curl and other non-browser clients need an Access
+  service token. Access is set up in the Cloudflare dashboard, not in this repo.
+- Before launch: remove or narrow Access, set `ENABLE_DOCS` back to `false` under
+  `env.production`, and set `CLERK_AUTHORIZED_PARTIES` to the web app's origins.
