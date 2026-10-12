@@ -11,6 +11,7 @@ import { branchRoutes } from './modules/branches/routes';
 import { calendarRoutes } from './modules/calendar/routes';
 import { classRoutes } from './modules/classes/routes';
 import { curriculumRoutes } from './modules/curriculum/routes';
+import { enrolmentRoutes } from './modules/enrolment/routes';
 import { meRoutes } from './modules/me/routes';
 import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
@@ -34,6 +35,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', calendarRoutes);
   app.route('/', classRoutes);
   app.route('/', peopleRoutes);
+  app.route('/', enrolmentRoutes);
   app.route('/', billingRoutes);
 
   // API docs: generated from the route definitions above.

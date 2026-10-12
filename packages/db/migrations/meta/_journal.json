@@ -57,6 +57,13 @@
       "when": 1791706954847,
       "tag": "0007_families_guardians_students",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791795836964,
+      "tag": "0008_enrolments",
+      "breakpoints": true
     }
   ]
 }

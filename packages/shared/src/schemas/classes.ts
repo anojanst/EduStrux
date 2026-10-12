@@ -207,6 +207,10 @@ export const SessionQuery = PageQuery.extend({
   teacherId: z.string().optional().openapi({ description: 'Only sessions this person teaches' }),
   gradeLevelId: z.string().optional().openapi({ description: 'Only this grade level’s sessions' }),
   classId: z.string().optional().openapi({ description: 'Only this class’s sessions' }),
+  studentId: z.string().optional().openapi({
+    description:
+      'Only the sessions this student is enrolled for: their classes’, on the dates each enrolment covers',
+  }),
 }).refine(
   (q) =>
     !LocalDate.safeParse(q.from).success || !LocalDate.safeParse(q.to).success || q.to >= q.from,

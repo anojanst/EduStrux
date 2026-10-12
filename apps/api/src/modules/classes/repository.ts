@@ -19,9 +19,12 @@ export type NewSessionRow = typeof sessions.$inferInsert;
 
 /**
  * The part of the org's classes a caller may see or change: every class when empty, else only
- * those in `branchIds`, or taught by `teacherMembershipId`, or none at all.
+ * those in `branchIds`, or taught by `teacherMembershipId`, or listed in `classIds`.
  */
-export type Reach = { branchIds?: string[]; teacherMembershipId?: string; nothing?: true };
+export type Reach = { branchIds?: string[]; teacherMembershipId?: string; classIds?: string[] };
+
+/** A class a student is enrolled in, and the dates (both included) the enrolment covers. */
+export type EnrolledSpan = { classId: string; startDate: string; endDate: string | null };
 
 export type ClassFilter = {
   branchId?: string;
@@ -39,6 +42,8 @@ export type SessionFilter = {
   teacherId?: string;
   gradeLevelId?: string;
   classId?: string;
+  /** Only the sessions inside one of these: a student's timetable. */
+  spans?: EnrolledSpan[];
 };
 type SessionCursor = { date: string; time: string; id: string };
 
@@ -56,14 +61,18 @@ function chunks<T>(rows: T[], size: number): T[][] {
 }
 
 function within(reach: Reach): SQL | undefined {
-  if (reach.nothing) return sql`0`;
   return and(
     reach.branchIds ? inIds(classes.branchId, reach.branchIds) : undefined,
     reach.teacherMembershipId
       ? eq(classes.teacherMembershipId, reach.teacherMembershipId)
       : undefined,
+    reach.classIds ? inIds(classes.id, reach.classIds) : undefined,
   );
 }
+
+/** The spans are bound as one JSON value, so a student in many classes stays under D1's limit. */
+const inSpans = (spans: EnrolledSpan[]) =>
+  sql`exists (select 1 from json_each(${JSON.stringify(spans)}) as span where json_extract(span.value, '$.classId') = ${sessions.classId} and ${sessions.date} >= json_extract(span.value, '$.startDate') and (json_extract(span.value, '$.endDate') is null or ${sessions.date} <= json_extract(span.value, '$.endDate')))`;
 
 const classFilter = (filter: ClassFilter) => [
   filter.branchId ? eq(classes.branchId, filter.branchId) : undefined,
@@ -113,6 +122,28 @@ export function findClass(ctx: OrgCtx, id: string, reach: Reach) {
     .from(classes)
     .where(inOrg(ctx, classes, eq(classes.id, id), within(reach)))
     .get();
+}
+
+/** The ids of every class within reach. */
+export async function classIds(ctx: OrgCtx, reach: Reach) {
+  const rows = await ctx.db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(inOrg(ctx, classes, within(reach)));
+  return rows.map((row) => row.id);
+}
+
+/** What a record that points at a class shows of it. */
+export function classLabels(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({
+      id: classes.id,
+      name: classes.name,
+      courseId: classes.courseId,
+      branchId: classes.branchId,
+    })
+    .from(classes)
+    .where(inOrg(ctx, classes, inIds(classes.id, ids)));
 }
 
 /** How many classes use a course, term, branch or room. None of those can be deleted while any do. */
@@ -361,6 +392,7 @@ export function listSessions(
           filter.roomId ? eq(sessions.roomId, filter.roomId) : undefined,
           filter.teacherId ? eq(sessions.teacherMembershipId, filter.teacherId) : undefined,
           filter.classId ? eq(sessions.classId, filter.classId) : undefined,
+          filter.spans ? inSpans(filter.spans) : undefined,
           after,
         ),
         inOrg(

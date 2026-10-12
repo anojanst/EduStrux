@@ -799,6 +799,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 - **Update 2026-10-11 (TUI-32):** Families, guardians and students follow the same pattern, with
   the family's home branch as the branch (D-051, D-053). There a parent reads their own family,
   and it's the teacher who gets empty lists until TUI-33.
+- **Update 2026-10-12 (TUI-33):** A parent now reads the classes one of their children holds an
+  active enrolment in, and those classes' sessions (D-060). `GET /sessions` has the student
+  filter, named `?studentId` (D-063).
 
 ## D-049 · 2026-10-11 · Class rules: what a class keeps, its name, dates, teacher and room
 
@@ -838,6 +841,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     sessions they teach.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-31 (and TUI-33, TUI-34, TUI-42).
+- **Update 2026-10-12 (TUI-33):** Deleting a class is now refused (422) while it has enrolments
+  (D-063). The attendance check is still TUI-34's.
 
 ## D-050 · 2026-10-11 · Schedule slots, class and session lists, in-use checks and paths
 
@@ -871,6 +876,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     later save wins.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-31 (and TUI-33, TUI-49, TUI-50).
+- **Update 2026-10-12 (TUI-33):** `GET /sessions` now takes `?studentId`, which the handoff
+  wrote as `?student` (D-063).
 
 ## D-051 · 2026-10-11 · A family has a home branch
 
@@ -892,6 +899,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     student lists filter by it.
   - A branch can't be deleted while it is a family's home branch (D-057).
 - **Tasks:** TUI-32 (and TUI-33).
+- **Update 2026-10-12 (TUI-33):** The owner decided cross-branch enrolment: the caller must reach
+  both the student and the class (D-058). The roster shows the child by name, since each
+  enrolment carries the student's name (D-061).
 
 ## D-052 · 2026-10-11 · No consent fields yet: consents wait for privacy controls
 
@@ -938,6 +948,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     (handoff §8).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-32 (and TUI-33, TUI-42, TUI-72).
+- **Update 2026-10-12 (TUI-33):** A teacher now reads the students who hold an active enrolment
+  in a class they teach, with those students' families and guardians (D-060).
 
 ## D-054 · 2026-10-11 · Guardians: contact fields, the billing contact and emergency contacts
 
@@ -1074,3 +1086,175 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - Student caps and plan limits (TUI-74) aren't enforced when a student is added.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-32 (and TUI-33, TUI-38, TUI-43, TUI-45, TUI-74, TUI-79).
+- **Update 2026-10-12 (TUI-33):** Deleting a student is now refused (422) while they have
+  enrolments (D-063).
+
+## D-058 · 2026-10-12 · Cross-branch enrolment: the caller must reach both student and class
+
+- **Context:** A family has a home branch (D-051), so staff limited to one branch can't see a
+  student whose family's home branch is another one. D-051 and handoff §11 left it to TUI-33 to
+  decide how such a student is enrolled in a class at another branch. The owner was asked before
+  the build.
+- **Decision:** The owner decided "must reach both". Only a caller who reaches both the student
+  (people reach, D-053) and the class (classes reach, D-048) can create an enrolment. A
+  branch-limited member can't enrol a student whose family's home branch is another one, and
+  can't enrol into another branch's class. Cross-branch enrolments go through the owner or staff
+  with no branch limit. The owner chose this over "the class's branch decides" (its staff could
+  find and enrol any student in the org) and "either side can enrol".
+- **Consequences:**
+  - On `POST /enrolments`, a `studentId` or `classId` out of the caller's reach is 404 ("Student
+    not found" / "Class not found"), as if it didn't exist (the D-048 rule), not 403.
+  - No org-wide student lookup was added.
+  - This answers the open question in handoff §11 and the point D-051 left to TUI-33.
+- **Tasks:** TUI-33.
+
+## D-059 · 2026-10-12 · Who reaches enrolments
+
+- **Context:** Handoff §6 had no Enrolment row. TUI-33 settled which permission the enrolment
+  routes need and which enrolments each role reads.
+- **Decision:**
+  - No new permission. `GET /enrolments` needs `classes:read` and `POST /enrolments` needs
+    `classes:write`.
+  - Owner, and staff with no branch list (null): every enrolment, read and write.
+  - Branch manager and front desk limited to some branches: they read the enrolments in their
+    branches' classes, and those of their branches' students (the family's home branch) wherever
+    the class is. Either is enough. They enrol only where they reach both sides (D-058). An empty
+    branch list reaches none.
+  - Teacher: read only, and only the enrolments in the classes they teach, not a student's place
+    in another teacher's class. `POST` is 403.
+  - Parent: read only, and only their own children's enrolments, including when they filter by a
+    class their child shares with others. `POST` is 403.
+  - Accountant: 403 on both routes.
+  - A `?studentId` or `?classId` filter the caller can't reach is 404 (the D-048 rule).
+- **Consequences:**
+  - Branch-limited staff read more than they can write: they see a cross-branch enrolment from
+    either side but can't make one.
+  - Reach passes between the classes, people and enrolment modules as lists of ids through their
+    services, so no module reads another's tables (handoff §3). For a branch-limited member,
+    `GET /enrolments` first loads their branches' class ids and student ids.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-33.
+
+## D-060 · 2026-10-12 · Teachers reach their classes' students, parents their children's classes
+
+- **Context:** D-048 left a parent's "own children" and D-053 a teacher's "own classes" to
+  TUI-33, since both need enrolments. Until now a parent got no classes or sessions and a teacher
+  no families or students.
+- **Decision:**
+  - A teacher reads the students who hold an active enrolment in a class they teach, and those
+    students' families with all their guardians. A family's other children (siblings the teacher
+    doesn't teach) are left out of the family's `students` list and are 404 on
+    `GET /students/{studentId}`.
+  - A parent reads the classes that one of their children holds an active enrolment in, and all
+    of those classes' sessions.
+  - Both stay read only (D-048, D-053).
+  - Only active enrolments count: a withdrawn or deleted one doesn't. Dates don't matter, so an
+    active enrolment that starts later already counts.
+- **Consequences:**
+  - A parent's sessions aren't narrowed to the enrolment's dates unless they filter by
+    `?studentId` (D-063), so they also see the class's sessions outside those dates.
+  - A teacher sees every guardian of a student they teach, with the contact details a guardian
+    carries (D-054).
+  - This wires the reach D-048 and D-053 left to TUI-33.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-33.
+
+## D-061 · 2026-10-12 · An enrolment carries the student's name and the class's name
+
+- **Context:** D-051 said a child in another branch's class shows on that class's roster. The
+  class's branch staff can't open that student's record, so the roster needed the name on the
+  enrolment itself.
+- **Decision:**
+  - The Enrolment shape is `id`, `studentId`, `studentFirstName`, `studentLastName`, `classId`,
+    `className`, `courseId`, `branchId` (the class's branch), `startDate`, `endDate`,
+    `priceOverride`, `status`, `createdAt` and `updatedAt`.
+  - Every enrolment carries the student's name and the class's name, course and branch. This
+    follows Session, which carries `className`, `courseId` and `branchId`.
+- **Consequences:**
+  - Branch-limited staff of the class's branch see a cross-branch student's name on the roster,
+    but `GET /students/{studentId}` and the `?studentId` filters (on `/enrolments` and
+    `/sessions`) are 404 for them.
+  - Home-branch staff see their student's enrolment in another branch's class with its
+    `className`, but `GET /classes/{classId}` is 404 for them.
+  - The class's teacher does reach that student, their family and guardians (D-060). A branch
+    manager or front desk member limited to the class's branch doesn't.
+  - Whether the class's branch needs that child's guardian or emergency contacts isn't decided.
+    Attendance (TUI-34) should decide. Tracked as an open question in handoff §11.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-33 (and TUI-34).
+
+## D-062 · 2026-10-12 · Enrolment rules: dates, price override, status, duplicates, capacity
+
+- **Context:** Rules the TUI-33 implementation settled for `POST /enrolments` that the handoff
+  didn't cover.
+- **Decision:**
+  - `startDate` is optional. It defaults to today in the org's timezone, or to the class's first
+    day when that is later. A start in the past is allowed, for staff recording late.
+  - `endDate` is optional. Null means until the class ends.
+  - Both dates must fall inside the class's dates: the class's own dates, else its term's. A
+    class with no term and no end date is open-ended. Otherwise it is `422 unprocessable` with
+    `['Outside the class dates']` on `fields.startDate`, `fields.endDate` or both.
+  - An `endDate` before the `startDate` is 400 on `endDate` (D-040), including when the start is
+    the default.
+  - A class that has already ended only accepts an enrolment dated inside it. Without a
+    `startDate` it is 422.
+  - `priceOverride` is Money (`{ amount, currency }`) or null. The amount is an integer of 0 or
+    more (0 = free). The currency must be the org's, otherwise `400 validation_failed` on
+    `priceOverride.currency`, as for a course's `defaultPrice` (D-043). It's stored as two
+    columns.
+  - `status` is `active` or `withdrawn`. Only `active` is written so far.
+  - A student holds at most one active enrolment in a class. A second one is `409 conflict` with
+    `fields._: ['Already enrolled']`. A partial unique index on org, student and class, over
+    active, non-deleted rows, enforces it.
+  - A class with a `capacity` is full when its active enrolments that haven't ended by the new
+    enrolment's start date reach the capacity: `422 unprocessable` with
+    `fields.classId: ['Full']`. An enrolment that starts later holds its place from the day it is
+    made. One with an end date frees its place from the day after. A class with a null capacity
+    has no limit.
+  - The grade isn't checked. A student can be enrolled in a class of any grade level, whatever
+    their own grade, or with none recorded.
+- **Consequences:**
+  - A withdrawn student can enrol in the same class again later.
+  - What period the override price is charged for isn't defined. Price rules (TUI-36) must define
+    it, as for a course's default price (D-043).
+  - `withdrawn` is for transfers and withdrawals (TUI-46).
+  - The capacity check isn't atomic: two requests at the same instant can both take the last
+    place.
+  - Lowering a class's capacity below its number of enrolments isn't refused. The class is just
+    over-full.
+  - There is no waitlist (v1.1, handoff §8).
+  - Changing a class's dates (`PATCH /classes/{classId}`) or a term's dates doesn't re-check
+    existing enrolments, so one can end up outside its class's dates.
+  - Price rules (TUI-36) and invoices (TUI-37) read `startDate`, `endDate` and `priceOverride`.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-33 (and TUI-36, TUI-37, TUI-46).
+
+## D-063 · 2026-10-12 · Enrolment list and routes, in-use checks, the sessions student filter
+
+- **Context:** More rules the TUI-33 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - `GET /enrolments` is cursor-paged, oldest first by id, with filters `?studentId` and
+    `?classId` (either or both). `?classId` gives a class's roster and `?studentId` a student's
+    classes.
+  - There is no `GET /enrolments/{id}` and no `DELETE`.
+  - `DELETE /classes/{classId}` and `DELETE /students/{studentId}` are refused
+    (`422 unprocessable`) while the class or student has any non-deleted enrolment, whatever its
+    status. This closes the checks D-049 and D-057 left to TUI-33.
+  - `GET /sessions` takes `?studentId` (the handoff wrote `?student`; it is named like the other
+    id filters). It returns the sessions of the classes the student holds an active enrolment in,
+    only on the dates each enrolment covers (start to end, both included). It stays within the
+    caller's own class reach and combines with the other filters. The student must be within the
+    caller's people reach (D-053, D-060), otherwise 404.
+  - `POST /enrolments` writes one `enrolment.created` audit row with the new row as `after`.
+  - Not built here, as planned: `PATCH /enrolments/{id}` (transfer or withdraw, pro-rata; TUI-46)
+    and enrolment requests (TUI-47).
+- **Consequences:**
+  - An enrolment made by mistake can't be removed until TUI-46, and it blocks deleting its class
+    and its student until then. TUI-46 should decide whether a mistaken enrolment can be deleted.
+  - Home-branch staff asking for their student's timetable don't get the sessions of a class in a
+    branch outside theirs.
+  - Attendance (TUI-34): who is expected at a session is the active enrolments that cover its
+    date.
+  - Student caps (TUI-74) can define an "active" student from enrolments (D-055).
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-33 (and TUI-34, TUI-46, TUI-47, TUI-74).
