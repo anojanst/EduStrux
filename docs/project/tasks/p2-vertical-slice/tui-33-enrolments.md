@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|POST /enrolments
 branch: task/tui-33-enrolments
-pr:
+pr: 18
 ---
 
 # TUI-33 Enrolments: enrol a student in a class
