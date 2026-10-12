@@ -20,6 +20,9 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
 
 ## D-002 · 2026-10-05 · Swagger UI generated from the routes
 
+**"Off in production" overridden until launch by D-068** (the docs are on in production while it
+is the only deployed environment).
+
 - **Decision:** Routes are defined with `@hono/zod-openapi`; the spec is served at
   `/api/openapi.json` and Swagger UI at `/api/docs`. Both are on when `ENABLE_DOCS=true`
   (dev/staging) and off in production.
@@ -1276,6 +1279,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - Open, not decided: whether to turn the docs on in production while it is the only deployed
     environment. Tracked as an open question in handoff §11.
 - **Tasks:** TUI-24.
+- **Update 2026-10-12:** The owner decided the open question: the docs are on in production
+  until launch, so `ENABLE_DOCS` is `true` there until then (D-068).
 
 ## D-065 · 2026-10-12 · Anything that results in billing goes through the owner
 
@@ -1328,6 +1333,8 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
     10,000 queue operations a day, and the daily request and D1 limits fail rather than bill. The
     owner needs to confirm the plan. Tracked as an open question in handoff §11.
 - **Tasks:** TUI-24 (and TUI-3).
+- **Update 2026-10-12:** The owner set `CLERK_SECRET_KEY` on the Worker, so the "no Clerk key"
+  consequence above no longer holds (D-068).
 
 ## D-067 · 2026-10-12 · Wrangler config: the top level is local, `env.production` is deployed
 
@@ -1350,3 +1357,31 @@ Format: `D-NNN · date · title`, then context, decision, consequences and relat
   - The top level is named `edustrux-local`, not `edustrux`, so a bare `wrangler deploy` can't
     aim the local config at the production Worker. It is still never run (D-065).
 - **Tasks:** TUI-24.
+- **Update 2026-10-12:** `ENABLE_DOCS` under `env.production` is `true` until launch (D-068).
+
+## D-068 · 2026-10-12 · API docs are on in production until launch
+
+- **Context:** D-002 turns Swagger off in production, and D-064 made production the only deployed
+  environment. That left no deployed Swagger, which D-064 recorded as an open question (handoff
+  §11). The owner hit the 404 at `/api/docs` on the deployed API, was asked, and chose "On until
+  launch".
+- **Decision:**
+  - Swagger UI and the OpenAPI spec are public at `/api/docs` and `/api/openapi.json` on the
+    production Worker while production is the only deployed environment.
+  - They are turned off again as part of launch hardening: `ENABLE_DOCS` goes back to `false`
+    under `env.production` before launch (TUI-86).
+  - When the v1.1 dev environment exists (D-064), the docs move there.
+- **Consequences:**
+  - This overrides D-002's "off in production" until launch. D-002's rule comes back at launch.
+  - Anyone with the URL can read the API's shape: its routes and schemas. All data stays behind
+    Clerk sign-in.
+  - `ENABLE_DOCS` is now `true` under `env.production` (D-067 recorded `false`), and the Worker
+    was redeployed on 2026-10-12. Checked on https://edustrux.edustrux-api.workers.dev:
+    `/api/docs` returns 200 (Swagger UI), `/api/openapi.json` returns 200 (37 paths, 65
+    operations) and `/api/v1/me` without a token returns 401.
+  - Turning the docs off again is a manual step: a config change and a redeploy. Nothing does it
+    automatically.
+  - Also on 2026-10-12, the owner set `CLERK_SECRET_KEY` on the Worker. D-066's "no Clerk key is
+    set on the Worker yet" no longer holds. `CLERK_AUTHORIZED_PARTIES` is still empty. A call
+    with a real token isn't among the checks above.
+- **Tasks:** TUI-24 (and TUI-86).
