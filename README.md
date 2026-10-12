@@ -116,5 +116,7 @@ pnpm deploy:production
 - Secrets are set once, by the owner:
   `pnpm --filter @edustrux/api exec wrangler secret put CLERK_SECRET_KEY --env production` (or
   `CLERK_JWT_KEY`).
-- Still to set before launch: `CLERK_AUTHORIZED_PARTIES` to the web app's origins. `ENABLE_DOCS`
-  is `false` in production (D-002).
+- Swagger is on in production for now, at `/api/docs`, because production is the only deployed
+  environment (D-068).
+- Before launch: set `ENABLE_DOCS` back to `false` under `env.production`, and
+  `CLERK_AUTHORIZED_PARTIES` to the web app's origins.

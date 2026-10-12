@@ -54,7 +54,8 @@
       "name": "edustrux",
       "vars": {
         "ENVIRONMENT": "production",
-        "ENABLE_DOCS": "false",
+        // On until launch, while production is the only deployed environment (D-068).
+        "ENABLE_DOCS": "true",
         // Set to the web app's origins once it has one. Empty = the azp claim isn't checked.
         "CLERK_AUTHORIZED_PARTIES": "",
       },

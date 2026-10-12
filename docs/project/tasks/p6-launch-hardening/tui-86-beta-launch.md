@@ -14,3 +14,6 @@ pr:
 # TUI-86 Beta launch with first centres
 
 Toward the 26–30 centres target. Needs the owner.
+
+Before launch: turn the API docs off in production again (`ENABLE_DOCS` to `false` under
+`env.production`, then redeploy). They are on until launch (D-068).
