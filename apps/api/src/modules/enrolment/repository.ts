@@ -1,5 +1,5 @@
 import { enrolments } from '@edustrux/db';
-import { asc, count, eq, gt, gte, isNull, or, type SQL } from 'drizzle-orm';
+import { asc, count, eq, gt, gte, isNull, lte, or, type SQL } from 'drizzle-orm';
 import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type EnrolmentRow = typeof enrolments.$inferSelect;
@@ -135,6 +135,24 @@ export async function activeStudentIds(ctx: OrgCtx, classIds: string[]) {
     .selectDistinct({ id: enrolments.studentId })
     .from(enrolments)
     .where(inOrg(ctx, enrolments, inIds(enrolments.classId, classIds), active));
+  return rows.map((row) => row.id);
+}
+
+/** The students whose active enrolment in the class covers `date`. */
+export async function activeStudentIdsOn(ctx: OrgCtx, classId: string, date: string) {
+  const rows = await ctx.db
+    .selectDistinct({ id: enrolments.studentId })
+    .from(enrolments)
+    .where(
+      inOrg(
+        ctx,
+        enrolments,
+        eq(enrolments.classId, classId),
+        active,
+        lte(enrolments.startDate, date),
+        or(isNull(enrolments.endDate), gte(enrolments.endDate, date)),
+      ),
+    );
   return rows.map((row) => row.id);
 }
 

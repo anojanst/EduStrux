@@ -179,6 +179,11 @@ export async function classIdsOfChildren(ctx: OrgCtx, parentMembershipId: string
   return repo.activeClassIds(ctx, await people.studentIdsOfGuardian(ctx, parentMembershipId));
 }
 
+/** Who is expected at a class's lesson on `date`: the students whose active enrolment covers it. */
+export function studentIdsExpected(ctx: OrgCtx, classId: string, date: string) {
+  return repo.activeStudentIdsOn(ctx, classId, date);
+}
+
 /** The classes a student is enrolled in and the dates each enrolment covers. */
 export function spansOf(ctx: OrgCtx, studentId: string) {
   return repo.activeSpans(ctx, studentId);

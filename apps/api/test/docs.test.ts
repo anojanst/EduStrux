@@ -29,6 +29,7 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/classes/{classId}/schedule',
         '/api/v1/orgs/{orgId}/sessions',
         '/api/v1/orgs/{orgId}/sessions/{sessionId}',
+        '/api/v1/orgs/{orgId}/sessions/{sessionId}/attendance',
         '/api/v1/orgs/{orgId}/families',
         '/api/v1/orgs/{orgId}/families/{familyId}',
         '/api/v1/orgs/{orgId}/families/{familyId}/guardians',

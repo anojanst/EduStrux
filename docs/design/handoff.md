@@ -138,7 +138,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 4. **Permission check:** each route declares one permission (e.g. `invoices:write`). The membership's role and branch scope decide.
 5. **Validation:** shared Zod schemas parse the body and query.
 6. **Module service** applies the business rules (pricing, make-up policy, clashes).
-7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045).
+7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045). Marking a session's attendance gets one row for the request, listing the students whose status changed, not one per student (D-075).
 8. Slow side effects (emails, bulk invoices, PDF batches) go to a Queue, and the API returns immediately. A single PDF (e.g. `GET /invoices/{id}/pdf`) takes a second or two and is rendered in the request (D-025).
 
 ### Environments and deploy
@@ -173,14 +173,14 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 |---|---|
 | Base path | `/api/v1`; org data under `/orgs/{orgId}`; current user under `/me`; public forms under `/public/{orgSlug}`. Orgs are addressed by path, not subdomain. Public web pages use the slug too, e.g. `/f/{orgSlug}/…` for enquiry and enrolment forms (later the parent portal link); a vanity subdomain may come later as a redirect (D-020). |
 | Format | JSON, camelCase |
-| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `gdn_` (guardian), `sgr_` (a student's grade for one academic year), `crs_`, `cls_`, `csl_` (a class's weekly slot), `ses_`, `enr_`, `inv_`, `pay_`, `job_` … |
-| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists, courses, classes and enrolments come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). Sessions come by date, start time, then id, and `GET /sessions` needs `from` and `to` (D-050). Families come in name order, and students by last name, then first name, then id. The order uses normalised names, so case and accents don't change it, and the cursor holds every sort key (D-056). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`, `?termId`, `?courseId`, `?roomId`, `?teacherId`, `?classId`, `?familyId`, `?studentId`) is 404 when the org doesn't have that id (D-043, D-050, D-057, D-063). |
+| IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `gdn_` (guardian), `sgr_` (a student's grade for one academic year), `crs_`, `cls_`, `csl_` (a class's weekly slot), `ses_`, `enr_`, `att_` (a student's mark at a session), `inv_`, `pay_`, `job_` … |
+| Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists, courses, classes and enrolments come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). Sessions come by date, start time, then id, and `GET /sessions` needs `from` and `to` (D-050). Families come in name order, and students by last name, then first name, then id. The order uses normalised names, so case and accents don't change it, and the cursor holds every sort key (D-056). A session's attendance isn't paged: the whole roster comes back in student name order (D-072). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`, `?termId`, `?courseId`, `?roomId`, `?teacherId`, `?classId`, `?familyId`, `?studentId`) is 404 when the org doesn't have that id (D-043, D-050, D-057, D-063). |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update; one that sends only `updatedAt` changes nothing and returns the record (D-034). `DELETE` is a soft delete (`deleted_at`) and returns 204. |
 | Unique names | Setup names (branches, grade levels, subjects, academic years, tax rates; rooms within a branch; terms within an academic year) are unique per org, ignoring case and deleted rows. Holiday names can repeat. A clash is 409 `conflict` with `fields.name` (D-034, D-040). A course has no name: it is unique on subject + grade level + curriculum + teaching medium, ignoring case and deleted rows. A clash is 409 `conflict` with `fields._`, the key for an error that belongs to no single field (D-041, D-043). A class name is unique among its course's classes in the same term and branch; a clash is 409 with `fields.name` (D-049). Family names can repeat (D-057). |
 | Actions | Verb sub-path with `POST`, e.g. `POST /terms/{id}/generate-invoices` |
 | Long jobs | Return 202 `{ jobId }`, then poll `GET /jobs/{id}` until `succeeded` or `failed`. Starting a job writes a `job.started` audit row. A failed try is retried up to 3 times, so job handlers must be idempotent (D-017). |
-| Edit conflicts | Client sends `updatedAt`. Stale data returns 409. |
-| Idempotency | `Idempotency-Key` header on invoices, payments and bulk actions |
+| Edit conflicts | Client sends `updatedAt`. Stale data returns 409. Two routes take no `updatedAt`: saving a class's schedule, where the later save wins (D-050), and marking attendance, where the last mark for a student wins (D-071). |
+| Idempotency | `Idempotency-Key` header on invoices, payments and bulk actions. Marking attendance takes none: sending the same marks again changes nothing (D-071). |
 | Errors | `{ "error": { "code": "validation_failed", "message": "...", "fields": { ... } } }`. Statuses: 400/401/403/404/409/422/429. `code` (and field error codes) is the stable key the client translates; `message` is English, for developers (D-015). |
 | Language | The API is locale-neutral: no `Accept-Language`, no translated responses. It returns raw values (money in minor units + ISO 4217 code, UTC timestamps, `YYYY-MM-DD` dates) and clients format them with shared helpers in `packages/shared`, which the API also uses for emails, PDFs and crons. User-facing strings go through `t('key')` with a single `en` catalog: the web app's, and one for server-rendered text (system emails, PDFs). Org-authored content is never translated (D-015). |
 | Money | Integer minor units + currency: `{ "amount": 2490, "currency": "NZD" }`. Decimal places per currency come from a fixed ISO 4217 table (JPY 0, KWD 3), not runtime `Intl` data. |
@@ -206,7 +206,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Courses (D-041, D-042) | Full | Full, org-wide | Full, org-wide | Read | Read | Read |
 | Classes and timetable (D-048, D-060) | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Enrolments (D-058, D-059) | Full | Branch | Branch | Own classes, read | Own children, read | — |
-| Attendance and notes | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
+| Attendance and notes (D-073) | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
 | Fees and payments | Full | Branch | Branch | — | Own invoices, read | Read + export |
 | Messages | Full | Branch | Branch | Own classes | Own family | — |
 | Reports | Full | Branch | Limited | Own classes | — | Money only |
@@ -227,7 +227,7 @@ Classes and sessions (D-048, D-060):
 Families, guardians and students (D-051, D-053, D-060):
 
 - A family has a home branch, and its guardians and students go with it. A branch manager or front desk member reads and writes only the families whose home branch is one of their membership's branches. No branch list means every branch.
-- A child in a class at another branch shows on that class's roster by name: each enrolment carries the student's name (D-061). Only the home branch, the owner and staff with no branch limit change the family record.
+- A child in a class at another branch shows on that class's roster by name: each enrolment and each attendance record carries the student's name (D-061, D-072). Only the home branch, the owner and staff with no branch limit change the family record.
 - A parent reads only the families where one of the guardians is linked to their membership (the guardian's `membershipId`), and changes nothing.
 - A teacher reads only the students who hold an active enrolment in a class they teach, and those students' families with all their guardians. A family's other children are left out of its `students` list and are 404 (D-060).
 - An accountant gets 403.
@@ -240,6 +240,15 @@ Enrolments (D-058, D-059):
 - A branch-limited member reads the enrolments in their branches' classes, and those of their branches' students wherever the class is. Either is enough.
 - A teacher reads only the enrolments in the classes they teach, and a parent only their own children's. Neither can enrol (403). An accountant gets 403.
 - Only an active enrolment gives a teacher or a parent their reach. Its dates don't matter: one that starts later already counts (D-060).
+
+Attendance (D-073, D-074):
+
+- The attendance routes use `attendance:read` and `attendance:write`. A session's attendance is reached through the session, with the class reach above. A session outside the caller's reach is 404.
+- The owner reads and marks every session. A branch manager or front desk member reads and marks their branches' sessions.
+- A teacher reads and marks the sessions of the classes they teach. It is the only thing a teacher writes so far: classes and sessions stay read-only for them.
+- A parent reads only their own children's records on a session, never the rest of the roster, and marks nothing (403).
+- An accountant gets 403.
+- Branch-limited staff mark a child from another home branch by name, and still can't open that student or family. That is an assumption from the build, for the owner to confirm (D-074, §11).
 
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
@@ -262,7 +271,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 | Classes | `classes`, `class_schedules`, `sessions` | class → course (with the course's grade level copied on), term (optional: no term = open-ended from its start date, billed monthly, D-036), branch; name (unique per course, term and branch); optional room, teacher (a membership), capacity and start/end dates (D-049); one row per weekly slot: ISO weekday, local start and end time (D-050); session → class, with its own room and teacher (copied from the class when generated), local date, start and end time, status (`scheduled`, `cancelled`), no UTC columns (D-047) |
 | Families | `families`, `guardians`, `students`, `student_grades` | family name, home branch (required, D-051), address, billing contact (one of its guardians: the first added, until another is chosen, D-054); guardian → family, first and last name, relationship, email, phone, preferred channel (`email`, `sms` or `whatsapp`; stored only), language (stored only; unused in the MVP, D-015), emergency-contact flag, the `parent` membership they sign in with (D-053); student → family, first and last name, date of birth, notes; **grade per academic year**: one `student_grades` row per student and year (D-055); normalised (lower-case, accent-stripped) name columns on all three, for name-order lists now and for search and duplicate warnings later (D-026, D-056); no consent columns yet: privacy controls (TUI-79) define them (D-052) |
 | Enrolment | `enrolments`, `enrolment_requests` | enrolment → student, class; start date and optional end date (null = until the class ends), both inside the class's dates; optional price override (minor units + currency, in the org's currency); status (`active`, `withdrawn`); at most one active enrolment per student and class (D-062) |
-| Attendance | `attendance`, `absence_notices`, `makeup_policies`, `makeup_credits`, `makeup_bookings` | session, student, status; credit source, expiry, used-by |
+| Attendance | `attendance`, `absence_notices`, `makeup_policies`, `makeup_credits`, `makeup_bookings` | one `attendance` row per student marked at a session: session, student, status (`present`, `absent`, `late`, `excused`); at most one per session and student; no row means not marked, and clearing a mark soft-deletes its row (D-075); credit source, expiry, used-by |
 | Learning | `lesson_notes` | session, per-student note, homework text |
 | Money | `price_rules`, `discount_rules`, `invoices`, `invoice_lines`, `payments`, `payment_allocations` | minor units; invoice status (draft, issued, paid, part-paid, void); payment method and reference; unique bank reference per family |
 | Messages | `messages`, `message_recipients`, `message_templates`, `notification_settings` | channel (email for MVP), audience, delivery status |
@@ -375,8 +384,10 @@ The enrolment routes use the class permissions. The owner, branch managers and f
 - `POST /enrolment-requests/{id}/reject`
 
 ### Attendance and make-ups
-- `GET /sessions/{id}/attendance`
-- `PUT /sessions/{id}/attendance`
+A session's attendance is reached through the session: the owner every session, branch managers and front desk their branches' and a teacher the classes they teach (all read and mark). A parent reads their own children's records only, and an accountant gets 403. A session outside the caller's reach is 404 (D-073).
+
+- `GET /sessions/{sessionId}/attendance`: the session's roster, `{ sessionId, records: [{ studentId, studentFirstName, studentLastName, status, markedAt }] }`, not paged, by last name, then first name. The roster is the students whose active enrolment in the class covers the session's date, plus anyone already marked. `status` is `present`, `absent`, `late` or `excused`, or null until the student is marked; `markedAt` is when it was last set. Works for any session, a future or cancelled one too (D-070, D-072)
+- `PUT /sessions/{sessionId}/attendance`: body `{ records: [{ studentId, status }] }`, 1 to 1000 records, each student once (400). It merges: each student listed takes the status sent, `status: null` clears the mark, and anyone left out keeps theirs. So one tap sends one student and "mark all" sends the class. Refused (422) for a session dated after today in the org's timezone, for a `cancelled` session, and when a `studentId` isn't on the roster; then nobody is marked. Returns the roster as `GET` does and writes one `attendance.marked` audit row listing the students whose status changed; marks already in place write nothing (D-070, D-071, D-072, D-075)
 - `GET|POST /absence-notices`
 - `GET|PUT /makeup-policy`
 - `GET /makeup-credits`
@@ -461,7 +472,7 @@ While production is behind Cloudflare Access, these paths need an Access bypass,
 - [x] Confirm the side-business and IP clauses in the employment agreement before building. → Confirmed by the owner (D-019)
 - [ ] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads.
 - [x] Cross-branch enrolment: staff limited to one branch can't see a student whose family's home branch is another one, so they can't enrol that student in a class at their own branch (D-051). Enrolments (TUI-33) must decide how this works. → The caller must reach both the student and the class; cross-branch enrolments go through the owner or staff with no branch limit (D-058)
-- [ ] Cross-branch children on a roster: branch-limited staff of the class's branch see such a child's name but can't open the student or family record, so they have no guardian or emergency contacts for them (D-061). Attendance (TUI-34) should decide whether they need them.
+- [ ] Cross-branch children on a roster: branch-limited staff of the class's branch see such a child's name but can't open the student or family record, so they have no guardian or emergency contacts for them (D-061). Attendance (TUI-34) was built keeping this: they mark the child by name and still get no contacts. This is an assumption from the build, not an owner decision (D-074): confirm it, or say which contacts the class's branch should get.
 
 **Technical**
 - [x] Parent sign-in: Clerk accounts (they count toward the 50k free users) or our own magic-link tokens for the portal? → Clerk users with passwordless email code or link, linked to a `parent` membership (D-021)
