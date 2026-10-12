@@ -96,9 +96,25 @@ Git workflow in [CLAUDE.md](CLAUDE.md).
 Claude Code commits and opens PRs as a separate bot account, so you can review and approve them.
 Set it up once with `scripts/setup-claude-bot.sh <bot-username>`.
 
-## Before the first deploy
+## Deploying
 
-- `wrangler d1 create edustrux` and put the id in `apps/api/wrangler.jsonc`.
-- Create the R2 bucket and queues named in `wrangler.jsonc`.
-- `wrangler secret put CLERK_SECRET_KEY` (or `CLERK_JWT_KEY`), set `CLERK_AUTHORIZED_PARTIES`
-  to your web origins, and `ENABLE_DOCS` to `false` in production.
+There is one deployed environment, production, at https://edustrux.edustrux-api.workers.dev: the
+Worker `edustrux` with the D1 database `edustrux` and the R2 bucket `edustrux-files` (both in
+Oceania) and the queues `edustrux-email` and `edustrux-jobs`. Its vars and bindings are under
+`env.production` in `apps/api/wrangler.jsonc`; the top level of that file is local development
+and tests.
+
+```bash
+pnpm --filter @edustrux/api exec wrangler login   # once per machine
+pnpm db:migrate:production                         # apply new migrations to the remote D1
+pnpm deploy:production
+```
+
+- `deploy:production` turns off wrangler's automatic resource creation, so a binding to
+  something that doesn't exist fails the deploy instead of creating it. Create new resources on
+  purpose (`wrangler r2 bucket create`, `wrangler queues create`).
+- Secrets are set once, by the owner:
+  `pnpm --filter @edustrux/api exec wrangler secret put CLERK_SECRET_KEY --env production` (or
+  `CLERK_JWT_KEY`).
+- Still to set before launch: `CLERK_AUTHORIZED_PARTIES` to the web app's origins. `ENABLE_DOCS`
+  is `false` in production (D-002).

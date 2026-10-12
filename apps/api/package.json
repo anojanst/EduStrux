@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy:production": "wrangler deploy --env production --no-x-provision --no-x-auto-create",
     "typecheck": "tsc -p tsconfig.json && tsc -p scripts/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:migrate:production": "wrangler d1 migrations apply DB --remote --env production",
     "seed": "tsx scripts/seed.ts",
     "dev:token": "tsx scripts/dev-token.ts"
   },
