@@ -113,8 +113,10 @@ Worker. A failed check or migration stops it before the deploy.
 - It can be started by hand from the repository's Actions tab ("Run workflow"). Only `main` is
   ever deployed.
 - It needs two repository secrets, set once by the owner with `gh secret set <NAME>`:
-  `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`, a Cloudflare API token for this account
-  only, made from the "Edit Cloudflare Workers" template with D1: Edit and Queues: Edit added.
+  `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`, a custom Cloudflare API token for this
+  account only with three account permissions: Workers Scripts: Edit (the deploy), D1: Edit (the
+  migrations) and Queues: Edit (a deploy rewrites the queue consumer settings). A custom domain
+  will add Zone → Workers Routes: Edit for its zone.
 
 To deploy from your own machine instead:
 

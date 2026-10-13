@@ -1674,9 +1674,12 @@ is the only deployed environment).
     2026-10-13: the install, typecheck, the tests (362 passed), a local migration with no
     terminal attached, and a dry run of the production deploy. The real migrate and deploy steps
     need the token.
-  - Assumption: the token needs the "Edit Cloudflare Workers" template plus D1: Edit (to apply
-    migrations) and Queues: Edit (the Worker consumes two queues). The first run will show
-    whether that is right.
+  - The token needs three account permissions and nothing else: Workers Scripts: Edit, D1: Edit
+    and Queues: Edit. Cloudflare's docs say a deploy needs no permission on the resources a
+    Worker is bound to, and that querying a D1 database does. Wrangler 4.147's code shows a
+    deploy lists the queues and rewrites each consumer's settings. Not tested with a real token:
+    the first run will show whether that is right. A custom domain (TUI-3) will add Zone →
+    Workers Routes: Edit for its zone.
   - Access (D-069) is set in the Cloudflare dashboard and a deploy shouldn't change it. No deploy
     has run since it was turned on, so check after the first run that the address still goes to
     the Access sign-in page.
