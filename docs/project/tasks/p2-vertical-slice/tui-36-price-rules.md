@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /price-rules
   - PATCH|DELETE /price-rules/{id}
 branch: task/tui-36-price-rules
-pr:
+pr: 25
 ---
 
 # TUI-36 Price rules engine (per term, per lesson, monthly, packs, free trial)
