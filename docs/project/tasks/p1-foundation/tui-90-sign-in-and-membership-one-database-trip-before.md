@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-90-auth-one-trip
-pr:
+pr: 30
 ---
 
 # TUI-90 Sign-in and membership: one database trip before each request
