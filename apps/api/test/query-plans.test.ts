@@ -2,9 +2,11 @@ import { enrolments } from '@edustrux/db';
 import { asc } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { firstIds, idsFrom, type OrgCtx } from '../src/db/scope';
+import type { OrgRow } from '../src/env';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
+import { currentAcademicYear } from '../src/modules/calendar/for-people';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
@@ -269,6 +271,124 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
     expect(plan).toMatch(searchBy('students', 'id'));
     expect(plan).toMatch(searchIn('enrolments', 'enrolments_org_id_uq'));
     expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('what a page of families or students shows is read by the rows on the page (TUI-95)', () => {
+  const MEMBER = 'mem_a';
+  const everyone: people.Reach = {};
+  const staff: people.Reach = { branchIds: IDS };
+  const parent: people.Reach = { guardianMembershipId: MEMBER };
+  const teacher = (ctx: OrgCtx): people.Reach => ({
+    studentIds: enrolmentService.studentsTaughtBy(ctx, MEMBER),
+  });
+  const families = (ctx: OrgCtx, reach: people.Reach) =>
+    people.familiesOnPage(ctx, 50, undefined, {}, reach);
+  const students = (ctx: OrgCtx, reach: people.Reach) =>
+    people.studentsOnPage(ctx, 50, undefined, {}, reach);
+  const gradesOfFamilies = (ctx: OrgCtx, reach: people.Reach) =>
+    people.listGrades(ctx, people.studentIdsOfFamilies(ctx, families(ctx, reach), reach));
+
+  // A page of the whole org, or of some branches, is read along the index that holds its order.
+  // What is read, the call, the table and column it is reached by, and the page's table and index.
+  const inOrder: [string, Send, string, string, string, string][] = [
+    [
+      'guardians, of a page of families',
+      (ctx) => people.listGuardians(ctx, families(ctx, everyone)),
+      ...(['guardians', 'family_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'students, of a page of families',
+      (ctx) => people.studentsOfFamilies(ctx, families(ctx, everyone), everyone),
+      ...(['students', 'family_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of the students of a page of families',
+      (ctx) => gradesOfFamilies(ctx, everyone),
+      ...(['student_grades', 'student_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of the students of a page of families, for staff of some branches',
+      (ctx) => gradesOfFamilies(ctx, staff),
+      ...(['student_grades', 'student_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of a page of students',
+      (ctx) => people.listGrades(ctx, students(ctx, everyone)),
+      ...(['student_grades', 'student_id', 'students', 'students_org_name_idx'] as const),
+    ],
+    [
+      'grades, of a page of students, for staff of some branches',
+      (ctx) => people.listGrades(ctx, students(ctx, staff)),
+      ...(['student_grades', 'student_id', 'students', 'students_org_name_idx'] as const),
+    ],
+  ];
+
+  it.each(inOrder)('%s', async (_what, send, table, column, pageTable, pageIndex) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy(table, column));
+    expect(plan).toMatch(searchIn(pageTable, pageIndex));
+  });
+
+  // A teacher's or a parent's page goes to their ids at every level, as the page itself does.
+  const fromIds: [string, Send, Reached][] = [
+    [
+      'grades, of a page of a teacher’s students',
+      (ctx) => people.listGrades(ctx, students(ctx, teacher(ctx))),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
+    [
+      'grades, of a page of a parent’s children',
+      (ctx) => people.listGrades(ctx, students(ctx, parent)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'family_id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'guardians, of a page of a parent’s families',
+      (ctx) => people.listGuardians(ctx, families(ctx, parent)),
+      [
+        ['guardians', 'family_id'],
+        ['families', 'id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'grades, of the students a teacher is shown in a page of their families',
+      (ctx) => gradesOfFamilies(ctx, teacher(ctx)),
+      [
+        ['student_grades', 'student_id'],
+        ['families', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
+  ];
+
+  it.each(fromIds)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  it('works out the current academic year inside the page that filters by grade level', async () => {
+    // The org is on the context in a request, so finding today in its timezone reads nothing.
+    const org = { id: 'org_plans', timezone: 'Pacific/Auckland' } as OrgRow;
+    const plan = await planOf(async (ctx) => {
+      const academicYearId = await currentAcademicYear({ ...ctx, org });
+      const grade = { academicYearId, gradeLevelId: 'grd_a' };
+      return people.listStudents(ctx, 50, undefined, { grade }, {});
+    });
+    expect(plan).toMatch(searchIn('students', 'students_org_name_idx'));
+    expect(plan).toMatch(searchBy('student_grades', 'student_id'));
+    expect(plan).toMatch(searchBy('academic_years', 'org_id'));
   });
 });
 
