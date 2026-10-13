@@ -112,7 +112,7 @@ function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
   }
 }
 
-/** The org's timezone and the local date and time there right now. No database trip in a request. */
+/** The org's timezone and the local date and time there right now. No trip in a request. */
 async function orgClock(ctx: OrgCtx): Promise<{ now: LocalMoment; timezone: string }> {
   const { timezone } = await orgs.getOrg(ctx);
   const { date, time } = localNow(timezone);

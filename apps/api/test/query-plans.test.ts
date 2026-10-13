@@ -5,14 +5,14 @@ import { firstIds, idsFrom, type OrgCtx } from '../src/db/scope';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
-import { termDates } from '../src/modules/calendar/for-classes';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
-import { lessonLengths } from '../src/modules/curriculum/for-classes';
 import * as curriculum from '../src/modules/curriculum/repository';
-import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as enrolmentService from '../src/modules/enrolment/service';
+import { termDates } from '../src/modules/calendar/for-classes';
+import { lessonLengths } from '../src/modules/curriculum/for-classes';
+import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as people from '../src/modules/people/repository';
 import * as peopleService from '../src/modules/people/service';
 import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
@@ -557,7 +557,7 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
     expect(plan).toMatch(searchBy('classes', 'branch_id'));
   });
 
-  it('checks a rename the same way, finding the class’s course, term and branch itself', async () => {
+  it('checks a rename the same way, finding the class’s own course and term', async () => {
     const plan = await planOf((ctx) => classes.otherClassHasName(ctx, 'cls_a', 'Monday'));
     expect(plan).toMatch(searchBy('self', 'id'));
     expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
