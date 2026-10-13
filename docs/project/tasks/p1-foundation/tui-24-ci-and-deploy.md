@@ -1,7 +1,7 @@
 ---
 id: TUI-24
 title: CI pipeline + Cloudflare deploy (staging & prod)
-status: in-progress
+status: done
 phase: P1
 module: infra
 priority: P1
@@ -36,10 +36,14 @@ docs. It runs `pnpm typecheck` and `pnpm test`, then `pnpm db:migrate:production
 nothing was migrated or deployed. 15 tests in `classes.test.ts` and `people.test.ts` ran past
 vitest's 5s default on the GitHub runner; none failed an assertion. `testTimeout` is now 30s.
 
-**Left:**
+**Deployed by the workflow (2026-10-13):** the runs for #26 and #25 passed the tests, applied
+migrations 0009 and 0010 to the production D1 and deployed the Worker. That confirmed the token's
+three permissions. Afterwards no migrations were left to apply, and the address still went to the
+Cloudflare Access sign-in page.
 
-- A run that gets through the migration and the deploy. The owner set both secrets on
-  2026-10-13; the token's permissions are untested until then.
-- Checks on pull requests (typecheck, test before merge) aren't set up. The workflow only checks
-  after the merge, before it deploys.
-- Set `CLERK_AUTHORIZED_PARTIES` once the web app has an origin.
+**Not part of this task:**
+
+- Checks on pull requests (typecheck, test before merge) weren't built. The workflow checks after
+  the merge, before it deploys.
+- `CLERK_AUTHORIZED_PARTIES` is set once the web app has an origin. It is on the before-launch
+  list in TUI-86.

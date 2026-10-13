@@ -1704,6 +1704,12 @@ is the only deployed environment).
     has run since it was turned on, so check after the first run that the address still goes to
     the Access sign-in page.
 - **Tasks:** TUI-24.
+- **Update 2026-10-13:** The workflow has run. The first run, started by merging #24, stopped at
+  the tests: 15 of them ran past vitest's 5s default on the GitHub runner, with no failed
+  assertion, so nothing was migrated or deployed. `testTimeout` is now 30s (#26). The runs for
+  #26 and #25 then passed, applied migrations 0009 and 0010 and deployed the Worker, which
+  confirms the token's three permissions. Checked afterwards: no migrations are left to apply,
+  and the address still returns 302 to the Access sign-in page (D-069).
 
 ## D-077 · 2026-10-13 · What a price is charged for: one billing period of the class
 
