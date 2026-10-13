@@ -177,6 +177,18 @@ describe('PUT /sessions/{id}/attendance waits for 3: sign-in, one read stage, on
     expect(teacher.db.trips).toBeLessThanOrEqual(7);
   });
 
+  it('stops after the read stage when the marks sent are already in place', async () => {
+    const c = await classOfThree();
+    const records = [{ studentId: c.ben.id, status: 'present' }];
+    await c.api('PUT', c.path, { records });
+
+    const again = await c.api('PUT', c.path, { records });
+    expect(again.status).toBe(200);
+    expect(seen(again.body)).toEqual(['Ben: present', 'Aroha: -', 'Mia: -']);
+    expect(again.db.stages).toBeLessThanOrEqual(2);
+    expect(again.db.trips).toBeLessThanOrEqual(6);
+  });
+
   it('refuses a parent after the sign-in trip, before anything is read', async () => {
     const c = await classOfThree();
     const res = await c.parent.as('PUT', c.path, {
