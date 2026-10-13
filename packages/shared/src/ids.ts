@@ -26,6 +26,7 @@ export const ID_PREFIXES = {
   attendance: 'att',
   priceRule: 'prr',
   invoice: 'inv',
+  invoiceLine: 'inl',
   payment: 'pay',
   job: 'job',
   audit: 'aud',
@@ -51,4 +52,12 @@ export function ulid(now: number = Date.now()): string {
 
 export function newId(kind: IdKind): string {
   return `${ID_PREFIXES[kind]}_${ulid()}`;
+}
+
+/**
+ * The code a family quotes on a bank transfer, so a payment can be matched to them: the last 8
+ * characters of the family's id, which are random, in capitals. Unique within an org.
+ */
+export function bankReferenceFor(familyId: string): string {
+  return familyId.slice(-8).toUpperCase();
 }

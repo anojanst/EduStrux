@@ -1,4 +1,9 @@
-import { basisFitsClass, type MoneyValue, type PriceBasis } from '@edustrux/shared';
+import {
+  basisFitsClass,
+  type MoneyValue,
+  type PriceBasis,
+  type PriceSource,
+} from '@edustrux/shared';
 import type { PriceRuleRow } from './repository';
 
 /** What pricing needs to know about one enrolment. */
@@ -24,7 +29,7 @@ export type ResolvedPrice = {
   /** The rule's tax rate, else the org's default. null = no tax. */
   taxRateId: string | null;
   /** Where the usual price came from. null = nothing prices the class: only the override does. */
-  source: 'class_rule' | 'course_rule' | 'course_default' | 'org_rule' | null;
+  source: PriceSource | null;
   priceRuleId: string | null;
   /** true = `price` is the enrolment's override, not the usual price. */
   overridden: boolean;

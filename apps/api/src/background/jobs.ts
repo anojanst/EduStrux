@@ -2,6 +2,7 @@ import { jobs, type Db } from '@edustrux/db';
 import { and, eq } from 'drizzle-orm';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
+import { INVOICE_RUN, generateInvoices } from '../modules/billing/generation';
 import type { JobMessage } from './messages';
 
 /** Must match `max_retries` for the jobs consumer in wrangler.jsonc. */
@@ -25,7 +26,9 @@ export type JobContext = OrgCtx & {
  * may deliver a message more than once. So handlers must be idempotent: running one twice must
  * not, for example, issue a second invoice for the same enrolment and period.
  */
-export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<unknown>> = {};
+export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<unknown>> = {
+  [INVOICE_RUN]: generateInvoices,
+};
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 

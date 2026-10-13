@@ -213,6 +213,15 @@ export const Family = z
           'The guardian invoices are addressed to: the first one added, until another is chosen. ' +
           'null while the family has no guardians.',
       }),
+    bankReference: z
+      .string()
+      .nullable()
+      .openapi({
+        description:
+          'What the family quotes on a bank transfer, so a payment can be matched to them. Set ' +
+          'when the family is added, unique in the organisation, and shown on their invoices.',
+        example: '7K2M9QXA',
+      }),
     guardians: z.array(Guardian),
     students: z.array(Student),
     createdAt: Timestamp,
