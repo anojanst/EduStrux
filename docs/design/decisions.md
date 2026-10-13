@@ -2665,3 +2665,100 @@ under "Not changed here" for a reach that is a subquery.
     covers reading a branch's invoices in order, and reading across modules by a query for ids
     and not by a join.
 - **Tasks:** TUI-99 (and TUI-89, TUI-94 to TUI-97, which build on it).
+
+## D-108 · 2026-10-14 · Classes and sessions are read in one stage, and a class write is answered without reading again
+
+- **Context:** TUI-96 is the round-trip task for classes and sessions. After TUI-90 and TUI-99,
+  a `PATCH` of a class's name, room, teacher and dates still made 13 D1 calls, each waiting for
+  the one before: sign-in, the class, the room, the teacher, the term, the name, the slots, the
+  term again, the holidays, the sessions, the write, then the class and its slots again. Adding
+  a class and setting a schedule made 10 each. The budget is 3 in sequence for a write and 2 for
+  a read (D-102).
+- **Decision:**
+  - Every class and session endpoint reads in one stage. Its reads go to D1 together, and the
+    checks run afterwards on what came back, in the order they have always run in. When several
+    checks fail, the one reported is the same as before.
+  - A read that needs something from the class's own row doesn't wait for that row:
+    - The class's term, its course's lesson length and the holidays of its branch are read by a
+      query for the class's term, course or branch (D-104).
+    - A rename is checked against the class's own course, term and branch inside one statement,
+      still by one lookup in the unique index on names (D-101).
+    - The weekly slots of a page of classes are read by a query for the ids on the page.
+  - Some reads are sent before it is known they are needed:
+    - A `PATCH` that gives a start or an end date reads the term, the holidays and the upcoming
+      sessions, whether or not the dates turn out to differ from the stored ones.
+    - The reads beside a class go out before the class is known to be within the caller's
+      reach, and know nothing of who is asking. The class answers first. Outside the caller's
+      reach it is 404, as before, and nothing else that was read is used or decides the error.
+  - The holidays for generating sessions are read from today on, with no last date. How far
+    ahead to generate comes from the term, which is read in the same stage. A holiday past the
+    range closes no date in it, so the sessions generated are the same.
+  - A write is answered from what the request read and what its write returned. Nothing is read
+    back:
+    - `POST /classes` and `PATCH /classes/{classId}` answer with the row the write returned.
+    - `PUT /classes/{classId}/schedule` answers with the class as read and the slots it saved.
+      It doesn't change the class's own row.
+  - A student's timetable (`GET /sessions?studentId`) is filtered inside the read of the
+    sessions. Before, the student's enrolments were read first and bound into it.
+    - Enrolment gives two queries for class ids: the classes the student is actively enrolled
+      in, and of those, the classes an enrolment covers on a date. The date is the session's
+      own date column, so the second is worked out for each session.
+    - The statement goes to the sessions of the first, and the second narrows them.
+    - This adds to D-104: a query for ids may read a column of the row it filters. Such a
+      query only narrows. A statement never goes to it, so it is given after ids the statement
+      can go to.
+  - What other modules read of a class is one stage each. `getClass` reads the class and its
+    slots together; the others were one call already.
+  - Nothing else changes: the responses, status codes, validation, audit rows and the sessions
+    generated.
+- **Consequences:**
+  - Counted in the test suite, as calls / stages, with the same request before and after. A
+    read costs a teacher and a parent what it costs the owner.
+
+    | Request                                                | Before  | After  |
+    | ------------------------------------------------------ | ------- | ------ |
+    | `POST /classes`, with a term, a room and a teacher     | 10 / 10 | 8 / 3  |
+    | `PUT /classes/{classId}/schedule`                      | 10 / 10 | 8 / 3  |
+    | `PATCH /classes/{classId}`: name, room, teacher, dates | 13 / 13 | 10 / 3 |
+    | `PATCH /classes/{classId}`: capacity only              | 5 / 5   | 4 / 3  |
+    | `DELETE /classes/{classId}`                            | 5 / 5   | 5 / 3  |
+    | `GET /classes`, with its five filters                  | 8 / 8   | 8 / 2  |
+    | `GET /classes`, no filter; `GET /classes/{classId}`    | 3 / 3   | 3 / 2  |
+    | `GET /sessions`, with five filters                     | 7 / 7   | 7 / 2  |
+    | `GET /sessions`, no filter; `GET /sessions/{id}`       | 2 / 2   | 2 / 2  |
+    | `GET /sessions?studentId`                              | 6 / 5   | 5 / 3  |
+
+  - One request is over the budget. A student's timetable is 3 stages, because it checks the
+    student with people's read of one student, which is two stages deep: the student, then
+    their grades. The sessions are read beside it, so the timetable is 2 stages once TUI-95
+    makes that read one.
+  - Calls fall less than stages. Each filter id and each check is still a call of its own, sent
+    with the others.
+  - A `POST` or `PATCH` answers with the class as its own write stored it. Before, the class
+    was read again after the write, so the answer also held a change someone else made in
+    between. Such a change now shows on the next read. The same goes for the schedule's answer.
+  - For the owner and branch staff, a student's timetable read every session of the org in the
+    date range and checked each against the student's enrolments. It now reads the sessions of
+    the student's classes in the range, for every caller. Not measured.
+  - A class or session outside the caller's reach and one that doesn't exist make the same
+    calls and get the same 404, on the five routes that name one in their path.
+    `apps/api/test/classes-trips.test.ts` holds that, and each endpoint to its heaviest row
+    above: the writes as the owner, the reads as the owner, a teacher and a parent. D-099 had
+    the first checked by hand, for reads only.
+  - What classes asks of the calendar, the curriculum and enrolment is in a file of its own in
+    each module (`for-classes.ts`), because those modules were being changed by other tasks at
+    the same time. They are to be folded into each module's service and repository.
+  - Enrolment's "the classes a student is enrolled in and the dates of each" has no caller
+    left. Removing it is for that fold-in.
+  - Not chosen:
+    - Reading the student's enrolments beside the student, then the sessions. That is a third
+      stage for a read, whatever people's read costs.
+    - Joining enrolments in the statement that reads the sessions. A repository names only its
+      own module's tables (D-104).
+    - Reading the sessions of the student's classes and dropping the uncovered dates
+      afterwards. A page could come back with fewer rows than its limit while more remain.
+  - No schema change and no migration.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers a query for ids that reads a column of the row it filters, and answering a class
+    write without reading the class again.
+- **Tasks:** TUI-96 (and TUI-95, which the timetable's third stage waits on).

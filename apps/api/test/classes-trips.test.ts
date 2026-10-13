@@ -51,10 +51,12 @@ async function centre() {
     if (res.status !== 201) throw new Error(`POST ${path} failed: ${JSON.stringify(res.body)}`);
     return res.body as Row;
   };
-  const member = async (role: Role) => {
+  const member = async (role: Role, branchIds: string[] | null = null) => {
     const user = await newUser(role);
     const id = newId('membership');
-    await db().insert(memberships).values({ id, orgId: org.id, userId: user.userId, role });
+    await db()
+      .insert(memberships)
+      .values({ id, orgId: org.id, userId: user.userId, role, branchIds });
     const as: As = (method, path, body) =>
       call(method, `${base}${path}`, { token: user.token, body });
     return { id, as };
@@ -92,6 +94,7 @@ async function centre() {
   const teacher = await member('teacher');
   const otherTeacher = await member('teacher');
   const parent = await member('parent');
+  const frontDesk = await member('front_desk', []); // limited to no branch: reaches no class
 
   const klass = await make('/classes', {
     courseId: course.id,
@@ -130,6 +133,7 @@ async function centre() {
     teacher,
     otherTeacher,
     parent,
+    frontDesk,
     main,
     room,
     otherRoom,
@@ -233,6 +237,30 @@ describe('class and session endpoints stay within the database budget', () => {
       const timetable = await as('GET', `/sessions?${c.range}&studentId=${c.mia.id}`);
       within(timetable, `GET /sessions?studentId, ${role}`, 200, { stages: 3, trips: 5 });
       expect(timetable.body.data, role).toHaveLength(9);
+    }
+  });
+});
+
+describe('a class or session outside the caller’s reach', () => {
+  // Every read is sent before the class is back, so the count can't tell the two apart (D-099).
+  it('costs what one that doesn’t exist costs, on every route', async () => {
+    const c = await centre();
+    const change = { updatedAt: c.klass.updatedAt, name: 'Group C', endDate: c.end };
+    const klass = `/classes/${c.klass.id}`;
+    // The other teacher teaches nothing, and this front desk reaches no class.
+    const requests: [string, As, string, string, unknown?][] = [
+      ['GET', c.otherTeacher.as, klass, '/classes/cls_x'],
+      ['GET', c.otherTeacher.as, `/sessions/${c.session.id}`, '/sessions/ses_x'],
+      ['PATCH', c.frontDesk.as, klass, '/classes/cls_x', change],
+      ['PUT', c.frontDesk.as, `${klass}/schedule`, '/classes/cls_x/schedule', { slots: [TUE] }],
+      ['DELETE', c.frontDesk.as, klass, '/classes/cls_x'],
+    ];
+
+    for (const [method, as, outside, missing, body] of requests) {
+      const hidden = await as(method, outside, body);
+      const unknown = await as(method, missing, body);
+      expect([hidden.status, unknown.status], `${method} ${missing}`).toEqual([404, 404]);
+      expect(hidden.db, `${method} ${missing}`).toEqual(unknown.db);
     }
   });
 });
