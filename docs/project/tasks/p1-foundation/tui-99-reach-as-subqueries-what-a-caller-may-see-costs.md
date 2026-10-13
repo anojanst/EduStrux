@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-99-reach-subqueries
-pr:
+pr: 33
 ---
 
 # TUI-99 Reach as subqueries: what a caller may see costs no extra trip
