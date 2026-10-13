@@ -39,7 +39,9 @@ Ideas, none decided:
 - Keep the org the middleware loaded (timezone, currency) on the request, so services don't read
   it again.
 
-Proposed target, for the owner to confirm: about 200 ms on production, which is roughly 5 trips.
+Target, confirmed by the owner (D-102): about 3 database trips in sequence, which are sign-in,
+one read stage and one write. Calls in flight together count once. This replaces the proposed
+"about 200 ms on production, which is roughly 5 trips".
 
 ## Built (D-099)
 
@@ -50,7 +52,8 @@ Both ideas were built, and the counter is in the repo now.
 - The org stays on the request. Services get it from `orgs.getOrg(ctx)`, which makes no trip in
   a request and reads it only in a queue job or a cron.
 - Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`. A test reads the
-  numbers from `call()` as `res.db.trips` and `res.db.stages`.
+  numbers from `call()` as `res.db.trips` and `res.db.stages`. `stages` is the trips in
+  sequence, the number the budget is held to.
 
 Counted in the test suite with the same requests before and after:
 

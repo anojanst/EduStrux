@@ -6,7 +6,12 @@ import type { AppEnv } from '../env';
 export type DbTrips = {
   /** Calls made to D1. One statement is one call, and so is one batch of statements. */
   trips: number;
-  /** Calls that started while no other was in flight: calls sent together share a stage. */
+  /**
+   * How many of those calls the request waited for one after another. A call's stage is one
+   * more than the highest stage among the calls that had finished when it started (1 if none
+   * had), and this is the highest stage any call reached. Calls sent together share a stage.
+   * It never comes out lower than the real depth, so a budget can be held to it (D-102).
+   */
   stages: number;
   /** Milliseconds with at least one call in flight. */
   ms: number;
@@ -27,17 +32,21 @@ export function countTrips(d1: D1Database): { d1: D1Database; counts: DbTrips } 
   const real = new WeakMap<object, D1PreparedStatement>();
   let inFlight = 0;
   let busySince = 0;
+  /** The highest stage among the calls that have finished. */
+  let finished = 0;
 
   async function trip<T>(send: () => Promise<T>): Promise<T> {
+    // This call may have waited for any call that has already finished, so it is one stage on
+    // from the deepest of them. A call still in flight can't have been waited for.
+    const stage = finished + 1;
     counts.trips += 1;
-    if (inFlight === 0) {
-      counts.stages += 1;
-      busySince = performance.now();
-    }
+    counts.stages = Math.max(counts.stages, stage);
+    if (inFlight === 0) busySince = performance.now();
     inFlight += 1;
     try {
       return await send();
     } finally {
+      finished = Math.max(finished, stage);
       inFlight -= 1;
       if (inFlight === 0) counts.ms += performance.now() - busySince;
     }

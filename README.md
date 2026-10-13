@@ -88,8 +88,9 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Database round trips.** Every API response says what it cost in D1 calls in a `Server-Timing`
   header, `db;dur=<ms>;trips=<n>;stages=<n>`. A test reads them from `call()`: `res.db.trips` is
   the calls the request made (a statement is one, a batch is one) and `res.db.stages` is how many
-  of them weren't sent alongside another. A service that needs the org calls `orgs.getOrg(ctx)`,
-  which costs no call in a request (D-099).
+  of them it waited for one after another, so calls sent together count once (D-099). The budget
+  for every endpoint is about 3 stages: sign-in, one read stage, one write (D-102). A service
+  that needs the org calls `orgs.getOrg(ctx)`, which costs no call in a request.
 - **Tests** sign their own Clerk-shaped tokens with a throwaway key, verified through the same
   code path as production. See `apps/api/test/helpers.ts`.
 

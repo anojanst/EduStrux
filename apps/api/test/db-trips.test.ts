@@ -41,6 +41,35 @@ describe('the D1 call counter', () => {
     expect(counts).toMatchObject({ trips: 4, stages: 3 });
   });
 
+  it('counts a chain of calls at its full depth while another call is still in flight', async () => {
+    // A stand-in D1 whose calls finish only when the test says so.
+    const waiting = new Map<string, () => void>();
+    const slow = {
+      prepare: (name: string) => ({
+        run: () => new Promise<void>((finish) => waiting.set(name, finish)),
+      }),
+    } as unknown as D1Database;
+    const finish = async (name: string) => {
+      waiting.get(name)!();
+      await new Promise((settled) => setTimeout(settled, 0));
+    };
+    const { d1, counts } = countTrips(slow);
+    const send = (name: string) => d1.prepare(name).run();
+
+    // Promise.all([a1().then(a2), b1()]), with b1 the last to finish.
+    const all = Promise.all([send('a1').then(() => send('a2')), send('b1')]);
+    expect(counts).toMatchObject({ trips: 2, stages: 1 }); // a1 and b1 went together
+
+    await finish('a1');
+    // a2 starts while b1 is still in flight, but it waited for a1, so it is a second stage.
+    expect(counts).toMatchObject({ trips: 3, stages: 2 });
+
+    await finish('a2');
+    await finish('b1');
+    await all;
+    expect(counts).toMatchObject({ trips: 3, stages: 2 });
+  });
+
   it('is on every API response as a Server-Timing header, with the database time', async () => {
     const health = await call('GET', '/api/v1/health');
     expect(health.headers.get('Server-Timing')).toMatch(/^db;dur=\d+\.\d;trips=0;stages=0$/);

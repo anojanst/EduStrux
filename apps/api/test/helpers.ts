@@ -26,7 +26,8 @@ type CallOptions = {
 /**
  * What the request cost in D1 calls, from the `Server-Timing` header every API response carries
  * (D-099). `trips` is the calls it made: a statement is one, a batch is one. `stages` is how
- * many of them started while no other was in flight, so calls sent together share a stage.
+ * many of them it waited for one after another, so calls sent together count once. The budget
+ * for an endpoint is about 3 stages: sign-in, one read stage, one write (D-102).
  */
 function dbTrips(headers: Headers, request: string) {
   const metric = headers.get('Server-Timing')?.match(/\bdb;dur=[\d.]+;trips=(\d+);stages=(\d+)/);

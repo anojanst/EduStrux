@@ -2368,12 +2368,16 @@ is the only deployed environment).
     returned, so it reads the org neither before nor after.
   - Every API response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`:
     - `trips`: the calls the request made to D1. A statement is one, and a batch is one.
-    - `stages`: the calls that started while no other was in flight. Calls sent together share
-      a stage, so this is how many the request waited for one after another.
+    - `stages`: how many of those calls the request waited for one after another. A call's
+      stage is one more than the highest stage among the calls that had finished when it
+      started, or 1 if none had. `stages` is the highest stage any call reached. Calls sent
+      together share a stage. It never comes out lower than the real depth; it can come out
+      higher when a call that waited for nothing starts late.
     - `dur`: the milliseconds with at least one call in flight.
   - The header is sent in every environment, production included, so a deployed endpoint can be
     measured with `curl -i` or read in Swagger's response headers.
   - Tests read `trips` and `stages` from the header, so a test can hold an endpoint to a budget.
+    D-102 sets the budget.
 - **Consequences:**
   - Counted in the test suite, with the same requests before and after:
 
@@ -2413,3 +2417,21 @@ is the only deployed environment).
     hasn't confirmed it.
 - **Tasks:** TUI-90 (and TUI-89, TUI-94 to TUI-98, which use the counts; TUI-47, TUI-72 and
   TUI-86 for the header).
+
+## D-102 · 2026-10-13 · Every endpoint's budget: about 3 database trips in sequence
+
+- **Context:** Each round-trip ticket (TUI-89, TUI-90, TUI-94 to TUI-98) proposed a target for
+  the owner to confirm: about 200 ms on production, roughly 5 trips. TUI-89 also listed
+  Cloudflare Smart Placement, which runs the Worker next to D1, as an idea. The owner settled
+  both on 2026-10-13, in the session that coordinates these tasks.
+- **Decision:**
+  - The budget for every endpoint is about 3 database trips in sequence: sign-in, one read
+    stage, one write.
+  - Trips are counted in sequence: the `stages` number every response reports (D-099). Calls in
+    flight together count once.
+  - This replaces the tickets' proposed "about 200 ms, roughly 5 trips".
+  - Cloudflare Smart Placement: not now. The latency is to come from fewer trips.
+- **Consequences:**
+  - Meeting the budget needs reads that join across modules. The conventions for those come
+    with the follow-on work and get their own decision.
+- **Tasks:** TUI-89, TUI-90, TUI-94 to TUI-98.

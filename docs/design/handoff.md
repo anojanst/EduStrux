@@ -191,7 +191,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |
-| Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them weren't sent alongside another, and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). |
+| Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them it waited for one after another (calls sent together count once), and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). The budget for every endpoint is about 3 trips in sequence: sign-in, one read stage, one write. Cloudflare Smart Placement isn't used for now (D-102). |
 
 ---
 
