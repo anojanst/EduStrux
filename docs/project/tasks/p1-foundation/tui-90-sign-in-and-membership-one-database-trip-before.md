@@ -1,13 +1,13 @@
 ---
 id: TUI-90
 title: 'Sign-in and membership: one database trip before each request'
-status: todo
+status: done
 phase: P1
 module: platform
 priority: P1
 size: M
 endpoints: []
-branch:
+branch: task/tui-90-auth-one-trip
 pr:
 ---
 
@@ -40,3 +40,32 @@ Ideas, none decided:
   it again.
 
 Proposed target, for the owner to confirm: about 200 ms on production, which is roughly 5 trips.
+
+## Built (D-099)
+
+Both ideas were built, and the counter is in the repo now.
+
+- One statement loads the user, the membership and the org. An org endpoint spends one trip
+  before its own work, not two.
+- The org stays on the request. Services get it from `orgs.getOrg(ctx)`, which makes no trip in
+  a request and reads it only in a queue job or a cron.
+- Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`. A test reads the
+  numbers from `call()` as `res.db.trips` and `res.db.stages`.
+
+Counted in the test suite with the same requests before and after:
+
+| Request                                         | Before | After |
+| ----------------------------------------------- | ------ | ----- |
+| `GET /orgs/{id}`                                | 3      | 1     |
+| `GET /audit-log`, `GET /jobs/{id}`              | 3      | 2     |
+| `PATCH /orgs/{id}`                              | 5      | 2     |
+| `GET /students`                                 | 6      | 4     |
+| `POST /students`, with a birth date and a grade | 12     | 8     |
+| `PATCH /students/{id}`, the same two            | 13     | 9     |
+| `POST /enrolments`                              | 12     | 9     |
+| `GET /sessions?studentId`                       | 9      | 6     |
+| `PUT /sessions/{id}/attendance`, one student    | 11     | 8     |
+
+Not changed: `GET /me` (2 trips) and `POST /orgs` (4, or 5 when the slug made from the name is
+taken). Both sign in with one trip already. `GET /me` could join its memberships into that trip,
+and `POST /orgs` reads the new org back after writing it.

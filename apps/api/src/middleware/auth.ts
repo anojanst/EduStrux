@@ -1,9 +1,10 @@
 import { verifyToken } from '@clerk/backend';
+import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv, Bindings } from '../env';
 import { unauthenticated } from '../lib/errors';
-import { findOrCreateUser } from '../modules/users/repository';
+import { findOrCreateUser, type ClerkIdentity } from '../modules/users/repository';
 
 function readToken(authorization: string | undefined, cookie: string | undefined) {
   const match = authorization?.match(/^Bearer\s+(.+)$/i);
@@ -26,8 +27,8 @@ function verifyOptions(env: Bindings) {
   };
 }
 
-/** Verifies the Clerk session token and loads (or creates) our user row. */
-export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
+/** Verifies the Clerk session token and returns who it names. 401 without a valid one. */
+export async function signedInAs(c: Context<AppEnv>): Promise<ClerkIdentity> {
   const token = readToken(c.req.header('Authorization'), getCookie(c, '__session'));
   if (!token) throw unauthenticated();
 
@@ -42,14 +43,19 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const sub = claims.sub;
   if (typeof sub !== 'string') throw unauthenticated('Token has no subject');
 
-  c.set(
-    'user',
-    await findOrCreateUser(c.var.db, {
-      clerkUserId: sub,
-      // Present when the Clerk session token is customised to include them.
-      email: typeof claims.email === 'string' ? claims.email : null,
-      name: typeof claims.name === 'string' ? claims.name : null,
-    }),
-  );
+  return {
+    clerkUserId: sub,
+    // Present when the Clerk session token is customised to include them.
+    email: typeof claims.email === 'string' ? claims.email : null,
+    name: typeof claims.name === 'string' ? claims.name : null,
+  };
+}
+
+/**
+ * Verifies the Clerk session token and loads (or creates) our user row. For routes outside an
+ * org. On `/orgs/{orgId}/...` routes `requireOrgMember` does this itself.
+ */
+export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
+  c.set('user', await findOrCreateUser(c.var.db, await signedInAs(c)));
   await next();
 });

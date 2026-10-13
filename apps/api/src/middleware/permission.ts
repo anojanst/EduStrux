@@ -2,7 +2,6 @@ import { scopeFor, type Permission } from '@edustrux/shared';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { forbidden } from '../lib/errors';
-import { requireAuth } from './auth';
 import { requireOrgMember } from './org';
 
 export function requirePermission(permission: Permission) {
@@ -16,8 +15,9 @@ export function requirePermission(permission: Permission) {
 
 /**
  * The middleware chain for every `/orgs/{orgId}/...` route:
- * Clerk token → org membership (404 if none) → the route's one permission (403 if denied).
+ * Clerk token (401) → org membership (404 if none) → the route's one permission (403 if denied).
+ * The first two are one middleware, so they cost one D1 call between them (D-099).
  */
 export function orgAccess(permission: Permission) {
-  return [requireAuth, requireOrgMember, requirePermission(permission)];
+  return [requireOrgMember, requirePermission(permission)];
 }

@@ -3,8 +3,9 @@ import { newId } from '@edustrux/shared';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import type { OrgRow } from '../../env';
 
-export type OrgRow = typeof orgs.$inferSelect;
+export type { OrgRow };
 export type NewOrgRow = typeof orgs.$inferInsert;
 export type OrgChanges = Partial<Omit<NewOrgRow, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>>;
 
@@ -80,12 +81,17 @@ export async function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string)
   return row?.n ?? 0;
 }
 
-export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges) {
-  await writeWithAudit(ctx, [ctx.db.update(orgs).set(changes).where(eq(orgs.id, ctx.orgId))], {
+/** Returns the org as updated, from the same batch, so the caller doesn't read it back. */
+export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges): Promise<OrgRow> {
+  const update = ctx.db.update(orgs).set(changes).where(eq(orgs.id, ctx.orgId)).returning();
+  const [, updated] = await writeWithAudit(ctx, [update], {
     action: 'org.updated',
     entityType: 'org',
     entityId: ctx.orgId,
     before,
     after: changes,
   });
+  const row = (updated as OrgRow[])[0];
+  if (!row) throw new Error('Org missing after update');
+  return row;
 }

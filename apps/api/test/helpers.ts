@@ -23,6 +23,17 @@ type CallOptions = {
   headers?: Record<string, string>;
 };
 
+/**
+ * What the request cost in D1 calls, from the `Server-Timing` header every API response carries
+ * (D-099). `trips` is the calls it made: a statement is one, a batch is one. `stages` is how
+ * many of them started while no other was in flight, so calls sent together share a stage.
+ */
+function dbTrips(headers: Headers, request: string) {
+  const metric = headers.get('Server-Timing')?.match(/\bdb;dur=[\d.]+;trips=(\d+);stages=(\d+)/);
+  if (!metric) throw new Error(`${request} came back without the db Server-Timing header`);
+  return { trips: Number(metric[1]), stages: Number(metric[2]) };
+}
+
 export async function call(method: string, path: string, options: CallOptions = {}) {
   const headers = new Headers(options.headers);
   if (options.token) headers.set('Authorization', `Bearer ${options.token}`);
@@ -35,7 +46,12 @@ export async function call(method: string, path: string, options: CallOptions = 
     }),
   );
   const text = await res.text();
-  return { status: res.status, headers: res.headers, body: text ? JSON.parse(text) : null };
+  return {
+    status: res.status,
+    headers: res.headers,
+    body: text ? JSON.parse(text) : null,
+    db: dbTrips(res.headers, `${method} ${path}`),
+  };
 }
 
 /** A fresh signed-in user. Each call makes a new Clerk id, so tests don't share state. */
