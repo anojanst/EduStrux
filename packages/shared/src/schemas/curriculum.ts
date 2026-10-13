@@ -98,8 +98,9 @@ const DefaultPrice = z
   .nullable()
   .openapi({
     description:
-      'The course’s list price, in the organisation’s currency. null = not set. ' +
-      'How it is charged (per term, per lesson, monthly) comes with price rules.',
+      'The course’s price for one billing period of a class: a term, or a month for a class ' +
+      'with no term. In the organisation’s currency. null = not set. A price rule for the ' +
+      'course or the class replaces it.',
   });
 const DurationMinutes = z.number().int().min(5).max(600).nullable().openapi({
   example: 60,

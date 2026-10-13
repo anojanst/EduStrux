@@ -156,10 +156,15 @@ export const taxRates = sqliteTable(
     rateBps: integer('rate_bps').notNull(),
     // true = prices already include this tax.
     inclusive: integer('inclusive', { mode: 'boolean' }).notNull(),
+    // true = the rate for every price that doesn't name its own. At most one per org.
+    isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [
     uniqueIndex('tax_rates_org_name_uq')
       .on(t.orgId, sql`lower(${t.name})`)
       .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('tax_rates_org_default_uq')
+      .on(t.orgId)
+      .where(sql`${t.deletedAt} is null and ${t.isDefault} = 1`),
   ],
 );

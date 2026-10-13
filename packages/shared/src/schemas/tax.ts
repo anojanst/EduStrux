@@ -8,6 +8,12 @@ export const RateBps = z.number().int().min(0).max(10_000).openapi({
   example: 1500,
   description: 'The rate in basis points: 1500 = 15%, 1250 = 12.5%, 0 = zero-rated.',
 });
+/** At most one rate per org. Making a rate the default takes the flag off the one that had it. */
+const IsDefault = z.boolean().openapi({
+  description:
+    'true = the tax rate for every price that doesn’t name its own. No default means no tax ' +
+    'on those prices.',
+});
 
 export const TaxRate = z
   .object({
@@ -15,6 +21,7 @@ export const TaxRate = z
     name: z.string(),
     rateBps: RateBps,
     inclusive: z.boolean().openapi({ description: 'true = prices already include this tax.' }),
+    isDefault: IsDefault,
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
@@ -26,6 +33,7 @@ export const CreateTaxRate = z
     name: Name.openapi({ example: 'GST' }),
     rateBps: RateBps,
     inclusive: z.boolean().openapi({ description: 'true = prices already include this tax.' }),
+    isDefault: IsDefault.default(false),
   })
   .openapi('CreateTaxRate');
 export type CreateTaxRate = z.infer<typeof CreateTaxRate>;
@@ -38,6 +46,7 @@ export const UpdateTaxRate = z
     name: Name,
     rateBps: RateBps,
     inclusive: z.boolean(),
+    isDefault: IsDefault,
   })
   .partial()
   .required({ updatedAt: true })

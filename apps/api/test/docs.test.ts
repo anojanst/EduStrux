@@ -45,6 +45,8 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/holidays/{holidayId}',
         '/api/v1/orgs/{orgId}/tax-rates',
         '/api/v1/orgs/{orgId}/tax-rates/{taxRateId}',
+        '/api/v1/orgs/{orgId}/price-rules',
+        '/api/v1/orgs/{orgId}/price-rules/{priceRuleId}',
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);

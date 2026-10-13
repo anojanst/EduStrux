@@ -101,7 +101,7 @@ const deleteClassRoute = createRoute({
   summary: 'Delete a class',
   description:
     'Also deletes its weekly schedule and all its sessions. Refused (422) while the class ' +
-    'has enrolments.',
+    'has enrolments or a price rule of its own.',
   middleware: orgAccess('classes:write'),
   request: { params: ClassParams },
   responses: {

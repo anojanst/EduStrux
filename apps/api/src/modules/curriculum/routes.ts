@@ -219,7 +219,7 @@ const deleteCourseRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/courses/{courseId}',
   tags: ['Curriculum'],
   summary: 'Delete a course',
-  description: 'Refused (422) while a class runs this course.',
+  description: 'Refused (422) while a class runs this course or a price rule prices it.',
   middleware: orgAccess('classes:write'),
   request: { params: CourseParams },
   responses: {

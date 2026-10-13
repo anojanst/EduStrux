@@ -14,6 +14,7 @@ import {
 import type { OrgCtx } from '../../db/scope';
 import { conflict, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
+import * as billing from '../billing/service';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
@@ -277,12 +278,16 @@ export async function updateCourse(ctx: OrgCtx, id: string, input: UpdateCourse)
   return getCourse(ctx, id);
 }
 
-/** Refused while a class runs this course. */
+/** Refused while a class runs this course, or a price rule prices it. */
 export async function deleteCourse(ctx: OrgCtx, id: string): Promise<void> {
   const before = await findCourseOr404(ctx, id);
   const classCount = await classes.countClasses(ctx, { courseId: id });
   if (classCount > 0) {
     throw unprocessable(`Delete this course's ${classCount} class(es) first.`);
+  }
+  const ruleCount = await billing.countPriceRules(ctx, { courseId: id });
+  if (ruleCount > 0) {
+    throw unprocessable(`Delete this course's ${ruleCount} price rule(s) first.`);
   }
   await repo.softDeleteCourse(ctx, before);
 }

@@ -14,4 +14,5 @@ export * from './schemas/enrolment';
 export * from './schemas/orgs';
 export * from './schemas/people';
 export * from './schemas/platform';
+export * from './schemas/pricing';
 export * from './schemas/tax';
