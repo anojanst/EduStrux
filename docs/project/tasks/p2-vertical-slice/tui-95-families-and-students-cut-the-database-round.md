@@ -14,7 +14,7 @@ endpoints:
   - GET|POST /students
   - GET|PATCH|DELETE /students/{id}
 branch: task/tui-95-people-round-trips
-pr:
+pr: 35
 ---
 
 # TUI-95 Families and students: cut the database round trips
