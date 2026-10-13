@@ -2,12 +2,12 @@
 id: TUI-89
 title: 'Attendance: cut the database round trips when marking'
 status: todo
-phase: P6
+phase: P2
 module: attendance
 priority: P1
 size: M
 endpoints:
-  - PUT /sessions/{id}/attendance
+  - GET|PUT /sessions/{id}/attendance
 branch:
 pr:
 ---
@@ -56,3 +56,8 @@ Ideas, none decided:
 
 Left in production by the test: the org "Load test 2026-10-13 09:05 (safe to delete)",
 `org_01m4t84ydweta7j49mvxm0zyzk`, with 12 students, 6 classes, 84 sessions and 1,000 marks.
+
+Added by the audit of every endpoint on 2026-10-13: `GET /sessions/{id}/attendance` makes 7 to
+10 database trips. The causes shared with other endpoints have their own tasks: the two trips of
+sign-in and membership before every request (TUI-90) and lookups by a list of ids that read the
+whole centre (TUI-91).
