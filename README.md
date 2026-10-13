@@ -69,6 +69,11 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Bulk writes:** a change that adds or removes many sessions writes one audit row with the
   counts, not one per session (D-045). Other bulk writes follow that unless the owner decides
   otherwise.
+- **Rows read.** D1 bills the rows a statement reads, and production has no table statistics to
+  steer SQLite. For a lookup by a list of ids, give `inIds(column, ids)` straight to `inOrg`,
+  which then makes SQLite go to the ids (D-100). A list paged by id needs a unique index on
+  `(org_id, id)`, and an index one of its filters uses must end with `id` (D-101).
+  `apps/api/test/query-plans.test.ts` checks the plans: add a row there for a new lookup or list.
 - **Modules** (`apps/api/src/modules/<name>/`) own their routes, service and repository, and call
   each other only through services.
 - **API format**: JSON, camelCase, locale-neutral (no `Accept-Language`, no translated text).

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
+import * as branches from '../src/modules/branches/repository';
 import * as classes from '../src/modules/classes/repository';
 import * as curriculum from '../src/modules/curriculum/repository';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as people from '../src/modules/people/repository';
-import { planOf, searchBy, type Send } from './query-plans';
+import { planOf, searchBy, searchIn, SORT, type Send } from './query-plans';
 
 // D1 counts and bills the rows a statement reads, and production has no table statistics to
 // steer SQLite. These tests take the plan of the statements the repositories really send, on the
@@ -139,5 +140,177 @@ describe('a lookup by a list of ids goes to the ids (D-100)', () => {
   it('reads one class’s enrolments to find who is expected at a lesson', async () => {
     const plan = await planOf((ctx) => enrolment.activeStudentIdsOn(ctx, 'cls_a', '2026-02-01'));
     expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+  });
+});
+
+describe('a list paged by id reads its page in index order (D-101)', () => {
+  // The list, the table, the index its page is read along, and the call that sends it.
+  const lists: [string, string, string, Send][] = [
+    [
+      'GET /enrolments',
+      'enrolments',
+      'enrolments_org_id_uq',
+      (ctx) => enrolment.listEnrolments(ctx, 50, undefined, {}, {}),
+    ],
+    [
+      'GET /enrolments, a later page',
+      'enrolments',
+      'enrolments_org_id_uq',
+      (ctx) => enrolment.listEnrolments(ctx, 50, 'id_a', {}, {}),
+    ],
+    [
+      'GET /enrolments?classId',
+      'enrolments',
+      'enrolments_org_class_idx',
+      (ctx) => enrolment.listEnrolments(ctx, 50, undefined, { classId: 'cls_a' }, {}),
+    ],
+    [
+      'GET /enrolments?studentId',
+      'enrolments',
+      'enrolments_org_student_idx',
+      (ctx) => enrolment.listEnrolments(ctx, 50, 'id_a', { studentId: 'stu_a' }, {}),
+    ],
+    [
+      'GET /enrolments, for staff of some branches',
+      'enrolments',
+      'enrolments_org_id_uq',
+      (ctx) => enrolment.listEnrolments(ctx, 50, undefined, {}, { classIds: IDS, studentIds: IDS }),
+    ],
+    [
+      'GET /invoices',
+      'invoices',
+      'invoices_org_id_uq',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, {}, {}),
+    ],
+    [
+      'GET /invoices, a later page',
+      'invoices',
+      'invoices_org_id_uq',
+      (ctx) => billing.listInvoices(ctx, 50, 'id_a', {}, {}),
+    ],
+    [
+      'GET /invoices?status',
+      'invoices',
+      'invoices_org_status_idx',
+      (ctx) => billing.listInvoices(ctx, 50, 'id_a', { status: 'issued' }, {}),
+    ],
+    [
+      'GET /invoices?termId',
+      'invoices',
+      'invoices_org_term_idx',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { termId: 'trm_a' }, {}),
+    ],
+    [
+      'GET /invoices?month',
+      'invoices',
+      'invoices_org_month_idx',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { month: '2026-02' }, {}),
+    ],
+    [
+      'GET /invoices?familyId',
+      'invoices',
+      'invoices_org_family_idx',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { familyId: 'fam_a' }, {}),
+    ],
+    [
+      'GET /classes',
+      'classes',
+      'classes_org_id_uq',
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, {}),
+    ],
+    [
+      'GET /classes, a later page',
+      'classes',
+      'classes_org_id_uq',
+      (ctx) => classes.listClasses(ctx, 50, 'id_a', {}, {}),
+    ],
+    [
+      'GET /classes?branchId',
+      'classes',
+      'classes_org_branch_idx',
+      (ctx) => classes.listClasses(ctx, 50, undefined, { branchId: 'brn_a' }, {}),
+    ],
+    [
+      'GET /classes?termId',
+      'classes',
+      'classes_org_term_idx',
+      (ctx) => classes.listClasses(ctx, 50, 'id_a', { termId: 'trm_a' }, {}),
+    ],
+    [
+      'GET /classes?courseId',
+      'classes',
+      'classes_org_course_idx',
+      (ctx) => classes.listClasses(ctx, 50, undefined, { courseId: 'crs_a' }, {}),
+    ],
+    [
+      'GET /classes?teacherId',
+      'classes',
+      'classes_org_teacher_idx',
+      (ctx) => classes.listClasses(ctx, 50, undefined, { teacherId: 'mem_a' }, {}),
+    ],
+    [
+      'GET /classes, for a teacher',
+      'classes',
+      'classes_org_teacher_idx',
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { teacherMembershipId: 'mem_a' }),
+    ],
+    [
+      'GET /courses',
+      'courses',
+      'courses_org_id_uq',
+      (ctx) => curriculum.listCourses(ctx, 50, undefined, {}),
+    ],
+    [
+      'GET /courses, a later page',
+      'courses',
+      'courses_org_id_uq',
+      (ctx) => curriculum.listCourses(ctx, 50, 'id_a', {}),
+    ],
+    ['GET /subjects', 'subjects', 'subjects_org_id_uq', (ctx) => curriculum.listSubjects(ctx, 50)],
+    [
+      'GET /subjects, a later page',
+      'subjects',
+      'subjects_org_id_uq',
+      (ctx) => curriculum.listSubjects(ctx, 50, 'id_a'),
+    ],
+    ['GET /branches', 'branches', 'branches_org_id_uq', (ctx) => branches.listBranches(ctx, 50)],
+    [
+      'GET /branches, a later page',
+      'branches',
+      'branches_org_id_uq',
+      (ctx) => branches.listBranches(ctx, 50, 'id_a'),
+    ],
+    [
+      'GET /branches/{id}/rooms',
+      'rooms',
+      'rooms_org_branch_idx',
+      (ctx) => branches.listRooms(ctx, 'brn_a', 50),
+    ],
+    [
+      'GET /branches/{id}/rooms, a later page',
+      'rooms',
+      'rooms_org_branch_idx',
+      (ctx) => branches.listRooms(ctx, 'brn_a', 50, 'id_a'),
+    ],
+    ['GET /tax-rates', 'tax_rates', 'tax_rates_org_id_uq', (ctx) => billing.listTaxRates(ctx, 50)],
+    [
+      'GET /tax-rates, a later page',
+      'tax_rates',
+      'tax_rates_org_id_uq',
+      (ctx) => billing.listTaxRates(ctx, 50, 'id_a'),
+    ],
+  ];
+
+  it.each(lists)('%s', async (_what, table, index, send) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchIn(table, index));
+    expect(plan).not.toContain(SORT);
+  });
+
+  it('checks a class name with one lookup in the unique index', async () => {
+    const key = { courseId: 'crs_a', termId: null, branchId: 'brn_a', name: 'Monday' };
+    const plan = await planOf((ctx) => classes.classNameTaken(ctx, key));
+    expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
+    expect(plan).toMatch(searchBy('classes', 'branch_id'));
   });
 });

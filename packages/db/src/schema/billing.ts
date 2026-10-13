@@ -76,10 +76,13 @@ export const invoices = sqliteTable(
     jobId: text('job_id'),
   },
   (t) => [
-    index('invoices_org_family_idx').on(t.orgId, t.familyId),
-    index('invoices_org_status_idx').on(t.orgId, t.status),
-    index('invoices_org_term_idx').on(t.orgId, t.termId),
-    index('invoices_org_month_idx').on(t.orgId, t.month),
+    // GET /invoices pages in id order, newest first: through the first index, or through the one
+    // for the filter it is given (D-101).
+    uniqueIndex('invoices_org_id_uq').on(t.orgId, t.id),
+    index('invoices_org_family_idx').on(t.orgId, t.familyId, t.id),
+    index('invoices_org_status_idx').on(t.orgId, t.status, t.id),
+    index('invoices_org_term_idx').on(t.orgId, t.termId, t.id),
+    index('invoices_org_month_idx').on(t.orgId, t.month, t.id),
     index('invoices_org_job_idx').on(t.orgId, t.jobId),
   ],
 );

@@ -1,7 +1,7 @@
 ---
 id: TUI-92
 title: List pages read and sort the whole centre
-status: todo
+status: done
 phase: P1
 module: platform
 priority: P1
@@ -14,7 +14,7 @@ endpoints:
   - GET /branches
   - GET /subjects
   - GET /tax-rates
-branch:
+branch: task/tui-91-93-query-plans
 pr:
 ---
 
@@ -50,3 +50,16 @@ Ideas, none decided:
 
 - An index on `(org_id, id)` for each table that is paged by id.
 - A test that fails when a list's plan contains a sort.
+
+Built as:
+
+- A unique index on `(org_id, id)` for each of the seven tables (D-101).
+- That index alone made filtered lists read the whole org in id order, so the indexes the list
+  filters use on enrolments, invoices and classes now end with `id`, and a filtered page is read
+  in order too. `GET /invoices?status=` is one of them. Classes gained an index for `?courseId`.
+- `GET /branches/{branchId}/rooms` was the one other list paged by id that sorted. Its index
+  ends with `id` now.
+- A page limited to a caller's own records by a list of ids is still read from the ids and
+  sorted (D-100).
+- Migration `0013_list_paging_indexes`. It drops and recreates ten indexes.
+- `apps/api/test/query-plans.test.ts` fails when a list's plan sorts or leaves its index.

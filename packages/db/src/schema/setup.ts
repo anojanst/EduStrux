@@ -13,6 +13,8 @@ export const branches = sqliteTable(
     address: text('address'),
   },
   (t) => [
+    // The order GET /branches pages in (D-101).
+    uniqueIndex('branches_org_id_uq').on(t.orgId, t.id),
     uniqueIndex('branches_org_name_uq')
       .on(t.orgId, sql`lower(${t.name})`)
       .where(sql`${t.deletedAt} is null`),
@@ -28,7 +30,8 @@ export const rooms = sqliteTable(
     capacity: integer('capacity'),
   },
   (t) => [
-    index('rooms_org_branch_idx').on(t.orgId, t.branchId),
+    // Ends with id: a branch's rooms are listed in id order (D-101).
+    index('rooms_org_branch_idx').on(t.orgId, t.branchId, t.id),
     uniqueIndex('rooms_org_branch_name_uq')
       .on(t.orgId, t.branchId, sql`lower(${t.name})`)
       .where(sql`${t.deletedAt} is null`),
@@ -59,6 +62,8 @@ export const subjects = sqliteTable(
     name: text('name').notNull(),
   },
   (t) => [
+    // The order GET /subjects pages in (D-101).
+    uniqueIndex('subjects_org_id_uq').on(t.orgId, t.id),
     uniqueIndex('subjects_org_name_uq')
       .on(t.orgId, sql`lower(${t.name})`)
       .where(sql`${t.deletedAt} is null`),
@@ -83,6 +88,8 @@ export const courses = sqliteTable(
     durationMinutes: integer('duration_minutes'),
   },
   (t) => [
+    // The order GET /courses pages in (D-101).
+    uniqueIndex('courses_org_id_uq').on(t.orgId, t.id),
     index('courses_org_grade_idx').on(t.orgId, t.gradeLevelId),
     // NULLs are distinct in a unique index, so a missing value is indexed as ''. Written with
     // CASE, not coalesce(): drizzle-kit splits an index expression at its commas.
@@ -160,6 +167,8 @@ export const taxRates = sqliteTable(
     isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [
+    // The order GET /tax-rates pages in (D-101).
+    uniqueIndex('tax_rates_org_id_uq').on(t.orgId, t.id),
     uniqueIndex('tax_rates_org_name_uq')
       .on(t.orgId, sql`lower(${t.name})`)
       .where(sql`${t.deletedAt} is null`),

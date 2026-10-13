@@ -2389,3 +2389,56 @@ is the only deployed environment).
     - An invoice run's count of the lines it made reads every invoice line in the org.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-91 (and TUI-89, TUI-94, TUI-95, TUI-97).
+
+## D-101 · 2026-10-13 · Indexes for lists paged by id and for price rules
+
+- **Context:** The same audit (TUI-92, TUI-93). A list ordered by id had no index in that
+  order, so each page read every row the org has in the table and sorted them. `price_rules`
+  had only its two partial unique indexes, which no query could use, so every statement read
+  the whole table, across all centres.
+- **Decision:**
+  - Each table with a list paged by id has a unique index on `(org_id, id)`: `enrolments`,
+    `invoices`, `classes`, `courses`, `branches`, `subjects`, `tax_rates` and `price_rules`. A
+    page with no filter walks it and reads only its own rows.
+  - It is unique, though `id` already is, so SQLite knows a lookup through it finds one row. As
+    a plain index, each joined lookup read one row more.
+  - `(org_id, id)` alone made filtered lists worse. With no statistics SQLite then walks the
+    whole org in id order and checks the filter, instead of reading the filter's rows and
+    sorting them: `GET /enrolments?classId` went from 61 rows read to 207 on a local D1. So an
+    index a list filter uses now ends with `id`, and a filtered page is read in order too:
+    - `enrolments`: `(org_id, class_id, id)` and `(org_id, student_id, id)`.
+    - `invoices`: `(org_id, family_id, id)`, `(org_id, status, id)`, `(org_id, term_id, id)` and
+      `(org_id, month, id)`.
+    - `classes`: `(org_id, branch_id, id)`, `(org_id, teacher_membership_id, id)`,
+      `(org_id, term_id, id)` and a new `(org_id, course_id, id)`. The course filter used the
+      unique name index, which can't hold the order.
+    - `rooms`: `(org_id, branch_id, id)`, for `GET /branches/{branchId}/rooms`, the one other
+      list paged by id that sorted.
+  - Ten of these replace the index of the same name, so they add no write. The new ones add one
+    index write to each new enrolment, invoice, course, branch, subject, tax rate and price
+    rule, and two to each new class.
+  - A filter with no index of its own is checked while the org's rows are walked in id order:
+    `?gradeLevelId` and `?roomId` on classes, both filters on courses, and `?classId`,
+    `?courseId` and `?taxRateId` on price rules. An org has tens of courses and price rules, and
+    those two class filters read every class of the org before as well.
+  - `price_rules` gets `(org_id, id)` and nothing more. The in-use checks behind
+    `DELETE /classes/{classId}`, `/courses/{courseId}` and `/tax-rates/{taxRateId}`, and the
+    check that a target has no rule yet, now read the org's own rules, not the table. So does
+    the invoice run, which reads every rule of the org in id order.
+  - The class name check (D-049) is written as the unique index holds it, with "no term" as an
+    empty string, so it is one lookup in that index. Left as it was, the wider indexes drew it
+    to read a whole branch's or term's classes.
+  - Migration `0013_list_paging_indexes` drops and recreates the ten replaced indexes.
+    `0014_price_rules_org_index` only creates one.
+- **Consequences:**
+  - A page reads about as many rows as it returns, however big the centre is. On a local D1 in
+    an org of 600 enrolments, a page of 10 went from 1,201 rows read to 11, and the same page
+    for one class from 61 to 11.
+  - A page limited by a list of ids is still sorted (D-100).
+  - A new list paged by id needs a unique `(org_id, id)` index, and an index its filter uses
+    must end with `id`. The README's conventions say so.
+  - `apps/api/test/query-plans.test.ts` fails when a list's plan sorts or leaves its index, and
+    when a price-rule statement scans the table.
+  - Each replaced index also holds the row's id now, about 30 bytes an entry.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-92, TUI-93 (and TUI-94, TUI-96, TUI-97, TUI-98).

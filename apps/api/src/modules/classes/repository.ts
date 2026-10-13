@@ -204,7 +204,8 @@ export async function classNameTaken(
         ctx,
         classes,
         eq(classes.courseId, key.courseId),
-        key.termId === null ? sql`${classes.termId} is null` : eq(classes.termId, key.termId),
+        // The term as the unique index holds it ("no term" is ''), so this is one lookup in it.
+        sql`(case when ${classes.termId} is null then '' else ${classes.termId} end) = ${key.termId ?? ''}`,
         eq(classes.branchId, key.branchId),
         sql`lower(${classes.name}) = lower(${key.name})`,
         exceptId ? ne(classes.id, exceptId) : undefined,

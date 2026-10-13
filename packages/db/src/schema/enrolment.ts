@@ -20,8 +20,11 @@ export const enrolments = sqliteTable(
     status: text('status', { enum: ENROLMENT_STATUSES }).notNull().default('active'),
   },
   (t) => [
-    index('enrolments_org_class_idx').on(t.orgId, t.classId),
-    index('enrolments_org_student_idx').on(t.orgId, t.studentId),
+    // GET /enrolments pages in id order: through the first index, or through the class's or the
+    // student's when the list is filtered by one (D-101).
+    uniqueIndex('enrolments_org_id_uq').on(t.orgId, t.id),
+    index('enrolments_org_class_idx').on(t.orgId, t.classId, t.id),
+    index('enrolments_org_student_idx').on(t.orgId, t.studentId, t.id),
     // A student holds at most one active enrolment in a class.
     uniqueIndex('enrolments_org_student_class_active_uq')
       .on(t.orgId, t.studentId, t.classId)
