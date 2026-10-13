@@ -140,9 +140,9 @@ async function findGuardianOr404(ctx: OrgCtx, id: string, reach: repo.Reach) {
 
 /**
  * What families are shown with: their guardians, their students within reach, those students'
- * grades and the academic years. `familyIds` is one family's id, or a query for the families on
- * a page. The four reads are sent together, so a caller that sends the read of the families
- * themselves in the same `Promise.all` waits for D1 once.
+ * grades and the academic years. `familyIds` is a query for the families the caller's own read
+ * returns: the one found, or those on a page. The four reads are sent together, so a caller that
+ * sends its read of the families in the same `Promise.all` waits for D1 once.
  */
 function membersOf(ctx: OrgCtx, familyIds: Ids, reach: repo.Reach) {
   return Promise.all([
@@ -200,14 +200,15 @@ export async function listFamilies(
 }
 
 /**
- * One stage: the family and what it is shown with are read together. Nothing of the family is
- * returned unless the family itself was found within the caller's reach.
+ * One stage: the family and what it is shown with are read together. Each read carries the
+ * caller's reach, so for a family outside it nothing is read, and nothing is returned unless the
+ * family itself was found.
  */
 export async function getFamily(ctx: OrgCtx, access: Access, id: string): Promise<Family> {
   const reach = reachOf(ctx, access);
   const [row, members] = await Promise.all([
     repo.findFamily(ctx, id, reach),
-    membersOf(ctx, [id], reach),
+    membersOf(ctx, repo.familyFound(ctx, id, reach), reach),
   ]);
   if (!row) throw notFound('Family');
   return withMembers([row], members)[0]!;
@@ -255,7 +256,7 @@ export async function updateFamily(
   // is only judged below if it isn't the family's own, which is known once the family is read.
   const [before, members, branch] = await Promise.all([
     repo.findFamily(ctx, id, reach),
-    membersOf(ctx, [id], reach),
+    membersOf(ctx, repo.familyFound(ctx, id, reach), reach),
     changes.branchId !== undefined ? held(branches.getBranch(ctx, changes.branchId)) : undefined,
   ]);
   if (!before) throw notFound('Family');
@@ -391,12 +392,16 @@ const noAcademicYear = () =>
 /** What a student with no grade is shown with: no year is needed to work theirs out. */
 const NO_YEARS: Years = { years: [], current: null };
 
-/** A student's grades once a change to one year's grade is written. */
+/**
+ * A student's grades once a change to one year's grade is written, as the repository writes it:
+ * the year's row is removed when there was one and no grade level is given, and set otherwise.
+ */
 function gradesAfter(grades: GradeOfYear[], change: repo.GradeChange | undefined): GradeOfYear[] {
   if (!change) return grades;
-  const { academicYearId, gradeLevelId } = change;
+  const { academicYearId, gradeLevelId, existing } = change;
   const others = grades.filter((grade) => grade.academicYearId !== academicYearId);
-  return gradeLevelId ? [...others, { academicYearId, gradeLevelId }] : others;
+  if (gradeLevelId === null || (existing && !gradeLevelId)) return others;
+  return [...others, { academicYearId, gradeLevelId }];
 }
 
 export async function listStudents(
@@ -417,7 +422,7 @@ export async function listStudents(
     grade: query.gradeLevelId
       ? {
           gradeLevelId: query.gradeLevelId,
-          academicYearId: query.academicYearId ?? (await currentAcademicYear(ctx)),
+          academicYearId: query.academicYearId || (await currentAcademicYear(ctx)),
         }
       : undefined,
   };
@@ -456,13 +461,15 @@ export async function listStudents(
 }
 
 /**
- * One stage: the student, their grades and the academic years are read together. Nothing of the
- * student is returned unless the student was found within the caller's reach.
+ * One stage: the student, their grades and the academic years are read together. Each read
+ * carries the caller's reach, so for a student outside it nothing is read, and nothing is
+ * returned unless the student was found.
  */
 export async function getStudent(ctx: OrgCtx, access: Access, id: string): Promise<Student> {
+  const reach = reachOf(ctx, access);
   const [found, grades, years] = await Promise.all([
-    repo.findStudent(ctx, id, reachOf(ctx, access)),
-    repo.listGrades(ctx, [id]),
+    repo.findStudent(ctx, id, reach),
+    repo.listGrades(ctx, repo.studentFound(ctx, id, reach)),
     calendar.academicYears(ctx),
   ]);
   if (!found) throw notFound('Student');
@@ -523,13 +530,14 @@ export async function updateStudent(
   id: string,
   input: UpdateStudent,
 ): Promise<Student> {
+  const reach = reachOf(ctx, access);
   const { updatedAt, gradeLevelId, academicYearId, ...rest } = input;
   const changes: repo.StudentChanges = { ...rest };
   // The student, every grade they have (the one being changed is among them, and the answer
   // shows them all), the academic years, and the grade level they may be given.
   const [found, grades, years, org, gradeLevel] = await Promise.all([
-    repo.findStudent(ctx, id, reachOf(ctx, access)),
-    repo.listGrades(ctx, [id]),
+    repo.findStudent(ctx, id, reach),
+    repo.listGrades(ctx, repo.studentFound(ctx, id, reach)),
     calendar.academicYears(ctx),
     orgs.getOrg(ctx),
     gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,

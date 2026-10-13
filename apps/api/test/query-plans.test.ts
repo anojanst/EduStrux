@@ -274,7 +274,7 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
   });
 });
 
-describe('what a page of families or students shows is read by the rows on the page (TUI-95)', () => {
+describe('what families and students are shown with is read by a query for them (TUI-95)', () => {
   const MEMBER = 'mem_a';
   const everyone: people.Reach = {};
   const staff: people.Reach = { branchIds: IDS };
@@ -330,8 +330,68 @@ describe('what a page of families or students shows is read by the rows on the p
     expect(plan).toMatch(searchIn(pageTable, pageIndex));
   });
 
-  // A teacher's or a parent's page goes to their ids at every level, as the page itself does.
+  // One family or student goes to its id, and a teacher's or a parent's page to their ids, at
+  // every level, as the read of the family, the student or the page itself does.
   const fromIds: [string, Send, Reached][] = [
+    [
+      'guardians, of one family',
+      (ctx) => people.listGuardians(ctx, people.familyFound(ctx, 'fam_a', everyone)),
+      [
+        ['guardians', 'family_id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of the students of one family, for staff of some branches',
+      (ctx) =>
+        people.listGrades(
+          ctx,
+          people.studentIdsOfFamilies(ctx, people.familyFound(ctx, 'fam_a', staff), staff),
+        ),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'family_id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one student',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', everyone)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one student, for staff of some branches',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', staff)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one of a parent’s children',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', parent)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'grades, of one of a teacher’s students',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', teacher(ctx))),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
     [
       'grades, of a page of a teacher’s students',
       (ctx) => people.listGrades(ctx, students(ctx, teacher(ctx))),

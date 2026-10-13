@@ -1,5 +1,5 @@
 import { families, guardians, now, studentGrades, students } from '@edustrux/db';
-import { and, asc, count, eq, gt, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
   firstIds,
@@ -159,12 +159,27 @@ export function familiesOnPage(
   );
 }
 
+/** What one family is found by: its id, if it is within reach. */
+const oneFamily = (ctx: OrgCtx, id: string, reach: Reach) => [
+  eq(families.id, id),
+  within(ctx, reach),
+];
+
 export function findFamily(ctx: OrgCtx, id: string, reach: Reach) {
   return ctx.db
     .select()
     .from(families)
-    .where(inOrg(ctx, families, eq(families.id, id), within(ctx, reach)))
+    .where(inOrg(ctx, families, ...oneFamily(ctx, id, reach)))
     .get();
+}
+
+/**
+ * The family `findFamily` returns, as an id: none when it is outside the reach. What the family
+ * is shown with is read by it, in the same stage as the family (D-104), so nothing of a family
+ * the caller can't see is read at all.
+ */
+export function familyFound(ctx: OrgCtx, id: string, reach: Reach): IdQuery {
+  return idsFrom(ctx, families, families.id, ...oneFamily(ctx, id, reach));
 }
 
 /** The ids of every family within reach. */
@@ -365,6 +380,14 @@ export async function softDeleteGuardian(ctx: OrgCtx, before: GuardianRow) {
 const studentWithBranch = { student: students, branchId: families.branchId };
 
 /**
+ * What a student's family must meet, as a condition on the student. A read that joins students
+ * to their families states it in the join. A query for student ids has no join, so it looks
+ * each student's family up, one row at a time, and never reads the families as a list.
+ */
+const whoseFamily = (ctx: OrgCtx, ofFamily: (SQL | undefined)[]) =>
+  inIds(students.familyId, wide(idsFrom(ctx, families, families.id, ...ofFamily)));
+
+/**
  * What a page of students is found by: the filter, the reach, and where the last page ended.
  * `ofStudent` is what the student's own row must meet, and `ofFamily` what their family's must.
  */
@@ -429,9 +452,8 @@ export function listStudents(
 
 /**
  * The students `listStudents` puts on that page, as ids: the same conditions in the same order.
- * Their grades are read by them, in the same stage as the page itself (D-104). Where the page
- * joins each student to their family, this looks the family up for each student, so it is read
- * in the page's order too.
+ * Their grades are read by them, in the same stage as the page itself (D-104). It is read in the
+ * page's order too.
  */
 export function studentsOnPage(
   ctx: OrgCtx,
@@ -441,9 +463,8 @@ export function studentsOnPage(
   reach: Reach,
 ): IdQuery {
   const { ofStudent, ofFamily } = studentPage(ctx, after, filter, reach);
-  const theirFamily = wide(idsFrom(ctx, families, families.id, ...ofFamily));
   return firstIds(
-    idsFrom(ctx, students, students.id, ...ofStudent, inIds(students.familyId, theirFamily)),
+    idsFrom(ctx, students, students.id, ...ofStudent, whoseFamily(ctx, ofFamily)),
     limit,
     asc(students.lastNameNorm),
     asc(students.firstNameNorm),
@@ -451,18 +472,33 @@ export function studentsOnPage(
   );
 }
 
+/**
+ * What one student is found by: their id, if they are within reach. `ofStudent` is what the
+ * student's own row must meet, and `ofFamily` what their family's must.
+ */
+const oneStudent = (ctx: OrgCtx, id: string, reach: Reach) => ({
+  ofStudent: [eq(students.id, id), studentWithin(reach)],
+  ofFamily: [within(ctx, reach)],
+});
+
 export function findStudent(ctx: OrgCtx, id: string, reach: Reach) {
+  const { ofStudent, ofFamily } = oneStudent(ctx, id, reach);
   return ctx.db
     .select(studentWithBranch)
     .from(students)
     .innerJoin(families, eq(families.id, students.familyId))
-    .where(
-      and(
-        inOrg(ctx, students, eq(students.id, id), studentWithin(reach)),
-        inOrg(ctx, families, within(ctx, reach)),
-      ),
-    )
+    .where(and(inOrg(ctx, students, ...ofStudent), inOrg(ctx, families, ...ofFamily)))
     .get();
+}
+
+/**
+ * The student `findStudent` returns, as an id: none when they are outside the reach. Their
+ * grades are read by it, in the same stage as the student (D-104), so nothing of a student the
+ * caller can't see is read at all.
+ */
+export function studentFound(ctx: OrgCtx, id: string, reach: Reach): IdQuery {
+  const { ofStudent, ofFamily } = oneStudent(ctx, id, reach);
+  return idsFrom(ctx, students, students.id, ...ofStudent, whoseFamily(ctx, ofFamily));
 }
 
 /** What the students of the given families that are within reach are found by. */
