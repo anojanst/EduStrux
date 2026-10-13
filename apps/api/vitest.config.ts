@@ -26,5 +26,8 @@ export default defineConfig(async () => ({
   ],
   test: {
     setupFiles: ['./test/setup.ts'],
+    // A test makes many requests against a real local D1. The slowest take about 3.5s on a
+    // laptop and more than vitest's 5s default on a GitHub runner, which failed the deploy.
+    testTimeout: 30_000,
   },
 }));
