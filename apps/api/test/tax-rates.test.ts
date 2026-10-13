@@ -1,10 +1,17 @@
 import { taxRates } from '@edustrux/db';
-import type { Role } from '@edustrux/shared';
+import { newId, type Role } from '@edustrux/shared';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { addMember, call, db, newOrg, newUser } from './helpers';
 
-type TaxRate = { id: string; name: string; rateBps: number; inclusive: boolean; updatedAt: string };
+type TaxRate = {
+  id: string;
+  name: string;
+  rateBps: number;
+  inclusive: boolean;
+  isDefault: boolean;
+  updatedAt: string;
+};
 
 async function setup() {
   const owner = await newUser('owner');
@@ -12,8 +19,8 @@ async function setup() {
   const base = `/api/v1/orgs/${org.id}`;
   const api = (method: string, path: string, body?: unknown) =>
     call(method, `${base}${path}`, { token: owner.token, body });
-  const addRate = async (name: string, rateBps: number, inclusive = true) => {
-    const res = await api('POST', '/tax-rates', { name, rateBps, inclusive });
+  const addRate = async (name: string, rateBps: number, inclusive = true, isDefault?: boolean) => {
+    const res = await api('POST', '/tax-rates', { name, rateBps, inclusive, isDefault });
     if (res.status !== 201) throw new Error(`tax rate create failed: ${JSON.stringify(res.body)}`);
     return res.body as TaxRate;
   };
@@ -38,6 +45,7 @@ describe('tax rates', () => {
       name: 'GST',
       rateBps: 1500,
       inclusive: true,
+      isDefault: false,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -108,6 +116,87 @@ describe('tax rates', () => {
     });
     expect(rename.status).toBe(409);
     expect(rename.body.error.fields).toEqual({ name: ['Taken'] });
+  });
+
+  it('has at most one default rate: a new default takes the flag from the old one', async () => {
+    const { api, addRate, org } = await setup();
+    const defaults = async () =>
+      ((await api('GET', '/tax-rates')).body.data as TaxRate[])
+        .filter((r) => r.isDefault)
+        .map((r) => r.name);
+
+    const gst = await addRate('GST', 1500, true, true);
+    expect(gst.isDefault).toBe(true);
+    const zero = await addRate('Zero-rated', 0);
+    expect(await defaults()).toEqual(['GST']);
+
+    // Marking another rate as the default, on PATCH and on POST.
+    const moved = await api('PATCH', `/tax-rates/${zero.id}`, {
+      updatedAt: zero.updatedAt,
+      isDefault: true,
+    });
+    expect(moved.status).toBe(200);
+    expect(moved.body.isDefault).toBe(true);
+    expect(await defaults()).toEqual(['Zero-rated']);
+    await addRate('VAT', 2000, false, true);
+    expect(await defaults()).toEqual(['VAT']);
+
+    // One audit row per write, on the rate that was asked about.
+    const audit = await api('GET', '/audit-log?limit=1');
+    expect(audit.body.data[0]).toMatchObject({
+      action: 'tax_rate.created',
+      after: { name: 'VAT', isDefault: true },
+    });
+
+    // The database refuses a second default, whatever the service does.
+    const second = await db()
+      .insert(taxRates)
+      .values({
+        id: newId('taxRate'),
+        orgId: org.id,
+        name: 'Rogue',
+        rateBps: 1,
+        inclusive: true,
+        isDefault: true,
+      })
+      .then(
+        () => 'inserted',
+        (e: Error) => String(e.cause),
+      );
+    expect(second).toMatch(/UNIQUE constraint failed/);
+  });
+
+  it('can have no default: unmarking or deleting the default leaves none', async () => {
+    const { api, addRate } = await setup();
+    const gst = await addRate('GST', 1500, true, true);
+
+    const unmarked = await api('PATCH', `/tax-rates/${gst.id}`, {
+      updatedAt: gst.updatedAt,
+      isDefault: false,
+    });
+    expect(unmarked.body.isDefault).toBe(false);
+
+    const again = await api('PATCH', `/tax-rates/${gst.id}`, {
+      updatedAt: unmarked.body.updatedAt,
+      isDefault: true,
+    });
+    expect(again.body.isDefault).toBe(true);
+    expect((await api('DELETE', `/tax-rates/${gst.id}`)).status).toBe(204);
+
+    // The deleted default doesn't stop another rate from becoming the default.
+    expect((await addRate('VAT', 2000, false, true)).isDefault).toBe(true);
+  });
+
+  it('rejects an isDefault that is not a boolean with 400', async () => {
+    const { api } = await setup();
+    const res = await api('POST', '/tax-rates', {
+      name: 'GST',
+      rateBps: 1500,
+      inclusive: true,
+      isDefault: 'yes',
+    });
+    expect(res.status).toBe(400);
+    expect(Object.keys(res.body.error.fields)).toEqual(['isDefault']);
   });
 
   it('pages with a cursor', async () => {

@@ -15,7 +15,8 @@ const PriceOverride = z
   .openapi({
     description:
       'What this student pays for the class instead of its usual price, in the organisation’s ' +
-      'currency. null = no override. How it is charged comes with price rules.',
+      'currency. null = no override. It is charged on the basis of the price it replaces: per ' +
+      'term or per month unless a price rule says per lesson or per pack.',
   });
 
 export const Enrolment = z

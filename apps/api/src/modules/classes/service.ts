@@ -22,6 +22,7 @@ import {
   validationFailed,
 } from '../../lib/errors';
 import { byDateTime, decodeCursor, decodeDateTimeCursor, toPage } from '../../lib/pagination';
+import * as billing from '../billing/service';
 import * as branches from '../branches/service';
 import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
@@ -313,12 +314,18 @@ export async function updateClass(
   return getClass(ctx, access, id);
 }
 
-/** Deletes the class with its schedule and all its sessions. Refused while it has enrolments. */
+/**
+ * Deletes the class with its schedule and all its sessions. Refused while it has enrolments or
+ * a price rule of its own.
+ */
 export async function deleteClass(ctx: OrgCtx, access: Access, id: string): Promise<void> {
   const before = await findClassOr404(ctx, id, await reachOf(ctx, access));
   const enrolmentCount = await enrolment.countEnrolments(ctx, { classId: id });
   if (enrolmentCount > 0) {
     throw unprocessable(`This class has ${enrolmentCount} enrolment(s), so it can't be deleted.`);
+  }
+  if ((await billing.countPriceRules(ctx, { classId: id })) > 0) {
+    throw unprocessable("Delete this class's price rule first.");
   }
   await repo.softDeleteClass(ctx, before);
 }
