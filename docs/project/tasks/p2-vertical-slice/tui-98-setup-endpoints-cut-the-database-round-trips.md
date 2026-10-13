@@ -26,7 +26,7 @@ endpoints:
   - GET|POST /terms
   - PATCH|DELETE /terms/{id}
 branch: task/tui-98-setup-round-trips
-pr:
+pr: 32
 ---
 
 # TUI-98 Setup endpoints: cut the database round trips
