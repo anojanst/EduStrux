@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-24-deploy-workflow
-pr: 19
+pr: 24
 ---
 
 # TUI-24 CI pipeline + Cloudflare deploy (staging & prod)
