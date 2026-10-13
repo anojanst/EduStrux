@@ -1,4 +1,4 @@
-import type { Db } from '@edustrux/db';
+import type { Db, orgs } from '@edustrux/db';
 import type { Role, Scope } from '@edustrux/shared';
 import type { EmailMessage, JobMessage } from './background/messages';
 
@@ -29,12 +29,17 @@ export type ActiveMembership = {
   branchIds: string[] | null;
 };
 
+/** The org as stored. */
+export type OrgRow = typeof orgs.$inferSelect;
+
 export type Variables = {
   db: Db;
-  /** Set by requireAuth. */
+  /** Set by requireAuth, and by requireOrgMember on /orgs/{orgId} routes. */
   user: AuthUser;
   /** Set by requireOrgMember, on /orgs/{orgId} routes only. */
   membership: ActiveMembership;
+  /** Set by requireOrgMember with the membership: the org, as it was when the request began. */
+  org: OrgRow;
   /** Set by requirePermission: how far this role's permission reaches. */
   scope: Scope;
 };

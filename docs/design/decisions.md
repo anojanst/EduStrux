@@ -2339,3 +2339,99 @@ is the only deployed environment).
     invoice routes (TUI-39).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-37 (and TUI-38, TUI-39, TUI-59).
+
+## D-099 · 2026-10-13 · Sign-in, membership and org in one database call, and every response says what it cost
+
+- **Context:** The audit of 2026-10-13 (TUI-89 to TUI-98) found that every org endpoint made two
+  D1 calls before its own work: one for the user, one for the membership joined to the org.
+  Services then read the org again, up to three times in one request. On production each call is
+  a network round trip of about 40 ms (TUI-89's estimate). The audit counted the calls with a
+  wrapper that was never committed, so nothing in the repo could check a count. TUI-90 is the
+  first of the round-trip tasks, and TUI-89 and TUI-94 to TUI-98 build on it.
+- **Decision:**
+  - On `/orgs/{orgId}/…` routes, one statement loads the user by Clerk id, their active
+    membership in the org, and the org. It joins `users` to `memberships` to `orgs`, each
+    through a unique index.
+  - Nothing a client sees changes:
+    - A missing or invalid token is 401, before any D1 call.
+    - A non-member, a suspended or removed member, a missing org and a deleted org get the same
+      404, so an org id is never confirmed. A role without the permission then gets 403.
+    - A new Clerk user's first request still creates the `users` row, on an org route too. That
+      one request makes three calls: the lookup, the insert, the lookup again.
+    - A token that carries a new email or name still updates the row, for one more call.
+  - Routes outside an org (`GET /me`, `POST /orgs`) sign in as before, with one call for the
+    user.
+  - The org that was loaded stays on the request and on the context passed to services. A
+    service asks the orgs service for it, which answers from the request and reads D1 only where
+    there is no request (queue jobs, crons). It is the org as it was when the request began.
+  - `PATCH /orgs/{orgId}` checks `updatedAt` against that org and answers with the row the write
+    returned, so it reads the org neither before nor after.
+  - Every API response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`:
+    - `trips`: the calls the request made to D1. A statement is one, and a batch is one.
+    - `stages`: how many of those calls the request waited for one after another. A call's
+      stage is one more than the highest stage among the calls that had finished when it
+      started, or 1 if none had. `stages` is the highest stage any call reached. Calls sent
+      together share a stage. It never comes out lower than the real depth; it can come out
+      higher when a call that waited for nothing starts late.
+    - `dur`: the milliseconds with at least one call in flight.
+  - The header is sent in every environment, production included, so a deployed endpoint can be
+    measured with `curl -i` or read in Swagger's response headers.
+  - Tests read `trips` and `stages` from the header, so a test can hold an endpoint to a budget.
+    D-102 sets the budget.
+- **Consequences:**
+  - Counted in the test suite, with the same requests before and after:
+
+    | Request                                           | Calls before | Calls after |
+    | ------------------------------------------------- | ------------ | ----------- |
+    | `GET /orgs/{orgId}`                               | 3            | 1           |
+    | `GET /audit-log`, `GET /jobs/{jobId}`             | 3            | 2           |
+    | `PATCH /orgs/{orgId}`                             | 5            | 2           |
+    | `GET /students`                                   | 6            | 4           |
+    | `POST /students`, with a birth date and a grade   | 12           | 8           |
+    | `PATCH /students/{studentId}`, the same two       | 13           | 9           |
+    | `POST /enrolments`                                | 12           | 9           |
+    | `GET /sessions?studentId`                         | 9            | 6           |
+    | `PUT /sessions/{sessionId}/attendance`, 1 student | 11           | 8           |
+    | A 404 for a non-member, or a 403                  | 2            | 1           |
+
+  - These are counts from the local test database. Nothing was measured on production, and the
+    40 ms a call is still TUI-89's estimate.
+  - `GET /me` (2 calls) and `POST /orgs` (4, or 5 when the slug made from the name is taken) are
+    unchanged.
+  - A background job has no request, so it still reads the org itself.
+  - The header tells any caller how many D1 calls their request made and how long they took:
+    - Production is behind Cloudflare Access (D-069), so today only the owner sees it.
+    - A caller without a token learns nothing today: a 401 and the health check make no calls.
+    - A record outside the caller's reach is 404, as if it didn't exist (D-048). Checked by hand
+      as a branch-limited manager, a teacher and a parent, on the single-record `GET`s for
+      classes, students, families, sessions and attendance and on the enrolment filters: such a
+      record and an id that doesn't exist cost the same number of calls. Writes and invoices
+      weren't checked, and no test holds this.
+    - A public route that must answer the same whether or not a record exists could give that
+      away through its count. Portal sign-in by email (TUI-72) and the public forms (TUI-47) are
+      the ones to check. Before launch (TUI-86), check them, or stop sending the header on
+      routes without sign-in.
+  - Not chosen: one batch that inserts the user if missing and then reads the three rows. It
+    would turn every request into a write.
+  - Assumption: sending the header in production is the implementation's choice. The owner
+    hasn't confirmed it.
+- **Tasks:** TUI-90 (and TUI-89, TUI-94 to TUI-98, which use the counts; TUI-47, TUI-72 and
+  TUI-86 for the header).
+
+## D-102 · 2026-10-13 · Every endpoint's budget: about 3 database trips in sequence
+
+- **Context:** Each round-trip ticket (TUI-89, TUI-90, TUI-94 to TUI-98) proposed a target for
+  the owner to confirm: about 200 ms on production, roughly 5 trips. TUI-89 also listed
+  Cloudflare Smart Placement, which runs the Worker next to D1, as an idea. The owner settled
+  both on 2026-10-13, in the session that coordinates these tasks.
+- **Decision:**
+  - The budget for every endpoint is about 3 database trips in sequence: sign-in, one read
+    stage, one write.
+  - Trips are counted in sequence: the `stages` number every response reports (D-099). Calls in
+    flight together count once.
+  - This replaces the tickets' proposed "about 200 ms, roughly 5 trips".
+  - Cloudflare Smart Placement: not now. The latency is to come from fewer trips.
+- **Consequences:**
+  - Meeting the budget needs reads that join across modules. The conventions for those come
+    with the follow-on work and get their own decision.
+- **Tasks:** TUI-89, TUI-90, TUI-94 to TUI-98.

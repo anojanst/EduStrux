@@ -134,7 +134,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 ### Request pipeline (every API call)
 1. The client calls `/api/v1/...` with the Clerk session (cookie on web, `Authorization: Bearer` on mobile). Staff and parents take the same path; a parent is a Clerk user with a `parent` membership (D-021).
 2. **Auth middleware** verifies the Clerk token at the edge (cached public keys) and gets the user id.
-3. **Org middleware** reads `orgId` from the URL path (no subdomains, D-020) and loads the membership from D1. If the user isn't a member, it returns **404**, so we never confirm that an org id exists.
+3. **Org middleware** reads `orgId` from the URL path (no subdomains, D-020) and loads the user, the membership and the org from D1 in one call. If the user isn't a member, it returns **404**, so we never confirm that an org id exists. The org stays on the request, so the later steps don't read it again (D-099).
 4. **Permission check:** each route declares one permission (e.g. `billing:write`). The membership's role and branch scope decide.
 5. **Validation:** shared Zod schemas parse the body and query.
 6. **Module service** applies the business rules (pricing, make-up policy, clashes).
@@ -163,7 +163,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
   - The setup lives only in the Cloudflare dashboard, not in the repo. The wrangler config and a deploy don't recreate or remove it.
   - Not verified: the Zero Trust plan, who the policy lets in, that a signed-in browser gets through, and that the crons and queue consumers still run (D-069).
 - **API docs:** Swagger UI and the spec are on in production until launch. While Access is on they aren't public; without it, anyone with the URL can read the routes and schemas. All data stays behind Clerk sign-in. Once the v1.1 dev environment exists, the docs move there (D-068, D-069).
-- **Before launch (TUI-86):** two manual steps, and nothing does either automatically. Remove or narrow Access in the Cloudflare dashboard: the web app is served by the same Worker, so customers are blocked while it covers all traffic (D-069). Set `ENABLE_DOCS` back to `false` under `env.production` and redeploy (D-068).
+- **Before launch (TUI-86):** two manual steps, and nothing does either automatically. Remove or narrow Access in the Cloudflare dashboard: the web app is served by the same Worker, so customers are blocked while it covers all traffic (D-069). Set `ENABLE_DOCS` back to `false` under `env.production` and redeploy (D-068). Also decide then whether routes without sign-in keep the `Server-Timing` header: its call count could show whether a record exists (D-099).
 - **Clerk:** the owner set `CLERK_SECRET_KEY` on the Worker on 2026-10-12. Checked before Access was on: a call without a token returned 401. A signed-in call hasn't been checked (D-068).
 - **Not ready yet:** `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp` claim isn't checked. Checks on pull requests aren't set up: typecheck and the tests run after a merge, before the deploy, not before the merge (D-076).
 
@@ -191,6 +191,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |
+| Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them it waited for one after another (calls sent together count once), and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). The budget for every endpoint is about 3 trips in sequence: sign-in, one read stage, one write. Cloudflare Smart Placement isn't used for now (D-102). |
 
 ---
 
