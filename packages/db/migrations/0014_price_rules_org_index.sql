@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `price_rules_org_id_uq` ON `price_rules` (`org_id`,`id`);

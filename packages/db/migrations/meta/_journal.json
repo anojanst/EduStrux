@@ -99,6 +99,13 @@
       "when": 1791886453364,
       "tag": "0013_list_paging_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791886502588,
+      "tag": "0014_price_rules_org_index",
+      "breakpoints": true
     }
   ]
 }

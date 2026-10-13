@@ -1,7 +1,7 @@
 ---
 id: TUI-93
 title: 'Price rules: every query reads the whole table'
-status: todo
+status: done
 phase: P2
 module: billing
 priority: P1
@@ -11,7 +11,7 @@ endpoints:
   - DELETE /classes/{id}
   - DELETE /courses/{id}
   - DELETE /tax-rates/{id}
-branch:
+branch: task/tui-91-93-query-plans
 pr:
 ---
 
@@ -40,3 +40,15 @@ weren't counted.
 Ideas, none decided:
 
 - A plain index that starts with `org_id`, for example `(org_id, class_id, course_id)`.
+
+Built as:
+
+- A unique index on `(org_id, id)`, the same one every list paged by id has (D-101). Every
+  statement now reads the org's own rules, and `GET /price-rules` reads a page in order.
+- No index on class or course: an org has tens of rules, and the in-use checks and the check
+  for a rule already on a target run on rare writes.
+- The invoice run was checked. It reads every rule of the org once (`allPriceRules`), which was
+  a scan of the whole table and now goes through the new index. Its other lookups by a list of
+  ids are covered by TUI-91.
+- Migration `0014_price_rules_org_index`.
+- `apps/api/test/query-plans.test.ts` fails when a price-rule statement scans the table.

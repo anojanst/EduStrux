@@ -35,6 +35,9 @@ export const priceRules = sqliteTable(
       sql`(case when ${t.courseId} is null then '' else ${t.courseId} end)`,
     ] as const;
     return [
+      // The only index a query can use: the two below each need their own WHERE repeated. It
+      // keeps a read to the org's own rules, and GET /price-rules pages in its order (D-101).
+      uniqueIndex('price_rules_org_id_uq').on(t.orgId, t.id),
       // One target has at most one rule that fits a class in a term, and at most one that fits
       // a class with no term. A per_lesson or pack rule fits both, so it is in both indexes.
       uniqueIndex('price_rules_org_target_term_uq')

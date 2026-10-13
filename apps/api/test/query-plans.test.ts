@@ -314,3 +314,31 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
     expect(plan).toMatch(searchBy('classes', 'branch_id'));
   });
 });
+
+describe('price rules are read through their org (D-101)', () => {
+  const target = { classId: 'cls_a', courseId: null };
+  const statements: [string, Send][] = [
+    ['GET /price-rules', (ctx) => billing.listPriceRules(ctx, 50, undefined, {}, {})],
+    ['GET /price-rules, a later page', (ctx) => billing.listPriceRules(ctx, 50, 'id_a', {}, {})],
+    [
+      'GET /price-rules?classId',
+      (ctx) => billing.listPriceRules(ctx, 50, undefined, { classId: 'cls_a' }, {}),
+    ],
+    [
+      'GET /price-rules, for staff of some branches',
+      (ctx) => billing.listPriceRules(ctx, 50, undefined, {}, { branchIds: IDS }),
+    ],
+    ['POST /price-rules, the target is free', (ctx) => billing.priceRuleTaken(ctx, target, 'pack')],
+    ['DELETE /classes/{id}', (ctx) => billing.countPriceRules(ctx, { classId: 'cls_a' })],
+    ['DELETE /courses/{id}', (ctx) => billing.countPriceRules(ctx, { courseId: 'crs_a' })],
+    ['DELETE /tax-rates/{id}', (ctx) => billing.countPriceRules(ctx, { taxRateId: 'tax_a' })],
+    ['every rule, to price enrolments and invoices', (ctx) => billing.allPriceRules(ctx)],
+  ];
+
+  it.each(statements)('%s', async (_what, send) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy('price_rules', 'org_id'));
+    expect(plan).not.toMatch(/^SCAN price_rules/m);
+    expect(plan).not.toContain(SORT);
+  });
+});
