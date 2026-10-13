@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints:
   - GET|PUT /sessions/{id}/attendance
-branch:
+branch: task/tui-89-attendance-round-trips
 pr:
 ---
 
