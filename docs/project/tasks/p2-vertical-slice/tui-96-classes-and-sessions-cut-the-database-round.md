@@ -13,7 +13,7 @@ endpoints:
   - GET /sessions
   - GET /sessions/{id}
 branch: task/tui-96-classes-round-trips
-pr:
+pr: 36
 ---
 
 # TUI-96 Classes and sessions: cut the database round trips
