@@ -4,7 +4,7 @@ import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { Context } from 'hono';
-import type { AppEnv } from '../env';
+import type { AppEnv, OrgRow } from '../env';
 
 /**
  * Everything a repository needs to touch org data. Repositories are the only code
@@ -14,10 +14,21 @@ export type OrgCtx = {
   db: Db;
   orgId: string;
   actorUserId: string | null;
+  /**
+   * The org, when the request's middleware has already loaded it (D-099). Don't read it from
+   * here: call `getOrg(ctx)` in the orgs service, which uses it and reads D1 only where there
+   * is no request (queue jobs, cron).
+   */
+  org?: OrgRow;
 };
 
 export function orgCtx(c: Context<AppEnv>): OrgCtx {
-  return { db: c.var.db, orgId: c.var.membership.orgId, actorUserId: c.var.user.id };
+  return {
+    db: c.var.db,
+    orgId: c.var.membership.orgId,
+    actorUserId: c.var.user.id,
+    org: c.var.org,
+  };
 }
 
 /**

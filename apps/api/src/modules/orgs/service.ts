@@ -67,15 +67,26 @@ export async function createOrg(db: Db, userId: string, input: CreateOrg): Promi
   return toOrg(created);
 }
 
-export async function getOrg(ctx: OrgCtx): Promise<Org> {
-  const row = await repo.findOrg(ctx);
+/**
+ * The org's row: the one the request's middleware loaded with the membership (D-099), or a read
+ * where there is no request (queue jobs, cron).
+ */
+async function orgRow(ctx: OrgCtx): Promise<repo.OrgRow> {
+  const row = ctx.org?.id === ctx.orgId ? ctx.org : await repo.findOrg(ctx);
   if (!row) throw notFound('Organisation');
-  return toOrg(row);
+  return row;
+}
+
+/**
+ * The org. Other modules call this for its timezone, currency and settings. In a request it
+ * costs no D1 call.
+ */
+export async function getOrg(ctx: OrgCtx): Promise<Org> {
+  return toOrg(await orgRow(ctx));
 }
 
 export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
-  const before = await repo.findOrg(ctx);
-  if (!before) throw notFound('Organisation');
+  const before = await orgRow(ctx);
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
   const { updatedAt: _ignored, ...changes } = input;
@@ -93,8 +104,8 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
     }
   }
 
-  await repo.updateOrg(ctx, before, changes);
-  return getOrg(ctx);
+  // `ctx.org` is now out of date, so the answer is the row the write returned.
+  return toOrg(await repo.updateOrg(ctx, before, changes));
 }
 
 /** How many staff are limited to this branch (memberships with it in their branch list). */
