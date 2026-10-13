@@ -2,6 +2,7 @@ import { families, guardians, now, studentGrades, students } from '@edustrux/db'
 import { and, asc, count, eq, gt, or, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
+  firstIds,
   idsFrom,
   inIds,
   inOrg,
@@ -44,8 +45,11 @@ export type Reach = { branchIds?: string[]; guardianMembershipId?: string; stude
 export type StudentFilter = {
   familyId?: string;
   branchId?: string;
-  /** Only students with this grade level in this academic year. */
-  grade?: { academicYearId: string; gradeLevelId: string };
+  /**
+   * Only students with this grade level in this academic year. The year can be a query for its
+   * id: the current year, which the calendar works out inside the statement.
+   */
+  grade?: { academicYearId: string | IdQuery; gradeLevelId: string };
 };
 
 /**
@@ -105,31 +109,54 @@ const studentReach = (ctx: OrgCtx, reach: Reach) => [
 
 // ── Families ────────────────────────────────────────────────────────────────
 
+export type FamilyFilter = { branchId?: string };
+
+/** What a page of families is found by: the filter, the reach, and where the last page ended. */
+function familyPage(ctx: OrgCtx, after: string[] | undefined, filter: FamilyFilter, reach: Reach) {
+  const [name, id] = after ?? [];
+  return [
+    filter.branchId ? eq(families.branchId, filter.branchId) : undefined,
+    ...familyReach(ctx, reach),
+    name !== undefined && id !== undefined
+      ? or(gt(families.nameNorm, name), and(eq(families.nameNorm, name), gt(families.id, id)))
+      : undefined,
+  ];
+}
+
 /** In name, then id order. Fetches `limit + 1` rows to tell if there's another page. */
 export function listFamilies(
   ctx: OrgCtx,
   limit: number,
   after: string[] | undefined,
-  filter: { branchId?: string },
+  filter: FamilyFilter,
   reach: Reach,
 ) {
-  const [name, id] = after ?? [];
   return ctx.db
     .select()
     .from(families)
-    .where(
-      inOrg(
-        ctx,
-        families,
-        filter.branchId ? eq(families.branchId, filter.branchId) : undefined,
-        ...familyReach(ctx, reach),
-        name !== undefined && id !== undefined
-          ? or(gt(families.nameNorm, name), and(eq(families.nameNorm, name), gt(families.id, id)))
-          : undefined,
-      ),
-    )
+    .where(inOrg(ctx, families, ...familyPage(ctx, after, filter, reach)))
     .orderBy(asc(families.nameNorm), asc(families.id))
     .limit(limit + 1);
+}
+
+/**
+ * The families `listFamilies` puts on that page, as ids: the same conditions in the same order.
+ * What the page shows of guardians, students and grades is read by them, in the same stage as
+ * the page itself (D-104).
+ */
+export function familiesOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  after: string[] | undefined,
+  filter: FamilyFilter,
+  reach: Reach,
+): IdQuery {
+  return firstIds(
+    idsFrom(ctx, families, families.id, ...familyPage(ctx, after, filter, reach)),
+    limit,
+    asc(families.nameNorm),
+    asc(families.id),
+  );
 }
 
 export function findFamily(ctx: OrgCtx, id: string, reach: Reach) {
@@ -182,26 +209,39 @@ export async function countFamilies(ctx: OrgCtx, branchId: string) {
   return row?.n ?? 0;
 }
 
-export async function insertFamily(ctx: OrgCtx, row: NewFamilyRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(families).values(row)], {
-    action: 'family.created',
-    entityType: 'family',
-    entityId: row.id,
-    after: row,
-  });
+/** Returns the family as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertFamily(
+  ctx: OrgCtx,
+  row: NewFamilyRow & { id: string },
+): Promise<FamilyRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(families).values(row).returning()],
+    { action: 'family.created', entityType: 'family', entityId: row.id, after: row },
+  );
+  const stored = (inserted as FamilyRow[])[0];
+  if (!stored) throw new Error('Family missing after insert');
+  return stored;
 }
 
-export async function updateFamily(ctx: OrgCtx, before: FamilyRow, changes: FamilyChanges) {
-  await writeWithAudit(
+/** Returns the family as updated, from the same batch, or undefined if it was just deleted. */
+export async function updateFamily(
+  ctx: OrgCtx,
+  before: FamilyRow,
+  changes: FamilyChanges,
+): Promise<FamilyRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(families)
         .set(changes)
-        .where(inOrg(ctx, families, eq(families.id, before.id))),
+        .where(inOrg(ctx, families, eq(families.id, before.id)))
+        .returning(),
     ],
     { action: 'family.updated', entityType: 'family', entityId: before.id, before, after: changes },
   );
+  return (updated as FamilyRow[])[0];
 }
 
 /** Soft-deletes the family and its guardians. The caller makes sure it has no students. */
@@ -246,16 +286,19 @@ export function findGuardian(ctx: OrgCtx, id: string, reach: Reach) {
     .get();
 }
 
-/** `billing` also makes the new guardian the family's billing contact, in the same batch. */
+/**
+ * `billing` also makes the new guardian the family's billing contact, in the same batch. Returns
+ * the guardian as stored, from that batch.
+ */
 export async function insertGuardian(
   ctx: OrgCtx,
   row: NewGuardianRow & { id: string },
   billing: boolean,
-) {
-  await writeWithAudit(
+): Promise<GuardianRow> {
+  const [, inserted] = await writeWithAudit(
     ctx,
     [
-      ctx.db.insert(guardians).values(row),
+      ctx.db.insert(guardians).values(row).returning(),
       ...(billing
         ? [
             ctx.db
@@ -272,16 +315,25 @@ export async function insertGuardian(
       after: { ...row, billingContact: billing },
     },
   );
+  const stored = (inserted as GuardianRow[])[0];
+  if (!stored) throw new Error('Guardian missing after insert');
+  return stored;
 }
 
-export async function updateGuardian(ctx: OrgCtx, before: GuardianRow, changes: GuardianChanges) {
-  await writeWithAudit(
+/** Returns the guardian as updated, from the same batch, or undefined if it was just deleted. */
+export async function updateGuardian(
+  ctx: OrgCtx,
+  before: GuardianRow,
+  changes: GuardianChanges,
+): Promise<GuardianRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(guardians)
         .set(changes)
-        .where(inOrg(ctx, guardians, eq(guardians.id, before.id))),
+        .where(inOrg(ctx, guardians, eq(guardians.id, before.id)))
+        .returning(),
     ],
     {
       action: 'guardian.updated',
@@ -291,6 +343,7 @@ export async function updateGuardian(ctx: OrgCtx, before: GuardianRow, changes: 
       after: changes,
     },
   );
+  return (updated as GuardianRow[])[0];
 }
 
 export async function softDeleteGuardian(ctx: OrgCtx, before: GuardianRow) {
@@ -311,10 +364,12 @@ export async function softDeleteGuardian(ctx: OrgCtx, before: GuardianRow) {
 // A student is read with their family's home branch.
 const studentWithBranch = { student: students, branchId: families.branchId };
 
-/** In last name, first name, then id order. Fetches `limit + 1` rows to tell if there's more. */
-export function listStudents(
+/**
+ * What a page of students is found by: the filter, the reach, and where the last page ended.
+ * `ofStudent` is what the student's own row must meet, and `ofFamily` what their family's must.
+ */
+function studentPage(
   ctx: OrgCtx,
-  limit: number,
   after: string[] | undefined,
   filter: StudentFilter,
   reach: Reach,
@@ -332,33 +387,68 @@ export function listStudents(
           ),
         )
       : undefined;
+  const year = filter.grade?.academicYearId;
+  const inYear =
+    typeof year === 'string'
+      ? eq(studentGrades.academicYearId, year)
+      : year && inIds(studentGrades.academicYearId, year);
   const inGrade = filter.grade
-    ? sql`exists (select 1 from ${studentGrades} where ${studentGrades.orgId} = ${ctx.orgId} and ${studentGrades.studentId} = ${students.id} and ${studentGrades.academicYearId} = ${filter.grade.academicYearId} and ${studentGrades.gradeLevelId} = ${filter.grade.gradeLevelId} and ${studentGrades.deletedAt} is null)`
+    ? sql`exists (select 1 from ${studentGrades} where ${studentGrades.orgId} = ${ctx.orgId} and ${studentGrades.studentId} = ${students.id} and ${inYear} and ${studentGrades.gradeLevelId} = ${filter.grade.gradeLevelId} and ${studentGrades.deletedAt} is null)`
     : undefined;
+  return {
+    ofStudent: [
+      filter.familyId ? eq(students.familyId, filter.familyId) : undefined,
+      inGrade,
+      ...studentReach(ctx, reach),
+      afterCursor,
+    ],
+    ofFamily: [
+      filter.branchId ? eq(families.branchId, filter.branchId) : undefined,
+      within(ctx, reach),
+    ],
+  };
+}
+
+/** In last name, first name, then id order. Fetches `limit + 1` rows to tell if there's more. */
+export function listStudents(
+  ctx: OrgCtx,
+  limit: number,
+  after: string[] | undefined,
+  filter: StudentFilter,
+  reach: Reach,
+) {
+  const { ofStudent, ofFamily } = studentPage(ctx, after, filter, reach);
   return ctx.db
     .select(studentWithBranch)
     .from(students)
     .innerJoin(families, eq(families.id, students.familyId))
-    .where(
-      and(
-        inOrg(
-          ctx,
-          students,
-          filter.familyId ? eq(students.familyId, filter.familyId) : undefined,
-          inGrade,
-          ...studentReach(ctx, reach),
-          afterCursor,
-        ),
-        inOrg(
-          ctx,
-          families,
-          filter.branchId ? eq(families.branchId, filter.branchId) : undefined,
-          within(ctx, reach),
-        ),
-      ),
-    )
+    .where(and(inOrg(ctx, students, ...ofStudent), inOrg(ctx, families, ...ofFamily)))
     .orderBy(asc(students.lastNameNorm), asc(students.firstNameNorm), asc(students.id))
     .limit(limit + 1);
+}
+
+/**
+ * The students `listStudents` puts on that page, as ids: the same conditions in the same order.
+ * Their grades are read by them, in the same stage as the page itself (D-104). Where the page
+ * joins each student to their family, this looks the family up for each student, so it is read
+ * in the page's order too.
+ */
+export function studentsOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  after: string[] | undefined,
+  filter: StudentFilter,
+  reach: Reach,
+): IdQuery {
+  const { ofStudent, ofFamily } = studentPage(ctx, after, filter, reach);
+  const theirFamily = wide(idsFrom(ctx, families, families.id, ...ofFamily));
+  return firstIds(
+    idsFrom(ctx, students, students.id, ...ofStudent, inIds(students.familyId, theirFamily)),
+    limit,
+    asc(students.lastNameNorm),
+    asc(students.firstNameNorm),
+    asc(students.id),
+  );
 }
 
 export function findStudent(ctx: OrgCtx, id: string, reach: Reach) {
@@ -375,13 +465,27 @@ export function findStudent(ctx: OrgCtx, id: string, reach: Reach) {
     .get();
 }
 
+/** What the students of the given families that are within reach are found by. */
+const ofFamilies = (familyIds: Ids, reach: Reach) => [
+  inIds(students.familyId, familyIds),
+  studentWithin(reach),
+];
+
 /** The students of the given families that are within reach, in name order. */
 export function studentsOfFamilies(ctx: OrgCtx, familyIds: Ids, reach: Reach) {
   return ctx.db
     .select()
     .from(students)
-    .where(inOrg(ctx, students, inIds(students.familyId, familyIds), studentWithin(reach)))
+    .where(inOrg(ctx, students, ...ofFamilies(familyIds, reach)))
     .orderBy(asc(students.lastNameNorm), asc(students.firstNameNorm), asc(students.id));
+}
+
+/**
+ * The students `studentsOfFamilies` returns, as ids: their grades are read by them, in the same
+ * stage as the students themselves (D-104).
+ */
+export function studentIdsOfFamilies(ctx: OrgCtx, familyIds: Ids, reach: Reach): IdQuery {
+  return idsFrom(ctx, students, students.id, ...ofFamilies(familyIds, reach));
 }
 
 /** The ids of every student within reach. */
@@ -434,16 +538,19 @@ export async function countStudents(ctx: OrgCtx, familyId: string) {
   return row?.n ?? 0;
 }
 
-/** `grade` is the student's grade level for one academic year, written in the same batch. */
+/**
+ * `grade` is the student's grade level for one academic year, written in the same batch. Returns
+ * the student as stored, from that batch.
+ */
 export async function insertStudent(
   ctx: OrgCtx,
   row: NewStudentRow & { id: string },
   grade: (NewGradeRow & { id: string }) | null,
-) {
-  await writeWithAudit(
+): Promise<StudentRow> {
+  const [, inserted] = await writeWithAudit(
     ctx,
     [
-      ctx.db.insert(students).values(row),
+      ctx.db.insert(students).values(row).returning(),
       ...(grade ? [ctx.db.insert(studentGrades).values(grade)] : []),
     ],
     {
@@ -459,6 +566,9 @@ export async function insertStudent(
       },
     },
   );
+  const stored = (inserted as StudentRow[])[0];
+  if (!stored) throw new Error('Student missing after insert');
+  return stored;
 }
 
 /** Sets, changes or removes the student's grade for one academic year. */
@@ -480,23 +590,25 @@ function gradeStatement(ctx: OrgCtx, studentId: string, grade: GradeChange): Bat
 
 /**
  * Updates the student and, in the same batch, their grade for one academic year. The student
- * row is always written, so `updatedAt` moves even when only the grade changes.
+ * row is always written, so `updatedAt` moves even when only the grade changes. Returns the
+ * student as updated, from that batch, or undefined if they were just deleted.
  */
 export async function updateStudent(
   ctx: OrgCtx,
   before: StudentRow,
   changes: StudentChanges,
   grade: GradeChange | undefined,
-) {
+): Promise<StudentRow | undefined> {
   const pair = (gradeLevelId: string | null) =>
     grade && { academicYearId: grade.academicYearId, gradeLevelId };
-  await writeWithAudit(
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(students)
         .set({ ...changes, updatedAt: now() })
-        .where(inOrg(ctx, students, eq(students.id, before.id))),
+        .where(inOrg(ctx, students, eq(students.id, before.id)))
+        .returning(),
       ...(grade ? [gradeStatement(ctx, before.id, grade)] : []),
     ],
     {
@@ -507,6 +619,7 @@ export async function updateStudent(
       after: grade ? { ...changes, grade: pair(grade.gradeLevelId) } : changes,
     },
   );
+  return (updated as StudentRow[])[0];
 }
 
 /** Soft-deletes the student and their grade history. */
@@ -536,21 +649,6 @@ export function listGrades(ctx: OrgCtx, studentIds: Ids) {
     .select()
     .from(studentGrades)
     .where(inOrg(ctx, studentGrades, inIds(studentGrades.studentId, studentIds)));
-}
-
-export function findGrade(ctx: OrgCtx, studentId: string, academicYearId: string) {
-  return ctx.db
-    .select()
-    .from(studentGrades)
-    .where(
-      inOrg(
-        ctx,
-        studentGrades,
-        eq(studentGrades.studentId, studentId),
-        eq(studentGrades.academicYearId, academicYearId),
-      ),
-    )
-    .get();
 }
 
 /** How many students have been in this grade level, in any year. It can't be deleted while any have. */

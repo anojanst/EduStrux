@@ -9,6 +9,7 @@ import {
   type CreateStudent,
   type Family,
   type Guardian,
+  type Org,
   type Student,
   type UpdateFamily,
   type UpdateGuardian,
@@ -18,13 +19,40 @@ import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
 import { forbidden, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
 import { byKeys, decodeKeys, toPage } from '../../lib/pagination';
 import * as branches from '../branches/service';
+import { currentAcademicYear } from '../calendar/for-people';
 import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as repo from './repository';
 
+// Every function here waits for D1 once to read and, if it writes, once more to write (D-102).
+// Reads that don't need each other's answers are sent together with `Promise.all`, and the
+// checks on what they found then run in the order they always have, so the same error is
+// reported when several apply. A write answers with the rows it has in hand and the row the
+// write returned, not with a second read.
+
 type Years = { years: AcademicYear[]; current: AcademicYear | null };
+/** A student's grade level in one academic year. */
+type GradeOfYear = Pick<repo.GradeRow, 'academicYearId' | 'gradeLevelId'>;
+
+/** What a check found, or the error it threw, kept until its turn comes. */
+type Held<T> = { value: T } | { error: unknown };
+
+/**
+ * Sends another module's check now and keeps what it throws for later. `orThrow` then judges it
+ * where the check used to run, after any check that came before it.
+ */
+const held = <T>(check: Promise<T>): Promise<Held<T>> =>
+  check.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+
+function orThrow<T>(answer: Held<T>): T {
+  if ('error' in answer) throw answer.error;
+  return answer.value;
+}
 
 export function toGuardian(row: repo.GuardianRow): Guardian {
   const {
@@ -37,11 +65,11 @@ export function toGuardian(row: repo.GuardianRow): Guardian {
   return guardian;
 }
 
-/** `grades` are the student's own rows; they come back in academic-year order. */
+/** `grades` are the student's own; they come back in academic-year order. */
 export function toStudent(
   row: repo.StudentRow,
   branchId: string,
-  grades: repo.GradeRow[],
+  grades: GradeOfYear[],
   { years, current }: Years,
 ): Student {
   const {
@@ -52,7 +80,7 @@ export function toStudent(
     ...student
   } = row;
   const order = new Map(years.map((year, index) => [year.id, index]));
-  const position = (grade: repo.GradeRow) => order.get(grade.academicYearId) ?? years.length;
+  const position = (grade: GradeOfYear) => order.get(grade.academicYearId) ?? years.length;
   return {
     ...student,
     branchId,
@@ -110,57 +138,41 @@ async function findGuardianOr404(ctx: OrgCtx, id: string, reach: repo.Reach) {
   return row;
 }
 
-async function findStudentOr404(ctx: OrgCtx, id: string, reach: repo.Reach) {
-  const row = await repo.findStudent(ctx, id, reach);
-  if (!row) throw notFound('Student');
-  return row;
-}
-
-/** Students as the API returns them, each with their grade history. */
-async function loadStudents(
-  ctx: OrgCtx,
-  rows: { student: repo.StudentRow; branchId: string }[],
-): Promise<Student[]> {
-  if (rows.length === 0) return [];
-  const [grades, years] = await Promise.all([
-    repo.listGrades(
-      ctx,
-      rows.map((r) => r.student.id),
-    ),
+/**
+ * What families are shown with: their guardians, their students within reach, those students'
+ * grades and the academic years. `familyIds` is one family's id, or a query for the families on
+ * a page. The four reads are sent together, so a caller that sends the read of the families
+ * themselves in the same `Promise.all` waits for D1 once.
+ */
+function membersOf(ctx: OrgCtx, familyIds: Ids, reach: repo.Reach) {
+  return Promise.all([
+    repo.listGuardians(ctx, familyIds),
+    repo.studentsOfFamilies(ctx, familyIds, reach),
+    repo.listGrades(ctx, repo.studentIdsOfFamilies(ctx, familyIds, reach)),
     calendar.academicYears(ctx),
   ]);
-  return rows.map(({ student, branchId }) =>
-    toStudent(
-      student,
-      branchId,
-      grades.filter((g) => g.studentId === student.id),
-      years,
-    ),
-  );
 }
+type Members = Awaited<ReturnType<typeof membersOf>>;
 
-/** Families as the API returns them, each with its guardians and the students within reach. */
-async function loadFamilies(
-  ctx: OrgCtx,
+/** Families as the API returns them, each with its own guardians and students out of `members`. */
+function withMembers(
   rows: repo.FamilyRow[],
-  reach: repo.Reach,
-): Promise<Family[]> {
-  if (rows.length === 0) return [];
-  const ids = rows.map((f) => f.id);
-  const branchOf = new Map(rows.map((f) => [f.id, f.branchId]));
-  const [guardians, studentRows] = await Promise.all([
-    repo.listGuardians(ctx, ids),
-    repo.studentsOfFamilies(ctx, ids, reach),
-  ]);
-  const students = await loadStudents(
-    ctx,
-    studentRows.map((student) => ({ student, branchId: branchOf.get(student.familyId)! })),
-  );
+  [guardians, students, grades, years]: Members,
+): Family[] {
   return rows.map((family) =>
     toFamily(
       family,
       guardians.filter((g) => g.familyId === family.id),
-      students.filter((s) => s.familyId === family.id),
+      students
+        .filter((s) => s.familyId === family.id)
+        .map((student) =>
+          toStudent(
+            student,
+            family.branchId,
+            grades.filter((g) => g.studentId === student.id),
+            years,
+          ),
+        ),
     ),
   );
 }
@@ -174,17 +186,31 @@ export async function listFamilies(
   cursor: string | undefined,
   filter: { branchId?: string },
 ) {
-  if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
   const reach = reachOf(ctx, access);
-  const rows = await repo.listFamilies(ctx, limit, decodeKeys(cursor, 2), filter, reach);
+  const after = decodeKeys(cursor, 2);
+  // The page, and what it shows of other tables by a query for the families on it.
+  const [branch, rows, members] = await Promise.all([
+    filter.branchId ? held(branches.getBranch(ctx, filter.branchId)) : undefined,
+    repo.listFamilies(ctx, limit, after, filter, reach),
+    membersOf(ctx, repo.familiesOnPage(ctx, limit, after, filter, reach), reach),
+  ]);
+  if (branch) orThrow(branch);
   const { data, nextCursor } = toPage(rows, limit, (f) => byKeys(f.nameNorm, f.id));
-  return { data: await loadFamilies(ctx, data, reach), nextCursor };
+  return { data: withMembers(data, members), nextCursor };
 }
 
+/**
+ * One stage: the family and what it is shown with are read together. Nothing of the family is
+ * returned unless the family itself was found within the caller's reach.
+ */
 export async function getFamily(ctx: OrgCtx, access: Access, id: string): Promise<Family> {
   const reach = reachOf(ctx, access);
-  const row = await findFamilyOr404(ctx, id, reach);
-  return (await loadFamilies(ctx, [row], reach))[0]!;
+  const [row, members] = await Promise.all([
+    repo.findFamily(ctx, id, reach),
+    membersOf(ctx, [id], reach),
+  ]);
+  if (!row) throw notFound('Family');
+  return withMembers([row], members)[0]!;
 }
 
 /** How many families have this home branch. A branch can't be deleted while any do. */
@@ -201,7 +227,7 @@ export async function createFamily(
   checkBranchWithinReach(access, input.branchId);
 
   const id = newId('family');
-  await repo.insertFamily(ctx, {
+  const row = await repo.insertFamily(ctx, {
     id,
     orgId: ctx.orgId,
     name: input.name,
@@ -211,7 +237,8 @@ export async function createFamily(
     billingGuardianId: null,
     bankReference: bankReferenceFor(id),
   });
-  return getFamily(ctx, access, id);
+  // A new family has nobody in it yet.
+  return toFamily(row, [], []);
 }
 
 /** A family can move to another home branch; branch staff only into one of their own. */
@@ -221,20 +248,27 @@ export async function updateFamily(
   id: string,
   input: UpdateFamily,
 ): Promise<Family> {
-  const before = await findFamilyOr404(ctx, id, reachOf(ctx, access));
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-
-  const { updatedAt: _ignored, ...rest } = input;
+  const reach = reachOf(ctx, access);
+  const { updatedAt, ...rest } = input;
   const changes: repo.FamilyChanges = { ...rest };
-  if (Object.keys(changes).length === 0) return getFamily(ctx, access, id);
+  // The family, what the answer shows it with, and the branch it may be moving to. The branch
+  // is only judged below if it isn't the family's own, which is known once the family is read.
+  const [before, members, branch] = await Promise.all([
+    repo.findFamily(ctx, id, reach),
+    membersOf(ctx, [id], reach),
+    changes.branchId !== undefined ? held(branches.getBranch(ctx, changes.branchId)) : undefined,
+  ]);
+  if (!before) throw notFound('Family');
+  if (before.updatedAt !== updatedAt) throw staleData();
+  if (Object.keys(changes).length === 0) return withMembers([before], members)[0]!;
 
   if (changes.name !== undefined) changes.nameNorm = normaliseName(changes.name);
   if (changes.branchId !== undefined && changes.branchId !== before.branchId) {
-    await branches.getBranch(ctx, changes.branchId);
+    if (branch) orThrow(branch);
     checkBranchWithinReach(access, changes.branchId);
   }
   if (changes.billingGuardianId && changes.billingGuardianId !== before.billingGuardianId) {
-    const guardians = await repo.listGuardians(ctx, [id]);
+    const [guardians] = members;
     if (!guardians.some((g) => g.id === changes.billingGuardianId)) {
       throw unprocessable("The billing contact must be one of the family's guardians.", {
         billingGuardianId: ['Not a guardian of this family'],
@@ -242,14 +276,19 @@ export async function updateFamily(
     }
   }
 
-  await repo.updateFamily(ctx, before, changes);
-  return getFamily(ctx, access, id);
+  const updated = await repo.updateFamily(ctx, before, changes);
+  if (!updated) throw notFound('Family');
+  // The students carry their family's home branch, so they move with it.
+  return withMembers([updated], members)[0]!;
 }
 
 /** Deletes the family and its guardians. Refused while the family has students. */
 export async function deleteFamily(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  const before = await findFamilyOr404(ctx, id, reachOf(ctx, access));
-  const studentCount = await repo.countStudents(ctx, id);
+  const [before, studentCount] = await Promise.all([
+    repo.findFamily(ctx, id, reachOf(ctx, access)),
+    repo.countStudents(ctx, id),
+  ]);
+  if (!before) throw notFound('Family');
   if (studentCount > 0) {
     throw unprocessable(`Delete this family's ${studentCount} student(s) first.`);
   }
@@ -265,14 +304,12 @@ export async function createGuardian(
   familyId: string,
   input: CreateGuardian,
 ): Promise<Guardian> {
-  const reach = reachOf(ctx, access);
-  const family = await findFamilyOr404(ctx, familyId, reach);
+  const family = await findFamilyOr404(ctx, familyId, reachOf(ctx, access));
 
-  const id = newId('guardian');
-  await repo.insertGuardian(
+  const row = await repo.insertGuardian(
     ctx,
     {
-      id,
+      id: newId('guardian'),
       orgId: ctx.orgId,
       familyId,
       firstName: input.firstName,
@@ -289,7 +326,7 @@ export async function createGuardian(
     },
     family.billingGuardianId === null,
   );
-  return toGuardian((await findGuardianOr404(ctx, id, reach)).guardian);
+  return toGuardian(row);
 }
 
 export async function updateGuardian(
@@ -298,8 +335,7 @@ export async function updateGuardian(
   id: string,
   input: UpdateGuardian,
 ): Promise<Guardian> {
-  const reach = reachOf(ctx, access);
-  const { guardian: before } = await findGuardianOr404(ctx, id, reach);
+  const { guardian: before } = await findGuardianOr404(ctx, id, reachOf(ctx, access));
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
   const { updatedAt: _ignored, ...rest } = input;
@@ -308,8 +344,9 @@ export async function updateGuardian(
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
   if (changes.lastName !== undefined) changes.lastNameNorm = normaliseName(changes.lastName);
 
-  await repo.updateGuardian(ctx, before, changes);
-  return toGuardian((await findGuardianOr404(ctx, id, reach)).guardian);
+  const updated = await repo.updateGuardian(ctx, before, changes);
+  if (!updated) throw notFound('Guardian');
+  return toGuardian(updated);
 }
 
 /**
@@ -328,27 +365,39 @@ export async function deleteGuardian(ctx: OrgCtx, access: Access, id: string): P
 
 // ── Students ────────────────────────────────────────────────────────────────
 
-async function checkBirthDate(ctx: OrgCtx, dateOfBirth: string | null | undefined) {
-  if (!dateOfBirth) return;
-  const { timezone } = await orgs.getOrg(ctx);
-  if (dateOfBirth > localNow(timezone).date) {
+/** A birth date can't be after today, in the org's timezone. */
+function checkBirthDate(org: Org, dateOfBirth: string | null | undefined) {
+  if (dateOfBirth && dateOfBirth > localNow(org.timezone).date) {
     throw validationFailed({ dateOfBirth: ['In the future'] });
   }
 }
 
 /**
- * The academic year a grade is for: the one named, or the current one. null when the org has no
- * academic years yet, so nobody can have a grade.
+ * The academic year a grade is for: the one named, which must be one of the org's (404), or the
+ * current one. null when the org has no academic years yet, so nobody can have a grade. It reads
+ * nothing: `years` is every year of the org, already read.
  */
-async function gradeYear(ctx: OrgCtx, academicYearId: string | undefined) {
-  if (academicYearId) return (await calendar.getAcademicYear(ctx, academicYearId)).id;
-  return (await calendar.academicYears(ctx)).current?.id ?? null;
+function gradeYear({ years, current }: Years, academicYearId: string | undefined) {
+  if (!academicYearId) return current?.id ?? null;
+  if (!years.some((year) => year.id === academicYearId)) throw notFound('Academic year');
+  return academicYearId;
 }
 
 const noAcademicYear = () =>
   unprocessable('Add an academic year before giving a student a grade level.', {
     gradeLevelId: ['No academic year yet'],
   });
+
+/** What a student with no grade is shown with: no year is needed to work theirs out. */
+const NO_YEARS: Years = { years: [], current: null };
+
+/** A student's grades once a change to one year's grade is written. */
+function gradesAfter(grades: GradeOfYear[], change: repo.GradeChange | undefined): GradeOfYear[] {
+  if (!change) return grades;
+  const { academicYearId, gradeLevelId } = change;
+  const others = grades.filter((grade) => grade.academicYearId !== academicYearId);
+  return gradeLevelId ? [...others, { academicYearId, gradeLevelId }] : others;
+}
 
 export async function listStudents(
   ctx: OrgCtx,
@@ -358,34 +407,66 @@ export async function listStudents(
   query: { familyId?: string; branchId?: string; gradeLevelId?: string; academicYearId?: string },
 ) {
   const reach = reachOf(ctx, access);
-  if (query.familyId) await findFamilyOr404(ctx, query.familyId, reach);
-  if (query.branchId) await branches.getBranch(ctx, query.branchId);
-  let grade: repo.StudentFilter['grade'];
-  if (query.gradeLevelId) {
-    await curriculum.getGradeLevel(ctx, query.gradeLevelId);
-    const academicYearId = await gradeYear(ctx, query.academicYearId);
-    if (!academicYearId) return { data: [], nextCursor: null };
-    grade = { academicYearId, gradeLevelId: query.gradeLevelId };
+  const after = decodeKeys(cursor, 3);
+  // The grade filter is for the year named, or for the current one. The current one is a query
+  // the calendar gives, so the page doesn't wait for the years to be read. With no year at all
+  // it finds nobody.
+  const filter: repo.StudentFilter = {
+    familyId: query.familyId,
+    branchId: query.branchId,
+    grade: query.gradeLevelId
+      ? {
+          gradeLevelId: query.gradeLevelId,
+          academicYearId: query.academicYearId ?? (await currentAcademicYear(ctx)),
+        }
+      : undefined,
+  };
+  // The checks on the filters, the page, and the grades of the students on it by a query.
+  const [family, branch, gradeLevel, rows, grades, years] = await Promise.all([
+    query.familyId ? repo.findFamily(ctx, query.familyId, reach) : undefined,
+    query.branchId ? held(branches.getBranch(ctx, query.branchId)) : undefined,
+    query.gradeLevelId ? held(curriculum.getGradeLevel(ctx, query.gradeLevelId)) : undefined,
+    repo.listStudents(ctx, limit, after, filter, reach),
+    repo.listGrades(ctx, repo.studentsOnPage(ctx, limit, after, filter, reach)),
+    calendar.academicYears(ctx),
+  ]);
+  if (query.familyId && !family) throw notFound('Family');
+  if (branch) orThrow(branch);
+  if (gradeLevel) {
+    orThrow(gradeLevel);
+    gradeYear(years, query.academicYearId);
   }
 
-  const rows = await repo.listStudents(
-    ctx,
-    limit,
-    decodeKeys(cursor, 3),
-    { familyId: query.familyId, branchId: query.branchId, grade },
-    reach,
-  );
   const { data, nextCursor } = toPage(
     rows.map((row) => ({ ...row, id: row.student.id })),
     limit,
     ({ student }) => byKeys(student.lastNameNorm, student.firstNameNorm, student.id),
   );
-  return { data: await loadStudents(ctx, data), nextCursor };
+  return {
+    data: data.map(({ student, branchId }) =>
+      toStudent(
+        student,
+        branchId,
+        grades.filter((g) => g.studentId === student.id),
+        years,
+      ),
+    ),
+    nextCursor,
+  };
 }
 
+/**
+ * One stage: the student, their grades and the academic years are read together. Nothing of the
+ * student is returned unless the student was found within the caller's reach.
+ */
 export async function getStudent(ctx: OrgCtx, access: Access, id: string): Promise<Student> {
-  const row = await findStudentOr404(ctx, id, reachOf(ctx, access));
-  return (await loadStudents(ctx, [row]))[0]!;
+  const [found, grades, years] = await Promise.all([
+    repo.findStudent(ctx, id, reachOf(ctx, access)),
+    repo.listGrades(ctx, [id]),
+    calendar.academicYears(ctx),
+  ]);
+  if (!found) throw notFound('Student');
+  return toStudent(found.student, found.branchId, grades, years);
 }
 
 export async function createStudent(
@@ -393,17 +474,28 @@ export async function createStudent(
   access: Access,
   input: CreateStudent,
 ): Promise<Student> {
-  await findFamilyOr404(ctx, input.familyId, reachOf(ctx, access));
-  await checkBirthDate(ctx, input.dateOfBirth);
+  const { gradeLevelId } = input;
+  const [family, org, gradeLevel, years] = await Promise.all([
+    repo.findFamily(ctx, input.familyId, reachOf(ctx, access)),
+    orgs.getOrg(ctx),
+    gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,
+    gradeLevelId ? calendar.academicYears(ctx) : NO_YEARS,
+  ]);
+  if (!family) throw notFound('Family');
+  checkBirthDate(org, input.dateOfBirth);
   let academicYearId: string | null = null;
-  if (input.gradeLevelId) {
-    await curriculum.getGradeLevel(ctx, input.gradeLevelId);
-    academicYearId = await gradeYear(ctx, input.academicYearId);
+  if (gradeLevelId) {
+    if (gradeLevel) orThrow(gradeLevel);
+    academicYearId = gradeYear(years, input.academicYearId);
     if (!academicYearId) throw noAcademicYear();
   }
 
   const id = newId('student');
-  await repo.insertStudent(
+  const grade =
+    gradeLevelId && academicYearId
+      ? { id: newId('studentGrade'), orgId: ctx.orgId, studentId: id, academicYearId, gradeLevelId }
+      : null;
+  const row = await repo.insertStudent(
     ctx,
     {
       id,
@@ -416,17 +508,9 @@ export async function createStudent(
       dateOfBirth: input.dateOfBirth ?? null,
       notes: input.notes ?? null,
     },
-    input.gradeLevelId && academicYearId
-      ? {
-          id: newId('studentGrade'),
-          orgId: ctx.orgId,
-          studentId: id,
-          academicYearId,
-          gradeLevelId: input.gradeLevelId,
-        }
-      : null,
+    grade,
   );
-  return getStudent(ctx, access, id);
+  return toStudent(row, family.branchId, grade ? [grade] : [], years);
 }
 
 /**
@@ -439,41 +523,57 @@ export async function updateStudent(
   id: string,
   input: UpdateStudent,
 ): Promise<Student> {
-  const { student: before } = await findStudentOr404(ctx, id, reachOf(ctx, access));
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-
-  const { updatedAt: _ignored, gradeLevelId, academicYearId, ...rest } = input;
+  const { updatedAt, gradeLevelId, academicYearId, ...rest } = input;
   const changes: repo.StudentChanges = { ...rest };
+  // The student, every grade they have (the one being changed is among them, and the answer
+  // shows them all), the academic years, and the grade level they may be given.
+  const [found, grades, years, org, gradeLevel] = await Promise.all([
+    repo.findStudent(ctx, id, reachOf(ctx, access)),
+    repo.listGrades(ctx, [id]),
+    calendar.academicYears(ctx),
+    orgs.getOrg(ctx),
+    gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,
+  ]);
+  if (!found) throw notFound('Student');
+  const { student: before, branchId } = found;
+  if (before.updatedAt !== updatedAt) throw staleData();
+
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
   if (changes.lastName !== undefined) changes.lastNameNorm = normaliseName(changes.lastName);
-  await checkBirthDate(ctx, changes.dateOfBirth);
+  checkBirthDate(org, changes.dateOfBirth);
 
   let grade: repo.GradeChange | undefined;
   if (gradeLevelId !== undefined) {
-    if (gradeLevelId) await curriculum.getGradeLevel(ctx, gradeLevelId);
-    const yearId = await gradeYear(ctx, academicYearId);
+    if (gradeLevel) orThrow(gradeLevel);
+    const yearId = gradeYear(years, academicYearId);
     if (!yearId && gradeLevelId) throw noAcademicYear();
-    const existing = yearId ? await repo.findGrade(ctx, id, yearId) : undefined;
+    const existing = grades.find((g) => g.academicYearId === yearId);
     if (yearId && (existing?.gradeLevelId ?? null) !== gradeLevelId) {
       grade = { academicYearId: yearId, gradeLevelId, existing, newId: newId('studentGrade') };
     }
   }
-  if (Object.keys(changes).length === 0 && !grade) return getStudent(ctx, access, id);
+  if (Object.keys(changes).length === 0 && !grade) {
+    return toStudent(before, branchId, grades, years);
+  }
 
-  await repo.updateStudent(ctx, before, changes, grade);
-  return getStudent(ctx, access, id);
+  const updated = await repo.updateStudent(ctx, before, changes, grade);
+  if (!updated) throw notFound('Student');
+  return toStudent(updated, branchId, gradesAfter(grades, grade), years);
 }
 
 /** Deletes the student and their grade history. Refused while the student has enrolments. */
 export async function deleteStudent(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  const { student } = await findStudentOr404(ctx, id, reachOf(ctx, access));
-  const enrolmentCount = await enrolment.countEnrolments(ctx, { studentId: id });
+  const [found, enrolmentCount] = await Promise.all([
+    repo.findStudent(ctx, id, reachOf(ctx, access)),
+    enrolment.countEnrolments(ctx, { studentId: id }),
+  ]);
+  if (!found) throw notFound('Student');
   if (enrolmentCount > 0) {
     throw unprocessable(
       `This student has ${enrolmentCount} enrolment(s), so they can't be deleted.`,
     );
   }
-  await repo.softDeleteStudent(ctx, student);
+  await repo.softDeleteStudent(ctx, found.student);
 }
 
 // ── Who a caller reaches, for other modules to filter by ─────────────────────
