@@ -104,6 +104,20 @@ Oceania) and the queues `edustrux-email` and `edustrux-jobs`. Its vars and bindi
 `env.production` in `apps/api/wrangler.jsonc`; the top level of that file is local development
 and tests.
 
+Merging to `main` deploys it. The workflow
+[.github/workflows/deploy-production.yml](.github/workflows/deploy-production.yml) runs
+`pnpm typecheck` and `pnpm test`, applies new migrations to the production D1, then deploys the
+Worker. A failed check or migration stops it before the deploy.
+
+- Merges that only change `docs/`, Markdown files or `.claude/` don't start it.
+- It can be started by hand from the repository's Actions tab ("Run workflow"). Only `main` is
+  ever deployed.
+- It needs two repository secrets, set once by the owner with `gh secret set <NAME>`:
+  `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`, a Cloudflare API token for this account
+  only, made from the "Edit Cloudflare Workers" template with D1: Edit and Queues: Edit added.
+
+To deploy from your own machine instead:
+
 ```bash
 pnpm --filter @edustrux/api exec wrangler login   # once per machine
 pnpm db:migrate:production                         # apply new migrations to the remote D1
