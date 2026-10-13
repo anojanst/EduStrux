@@ -12,7 +12,7 @@ endpoints:
   - DELETE /courses/{id}
   - DELETE /tax-rates/{id}
 branch: task/tui-91-93-query-plans
-pr:
+pr: 31
 ---
 
 # TUI-93 Price rules: every query reads the whole table

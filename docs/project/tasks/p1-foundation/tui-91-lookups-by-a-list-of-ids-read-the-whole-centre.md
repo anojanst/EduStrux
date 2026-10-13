@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-91-93-query-plans
-pr:
+pr: 31
 ---
 
 # TUI-91 Lookups by a list of ids read the whole centre

@@ -15,7 +15,7 @@ endpoints:
   - GET /subjects
   - GET /tax-rates
 branch: task/tui-91-93-query-plans
-pr:
+pr: 31
 ---
 
 # TUI-92 List pages read and sort the whole centre
