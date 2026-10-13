@@ -15,7 +15,7 @@ endpoints:
   - POST /invoices/{invoiceId}/void
   - GET /jobs/{jobId}
 branch: task/tui-37-invoice-generation
-pr:
+pr: 28
 ---
 
 # TUI-37 Generate term/monthly invoices (job)
