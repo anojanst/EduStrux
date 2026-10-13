@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-13 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-14 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.

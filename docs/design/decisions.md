@@ -2459,9 +2459,11 @@ is the only deployed environment).
   - `apps/api/test/query-plans.test.ts` takes the plan of each lookup the repositories send and
     fails when one isn't reached through its ids. A new lookup gets a row there.
   - Not changed here, and the same kind of miss:
-    - A reach that is a subquery, not a list. A parent's families (`id IN (SELECT family_id
-      FROM guardians …)`) and a teacher's families are still found by reading the org's
-      families.
+    - A reach that is a subquery, not a list of ids: a parent's families, found through
+      `guardians`, and a teacher's families, found through `students`. Each still reads the
+      org's families, because `inIds` takes a list only. Both ways of writing the org gave the
+      same plans with a subquery on a table in place of the list, so `inIds` can be widened to
+      take one when the reaches become subqueries (D-102).
     - Every student in some branches (`studentIds`, for branch staff's enrolments) reads every
       student in the org.
     - An invoice run's count of the lines it made reads every invoice line in the org.
