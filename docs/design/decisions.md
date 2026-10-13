@@ -713,6 +713,10 @@ is the only deployed environment).
   - The other two options there stay deferred: storing only the changed fields in
     `before`/`after`, and archiving old audit rows to R2.
 - **Tasks:** TUI-31 (and TUI-34, TUI-37, TUI-79).
+- **Update 2026-10-12 (TUI-34):** Attendance marking follows the rule: one `attendance.marked`
+  row per request, not one per student. Its `before` and `after` list only the students whose
+  status changed, the first audit row to store only what changed. The general "changed fields
+  only" option and archiving stay deferred (D-075).
 
 ## D-046 · 2026-10-11 · A holiday added later removes the sessions it closes
 
@@ -735,6 +739,10 @@ is the only deployed environment).
     moves in TUI-49) need a rule for when a holiday or a schedule change removes that session.
     Not decided yet.
 - **Tasks:** TUI-31 (and TUI-49, TUI-68).
+- **Update 2026-10-12 (TUI-34):** Attendance has its rule. A session can be marked only from its
+  own day on, so one removed days ahead has no marks. A session marked today before it starts can
+  still be removed that day; its marks stay in the table, hidden with the session (D-070).
+  Absence notices, make-up bookings and one-off moves still need their own rule.
 
 ## D-047 · 2026-10-11 · How sessions are generated: upcoming only, by diff, stored in local time
 
@@ -772,6 +780,9 @@ is the only deployed environment).
     removes it (see D-046).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-31 (and TUI-49, TUI-68).
+- **Update 2026-10-12 (TUI-34):** For attendance, marking opens on the session's day, not at its
+  start time, so the generator can still remove a session that was marked earlier the same day.
+  The generator itself is unchanged (D-070).
 
 ## D-048 · 2026-10-11 · Who reaches classes and sessions
 
@@ -805,6 +816,9 @@ is the only deployed environment).
 - **Update 2026-10-12 (TUI-33):** A parent now reads the classes one of their children holds an
   active enrolment in, and those classes' sessions (D-060). `GET /sessions` has the student
   filter, named `?studentId` (D-063).
+- **Update 2026-10-12 (TUI-34):** A teacher now marks attendance for the classes they teach,
+  their first write. Class and session routes stay read-only for them. A session's attendance is
+  reached through the session, with this reach (D-073).
 
 ## D-049 · 2026-10-11 · Class rules: what a class keeps, its name, dates, teacher and room
 
@@ -846,6 +860,8 @@ is the only deployed environment).
 - **Tasks:** TUI-31 (and TUI-33, TUI-34, TUI-42).
 - **Update 2026-10-12 (TUI-33):** Deleting a class is now refused (422) while it has enrolments
   (D-063). The attendance check is still TUI-34's.
+- **Update 2026-10-12 (TUI-34):** No attendance check was added. A class with attendance already
+  has enrolments, and those block deleting it (D-063, D-075).
 
 ## D-050 · 2026-10-11 · Schedule slots, class and session lists, in-use checks and paths
 
@@ -1185,6 +1201,9 @@ is the only deployed environment).
     Attendance (TUI-34) should decide. Tracked as an open question in handoff §11.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-33 (and TUI-34).
+- **Update 2026-10-12 (TUI-34):** Attendance was built keeping this behaviour. The class's branch
+  marks a cross-branch child by name and still gets no guardian or emergency contacts. That is an
+  assumption the owner hasn't confirmed, so the question stays open in handoff §11 (D-074).
 
 ## D-062 · 2026-10-12 · Enrolment rules: dates, price override, status, duplicates, capacity
 
@@ -1261,6 +1280,9 @@ is the only deployed environment).
   - Student caps (TUI-74) can define an "active" student from enrolments (D-055).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-33 (and TUI-34, TUI-46, TUI-47, TUI-74).
+- **Update 2026-10-12 (TUI-34):** Built as stated. A session's roster is the students whose
+  active enrolment covers its date, plus anyone already marked at it (D-072). Attendance added no
+  in-use checks of its own: the enrolment ones above already cover it (D-075).
 
 ## D-064 · 2026-10-12 · One deployed environment for now: production
 
@@ -1434,3 +1456,175 @@ is the only deployed environment).
     - That the crons and queue consumers still run. They aren't web requests, so they should be
       unaffected, but Cloudflare's docs page doesn't say so and it wasn't tested.
 - **Tasks:** TUI-24 (and TUI-71, TUI-73, TUI-83, TUI-86).
+
+## D-070 · 2026-10-12 · A session can be marked from its own day on
+
+- **Context:** TUI-34 had to settle when a session's attendance can be taken. D-046 and D-047 had
+  also left a rule open: what happens to things attached to an upcoming session when a holiday or
+  a schedule change removes it.
+- **Decision:**
+  - `PUT /sessions/{sessionId}/attendance` works from the session's own local date on, in the
+    org's timezone. Today's session can be marked before its start time, and any past session can
+    still be marked.
+  - A session dated after today is `422 unprocessable`, with no `fields`.
+  - It opens on the day, not at the start time, because teachers take the roll as students
+    arrive, a few minutes before the lesson starts.
+  - A `cancelled` session can't be marked: `422 unprocessable`.
+  - `GET` works for any session the caller reaches, including a future one and a cancelled one.
+- **Consequences:**
+  - This partly answers the rule D-046 left open, for attendance. A session dated after today has
+    no marks, so a holiday or a schedule change that removes it days ahead leaves nothing behind.
+  - A same-day gap remains. The generator and `POST /holidays` remove `scheduled` sessions that
+    haven't started (D-046, D-047). A session marked today before it starts can still be removed
+    that same day by a schedule change or a new holiday. Its attendance rows stay in the table
+    and are hidden with the session: the routes only reach marks through a live session. Nothing
+    in the generator or in holidays changed.
+  - Anything that later counts attendance (reports, make-up credits in TUI-55, per-lesson
+    billing) must count only the marks of sessions that still exist.
+  - Not taken: opening marking only once the session has started, which would close the gap
+    completely. Moving to it later is a tightening.
+  - There is no cut-off for marking a past session.
+  - Nothing writes `cancelled` yet; TUI-49 will. What happens to marks already on a session when
+    it is cancelled or moved is for TUI-49.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-34 (and TUI-49, TUI-55).
+
+## D-071 · 2026-10-12 · Marking attendance merges: one student, some or the whole class
+
+- **Context:** The handoff listed `PUT /sessions/{id}/attendance` with no body. Attendance is
+  one-tap on a phone (handoff §8), so one request has to be able to carry one student as well as
+  a whole class.
+- **Decision:**
+  - The body is `{ records: [{ studentId, status }] }`, with 1 to 1000 records. `status` is
+    `present`, `absent`, `late`, `excused` or null.
+  - PUT merges, it doesn't replace. Each student listed takes the status sent. `status: null`
+    clears the mark (soft-deletes its row). Anyone left out keeps theirs. So one tap sends one
+    student, and "mark all" sends the class.
+  - Each student can be listed once. A repeat is 400 on `records.N.studentId`
+    (`['Listed more than once']`). An empty list is 400.
+  - It takes no `updatedAt` and has no conflict check: the last mark for a student wins. Marks
+    are written as an upsert on the table's unique index (D-075), so two people marking the same
+    session at once don't collide.
+  - A PUT whose marks are already in place changes nothing, writes no audit row and leaves
+    `markedAt` as it was. This is the D-047 rule for saving the same schedule twice.
+  - It takes no `Idempotency-Key`: the request is idempotent by itself.
+- **Consequences:**
+  - A PUT doesn't mean "this is the whole roster". A student left out isn't cleared; clearing
+    takes an explicit null.
+  - Handoff §5's edit-conflict rule (`updatedAt`) and its `Idempotency-Key` on bulk actions
+    don't apply to this route.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-34.
+
+## D-072 · 2026-10-12 · A session's roster: who is expected and who can be marked
+
+- **Context:** D-063 said who is expected at a session is the active enrolments that cover its
+  date. TUI-34 settled the rest: who else is on the roster, who can be marked, and what the
+  routes return.
+- **Decision:**
+  - A session's roster is the students whose active enrolment in the session's class covers the
+    session's date (start to end, both included: the D-063 rule), plus anyone already marked at
+    it.
+  - A marked student stays on the roster if their enrolment later stops covering the session.
+    Their mark can still be corrected or cleared. Once cleared, they drop off.
+  - Only students on the roster can be marked. A `studentId` that isn't on it is
+    `422 unprocessable` with `fields['records.N.studentId']: ['Not enrolled for this session']`,
+    and the whole request is refused: nobody is marked.
+  - That covers a student in another class, one whose enrolment starts later or has ended, an id
+    the org doesn't have, and another org's student. None of them is 404, so the response
+    confirms nothing about them.
+  - `GET` and `PUT` both return 200 with the same shape, `SessionAttendance`:
+    `{ sessionId, records }`. Each record is `studentId`, `studentFirstName`, `studentLastName`,
+    `status` and `markedAt`. `status` is null until the student is marked. `markedAt` is when the
+    status was last set, and null when unmarked.
+  - It isn't paged. The whole roster comes back, by last name, then first name, then id, on
+    normalised names (D-056).
+- **Consequences:**
+  - Here an id the caller can't use is 422, where `POST /enrolments` and the list filters answer
+    404 (D-058, D-063).
+  - Make-up attendees (TUI-55) aren't on the roster yet.
+  - "Expected" counts active enrolments only. When withdrawals arrive (TUI-46), a withdrawn
+    student drops off the rosters of past sessions they were never marked at. TUI-46 should
+    decide whether "expected" should instead be any enrolment that covered the date.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-34 (and TUI-46, TUI-55).
+
+## D-073 · 2026-10-12 · Who reaches attendance: a teacher marks the classes they teach
+
+- **Context:** Handoff §6's "Attendance and notes" row gives each role a reach. The permissions
+  `attendance:read` and `attendance:write` already existed; TUI-34 is the first module to use
+  them, so it settled what the reach means in the API.
+- **Decision:**
+  - No new permission. `GET` needs `attendance:read` and `PUT` needs `attendance:write`.
+  - A session's attendance is reached through the session, with the class reach of D-048 and
+    D-060. A session outside the caller's reach is 404 on both routes.
+  - Owner: every session, read and mark.
+  - Branch manager and front desk: their branches' sessions, read and mark. A membership with no
+    branch list reaches every branch; an empty list reaches none.
+  - Teacher: the sessions of the classes they teach, read and mark. Reach follows the class's
+    teacher, not the teacher copied onto the session (D-048).
+  - Parent: read only (`PUT` is 403), and only their own children's records on a session, never
+    the rest of the roster. A session of a class none of their children holds an active enrolment
+    in is 404.
+  - Accountant: 403 on both routes.
+- **Consequences:**
+  - This is the first route a teacher writes to. Class and session routes stay read-only for
+    them (D-048).
+  - It matches the handoff §6 row, so nothing differs from the plan. The rest of that row (lesson
+    notes, and a parent reporting an absence) isn't built here.
+  - A parent reaches a session through any child with an active enrolment in the class, whatever
+    its dates (D-060). When none of their children is on that session's roster, `records` is
+    empty.
+  - The teacher today view (TUI-57) uses these routes.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-34 (and TUI-57).
+
+## D-074 · 2026-10-12 · Cross-branch children are marked by name (assumption, for the owner to confirm)
+
+- **Context:** D-061 and handoff §11 left a question to TUI-34. Branch-limited staff of a class's
+  branch see a child from another home branch by name, but can't open the student or the family,
+  so they have no guardian or emergency contacts for that child. Should they get them?
+- **Decision:** Attendance was built to keep today's behaviour:
+  - A roster record carries the student's id and name only.
+  - Branch-limited staff of the class's branch can mark a child whose home branch is elsewhere.
+  - They still can't open that student or family: `GET /students/{studentId}` stays 404 for
+    them, and they get no guardian or emergency contacts.
+  - The class's teacher does reach that student, their family and guardians (D-060).
+  - **Assumption: the commander stated this before the build and the owner didn't object, but
+    the owner hasn't decided it. The owner needs to confirm it at review.**
+- **Consequences:**
+  - No reach was widened and no contact details were added to the roster.
+  - The open question in handoff §11 stays open, with a note that attendance was built this way.
+  - Giving the class's branch those contacts later means a new decision.
+- **Tasks:** TUI-34.
+
+## D-075 · 2026-10-12 · Attendance routes, table, audit row and in-use checks
+
+- **Context:** More rules the TUI-34 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - The routes are `GET` and `PUT /sessions/{sessionId}/attendance`. The path parameter is
+    `{sessionId}` (the handoff wrote `{id}`), as on `GET /sessions/{sessionId}` (D-050).
+  - A new `attendance` table holds one row per student marked at a session: `session_id`,
+    `student_id` and `status`, plus the common columns. A student with no row hasn't been marked.
+    Clearing a mark soft-deletes its row.
+  - `status` is `present`, `absent`, `late` or `excused`.
+  - A partial unique index on org, session and student, over non-deleted rows, allows one mark
+    per student at a session. There is also an index on org and student.
+  - An attendance row has the new id prefix `att_`. The API doesn't expose the id.
+  - A PUT that changes something writes one `attendance.marked` audit row for the whole request,
+    not one per student (the D-045 rule). Its entity type is `session` and its entity id is the
+    session's. `before` and `after` are `{ records: [{ studentId, status }] }`, listing only the
+    students whose status changed, with the old and the new status (null = unmarked).
+  - No in-use checks were added. A student or class with attendance already has enrolments, and
+    those block deleting it (D-063).
+- **Consequences:**
+  - This is the first audit row that stores only what changed. The general option of storing only
+    the changed fields in `before`/`after`, and archiving old audit rows, stay deferred (D-045,
+    TUI-79). The TUI-79 note asked for that option to be decided before attendance marking was
+    built; it is still open.
+  - The in-use reasoning holds while an enrolment can't be deleted. If TUI-46 lets a mistaken
+    enrolment be deleted (D-063), it must deal with the marks already made under it.
+  - Nothing sets a status automatically. Whether an absence notice marks a student `excused` is
+    for TUI-54.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-34 (and TUI-46, TUI-54, TUI-79).

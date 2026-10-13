@@ -64,6 +64,13 @@
       "when": 1791795836964,
       "tag": "0008_enrolments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791801219950,
+      "tag": "0009_attendance",
+      "breakpoints": true
     }
   ]
 }

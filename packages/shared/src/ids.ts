@@ -23,6 +23,7 @@ export const ID_PREFIXES = {
   classSchedule: 'csl',
   session: 'ses',
   enrolment: 'enr',
+  attendance: 'att',
   invoice: 'inv',
   payment: 'pay',
   job: 'job',
