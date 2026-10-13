@@ -1,13 +1,13 @@
 ---
 id: TUI-91
 title: Lookups by a list of ids read the whole centre
-status: todo
+status: done
 phase: P1
 module: platform
 priority: P1
 size: M
 endpoints: []
-branch:
+branch: task/tui-91-93-query-plans
 pr:
 ---
 
@@ -49,3 +49,16 @@ Ideas, none decided:
 Also here, because it is the same kind of miss: `activeStudentIdsOn` in the enrolment repository
 uses `SELECT DISTINCT`, which makes the planner read every enrolment of the org; without
 `DISTINCT` it uses the class index (TUI-89).
+
+Built as:
+
+- `inOrg` writes the org to fit the lookup's index when it is given an id list from `inIds`:
+  `+org_id = ?` for a list of primary keys, and `(org_id, column) IN (SELECT ?, value …)` for a
+  list on any other column (D-100). Lookups are written as before.
+- All eight statements above now go to their ids, and so do courses by id and sessions by
+  class_id, which the invoice run sends. `activeStudentIdsOn` dropped `DISTINCT`.
+- `apps/api/test/query-plans.test.ts` takes the plan of each lookup and fails when one isn't
+  reached through its ids.
+- Left for the tasks that rework those services: a reach that is a subquery (a parent's or a
+  teacher's families), every student in some branches, and an invoice run's count of its lines
+  still read the org (D-100).

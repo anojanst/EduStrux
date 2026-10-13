@@ -13,11 +13,15 @@ export type Reach = { classIds?: string[]; studentIds?: string[] };
 
 export type EnrolmentFilter = { studentId?: string; classId?: string };
 
+/**
+ * One list is a teacher's classes or a parent's children: a few ids, which the query goes
+ * straight to. Both lists together are everything in a branch manager's branches, and only
+ * narrow the page being read.
+ */
 function within(reach: Reach): SQL | undefined {
-  return or(
-    reach.classIds ? inIds(enrolments.classId, reach.classIds) : undefined,
-    reach.studentIds ? inIds(enrolments.studentId, reach.studentIds) : undefined,
-  );
+  const inClasses = reach.classIds && inIds(enrolments.classId, reach.classIds);
+  const ofStudents = reach.studentIds && inIds(enrolments.studentId, reach.studentIds);
+  return inClasses && ofStudents ? or(inClasses, ofStudents) : (inClasses ?? ofStudents);
 }
 
 const active = eq(enrolments.status, 'active');
@@ -138,10 +142,14 @@ export async function activeStudentIds(ctx: OrgCtx, classIds: string[]) {
   return rows.map((row) => row.id);
 }
 
-/** The students whose active enrolment in the class covers `date`. */
+/**
+ * The students whose active enrolment in the class covers `date`. A student has at most one
+ * active enrolment in a class, so no id comes back twice. Asking for DISTINCT anyway makes SQLite
+ * read every enrolment in the org, in student order, instead of the class's own.
+ */
 export async function activeStudentIdsOn(ctx: OrgCtx, classId: string, date: string) {
   const rows = await ctx.db
-    .selectDistinct({ id: enrolments.studentId })
+    .select({ id: enrolments.studentId })
     .from(enrolments)
     .where(
       inOrg(

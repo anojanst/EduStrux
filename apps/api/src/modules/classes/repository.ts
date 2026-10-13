@@ -60,14 +60,18 @@ function chunks<T>(rows: T[], size: number): T[][] {
   return out;
 }
 
+/** The reach as separate conditions, for `inOrg` to find a list of ids to go to among them. */
+const reachConditions = (reach: Reach) => [
+  reach.branchIds ? inIds(classes.branchId, reach.branchIds) : undefined,
+  reach.teacherMembershipId
+    ? eq(classes.teacherMembershipId, reach.teacherMembershipId)
+    : undefined,
+  reach.classIds ? inIds(classes.id, reach.classIds) : undefined,
+];
+
+/** The reach as one condition, which only narrows what the rest of the query finds. */
 function within(reach: Reach): SQL | undefined {
-  return and(
-    reach.branchIds ? inIds(classes.branchId, reach.branchIds) : undefined,
-    reach.teacherMembershipId
-      ? eq(classes.teacherMembershipId, reach.teacherMembershipId)
-      : undefined,
-    reach.classIds ? inIds(classes.id, reach.classIds) : undefined,
-  );
+  return and(...reachConditions(reach));
 }
 
 /** The spans are bound as one JSON value, so a student in many classes stays under D1's limit. */
@@ -92,7 +96,11 @@ const upcoming = (moment: LocalMoment) =>
 
 // ── Classes ─────────────────────────────────────────────────────────────────
 
-/** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+/**
+ * Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. A
+ * caller limited to some branches or classes gets their page from those, not from every class in
+ * the org.
+ */
 export function listClasses(
   ctx: OrgCtx,
   limit: number,
@@ -108,7 +116,7 @@ export function listClasses(
         ctx,
         classes,
         ...classFilter(filter),
-        within(reach),
+        ...reachConditions(reach),
         afterId ? gt(classes.id, afterId) : undefined,
       ),
     )

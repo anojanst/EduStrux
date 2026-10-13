@@ -2339,3 +2339,53 @@ is the only deployed environment).
     invoice routes (TUI-39).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-37 (and TUI-38, TUI-39, TUI-59).
+
+## D-100 · 2026-10-13 · A lookup by a list of ids goes to the ids
+
+- **Context:** An audit took the query plan of every statement the test suite sends (TUI-91).
+  A query for rows by a list of ids read every row the org has in the table, then checked the
+  list. `inOrg` wrote `org_id = ?` beside the list from `inIds`, and production has no table
+  statistics. Without them SQLite guesses the org has about 10 rows and the list 25, so it
+  enters the table by the org. D1 counts and bills the rows read.
+- **Decision:**
+  - A lookup is still written `inOrg(ctx, table, inIds(column, ids), …)`. `inOrg` now writes the
+    org to fit the index the lookup should use:
+    - A list of primary keys: `+org_id = ?`. The plus sign stops SQLite choosing an index by the
+      org, which leaves the primary key. The org is still checked on every row.
+    - A list on any other column: `(org_id, column) IN (SELECT ?, value FROM json_each(?))`. The
+      org and the id are matched as a pair, which is what the index on `(org_id, column)` holds.
+      No `org_id = ?` stands alone for SQLite to prefer.
+  - Every statement still filters by org, and the ids are still bound as one JSON value.
+  - It holds with no statistics. Nothing relies on `ANALYZE` or `PRAGMA optimize` being run.
+  - The first id list given straight to `inOrg`, on one of the table's own columns, is the
+    lookup. A second list, or one inside `and()`, `or()` or a subquery, only narrows.
+  - A page limited to a caller's own records by a list of ids is read the same way: from the
+    ids, then sorted. That is a teacher's or a parent's enrolments, a teacher's students, a
+    parent's or a branch's invoices, and the classes of staff limited to some branches. Its cost
+    follows the list, not the centre.
+  - Staff limited to some branches reach enrolments through two lists at once, every class and
+    every student in their branches. Those only narrow the page being read (D-101).
+  - `activeStudentIdsOn` (who is expected at a lesson) no longer asks for `DISTINCT`. A student
+    has at most one active enrolment in a class (D-062), so no id repeats, and `DISTINCT` made
+    SQLite read every enrolment in the org in student order.
+  - Weighed and not chosen:
+    - A join driven from `json_each`. It changes the `FROM` of every lookup, so it can't sit
+      behind `inOrg`, and an id listed twice comes back twice.
+    - `INDEXED BY`. Each query would name its index, drizzle has no builder for it, and a
+      renamed index fails at run time.
+    - `likelihood()`. It only moves SQLite's estimates, so the plan still rests on them.
+- **Consequences:**
+  - Measured on a local D1, in an org of 300 students and 600 enrolments: three students by id
+    went from 304 rows read to 9, the classes of three students from 604 to 15, and who is
+    expected at a lesson from 601 to 31.
+  - `apps/api/test/query-plans.test.ts` takes the plan of each lookup the repositories send and
+    fails when one isn't reached through its ids. A new lookup gets a row there.
+  - Not changed here, and the same kind of miss:
+    - A reach that is a subquery, not a list. A parent's families (`id IN (SELECT family_id
+      FROM guardians …)`) and a teacher's families are still found by reading the org's
+      families.
+    - Every student in some branches (`studentIds`, for branch staff's enrolments) reads every
+      student in the org.
+    - An invoice run's count of the lines it made reads every invoice line in the org.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-91 (and TUI-89, TUI-94, TUI-95, TUI-97).

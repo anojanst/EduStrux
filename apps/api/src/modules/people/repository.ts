@@ -57,7 +57,7 @@ function within(ctx: OrgCtx, reach: Reach): SQL | undefined {
       ? sql`${families.id} in (select ${guardians.familyId} from ${guardians} where ${guardians.orgId} = ${ctx.orgId} and ${guardians.membershipId} = ${reach.guardianMembershipId} and ${guardians.deletedAt} is null)`
       : undefined,
     reach.studentIds
-      ? sql`${families.id} in (select ${students.familyId} from ${students} where ${students.orgId} = ${ctx.orgId} and ${inIds(students.id, reach.studentIds)} and ${students.deletedAt} is null)`
+      ? sql`${families.id} in (select ${students.familyId} from ${students} where ${inOrg(ctx, students, inIds(students.id, reach.studentIds))})`
       : undefined,
   );
 }
