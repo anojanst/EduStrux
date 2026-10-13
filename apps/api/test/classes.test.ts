@@ -501,6 +501,130 @@ describe('classes', () => {
     );
     expect(unknown.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 400]);
   });
+
+  it('gives each class on a page its own weekly slots, on a later page and through a filter too', async () => {
+    const { api, addClass, setSchedule, member } = await setup();
+    const teacher = await member('teacher');
+    const a = await addClass({ name: 'A' });
+    const b = await addClass({ name: 'B', teacherId: teacher.id });
+    const c = await addClass({ name: 'C', teacherId: teacher.id });
+    await setSchedule(a.id, [TUE]);
+    await setSchedule(b.id, [THU, TUE]);
+    await setSchedule(c.id, [FRI]);
+    const slots = (res: { body: { data: Class[] } }) =>
+      res.body.data.map((k) => [k.name, k.schedule]);
+
+    const first = await api('GET', '/classes?limit=2');
+    expect(slots(first)).toEqual([
+      ['A', [TUE]],
+      ['B', [TUE, THU]],
+    ]);
+    const second = await api('GET', `/classes?limit=2&cursor=${first.body.nextCursor}`);
+    expect(slots(second)).toEqual([['C', [FRI]]]);
+    expect(slots(await api('GET', `/classes?teacherId=${teacher.id}&limit=1`))).toEqual([
+      ['B', [TUE, THU]],
+    ]);
+    expect(slots(await teacher.as('GET', '/classes'))).toEqual([
+      ['B', [TUE, THU]],
+      ['C', [FRI]],
+    ]);
+  });
+
+  it('answers each write with the class as it is then stored', async () => {
+    const { api, addClass, setSchedule, room, member, end } = await setup();
+    const teacher = await member('teacher');
+    const created = await addClass();
+    const stored = async () => (await api('GET', `/classes/${created.id}`)).body as Class;
+    expect(await stored()).toEqual(created);
+
+    const scheduled = await setSchedule(created.id, [THU, TUE]);
+    expect(scheduled.class).toEqual({ ...created, schedule: [TUE, THU] });
+    expect(await stored()).toEqual(scheduled.class);
+    // The same slots again write nothing, and the answer is still the class.
+    expect((await setSchedule(created.id, [TUE, THU])).class).toEqual(scheduled.class);
+
+    // A change that also restaffs and moves the class's sessions.
+    const updated = await api('PATCH', `/classes/${created.id}`, {
+      updatedAt: created.updatedAt,
+      name: 'Group B',
+      roomId: room.id,
+      teacherId: teacher.id,
+      endDate: addDays(end, -14),
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      name: 'Group B',
+      roomId: room.id,
+      teacherId: teacher.id,
+      endDate: addDays(end, -14),
+      schedule: [TUE, THU],
+    });
+    expect(await stored()).toEqual(updated.body);
+  });
+
+  it('reports the same check as before when several would fail', async () => {
+    const { api, addClass, member, course, term, main, start, end } = await setup();
+    await addClass(); // Group A, the name the last checks find taken
+    const other = await addClass({ name: 'Group B' });
+    const range = `from=${start}&to=${end}`;
+    const answer = async (as: typeof api, method: string, path: string, body?: unknown) => {
+      const res = await as(method, path, body);
+      return `${res.status} ${res.body.error.message}`;
+    };
+    const early = addDays(start, -1); // before the term starts
+
+    // Adding: the course, the term, the branch, the caller's branches, the room, the teacher, the
+    // dates, then the name.
+    const good = { courseId: course.id, termId: term.id, branchId: main.id, name: 'Group A' };
+    const add = (body: Record<string, unknown>, as = api) =>
+      answer(as, 'POST', '/classes', { ...good, ...body });
+    expect(await add({ courseId: 'crs_x', termId: 'trm_x' })).toBe('404 Course not found');
+    expect(await add({ termId: 'trm_x', branchId: 'brn_x' })).toBe('404 Term not found');
+    expect(await add({ branchId: 'brn_x', roomId: 'rom_x' })).toBe('404 Branch not found');
+    const nowhere = await member('front_desk', []);
+    expect(await add({ roomId: 'rom_x' }, nowhere.as)).toMatch(/^403 /);
+    expect(await add({ roomId: 'rom_x', teacherId: 'mem_x' })).toBe('404 Room not found');
+    expect(await add({ teacherId: 'mem_x', startDate: early })).toBe('404 Teacher not found');
+    expect(await add({ startDate: early })).toMatch(/^422 A class's dates must fall inside/);
+    expect(await add({})).toMatch(/^409 This course already has a class with that name/);
+
+    // Changing: the class, its updatedAt, the room, the teacher, the dates, then the name.
+    const change = (body: Record<string, unknown>, id = other.id) =>
+      answer(api, 'PATCH', `/classes/${id}`, { updatedAt: other.updatedAt, ...body });
+    expect(await change({ roomId: 'rom_x' }, 'cls_x')).toBe('404 Class not found');
+    const longAgo = '2020-01-01T00:00:00.000Z';
+    expect(await change({ updatedAt: longAgo, roomId: 'rom_x' })).toMatch(/^409 This record was/);
+    expect(await change({ roomId: 'rom_x', teacherId: 'mem_x' })).toBe('404 Room not found');
+    expect(await change({ teacherId: 'mem_x', startDate: early })).toBe('404 Teacher not found');
+    expect(await change({ startDate: early, name: 'group a' })).toMatch(/^422 A class's dates/);
+    expect(await change({ name: 'group a' })).toMatch(/^409 This course already has a class/);
+    expect((await api('GET', `/classes/${other.id}`)).body).toEqual(other);
+
+    // Filters: each list checks its ids in the order the route lists them.
+    const list = (query: string) => answer(api, 'GET', query);
+    expect(await list('/classes?branchId=brn_x&termId=trm_x')).toBe('404 Branch not found');
+    expect(await list('/classes?termId=trm_x&courseId=crs_x')).toBe('404 Term not found');
+    expect(await list('/classes?courseId=crs_x&gradeLevelId=grd_x')).toBe('404 Course not found');
+    expect(await list('/classes?gradeLevelId=grd_x&teacherId=mem_x')).toBe(
+      '404 Grade level not found',
+    );
+    expect(await list(`/sessions?${range}&branchId=brn_x&roomId=rom_x`)).toBe(
+      '404 Branch not found',
+    );
+    expect(await list(`/sessions?${range}&roomId=rom_x&gradeLevelId=grd_x`)).toBe(
+      '404 Room not found',
+    );
+    expect(await list(`/sessions?${range}&gradeLevelId=grd_x&classId=cls_x`)).toBe(
+      '404 Grade level not found',
+    );
+    expect(await list(`/sessions?${range}&classId=cls_x&teacherId=mem_x`)).toBe(
+      '404 Class not found',
+    );
+    expect(await list(`/sessions?${range}&teacherId=mem_x&studentId=stu_x`)).toBe(
+      '404 Teacher not found',
+    );
+    expect(await list(`/sessions?${range}&studentId=stu_x`)).toBe('404 Student not found');
+  });
 });
 
 describe('weekly schedule and session generation', () => {

@@ -12,7 +12,7 @@ endpoints:
   - PUT /classes/{id}/schedule
   - GET /sessions
   - GET /sessions/{id}
-branch:
+branch: task/tui-96-classes-round-trips
 pr:
 ---
 
