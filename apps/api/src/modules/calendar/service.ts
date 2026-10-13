@@ -50,6 +50,9 @@ function mergedDates(
 
 const range = (r: { startDate: string; endDate: string }) => `${r.startDate} to ${r.endDate}`;
 
+/** What an error message says about the year or term that is in the way. */
+type Named = { name: string; startDate: string; endDate: string };
+
 // ── Academic years ──────────────────────────────────────────────────────────
 
 export async function listAcademicYears(ctx: OrgCtx, limit: number, cursor?: string) {
@@ -58,14 +61,10 @@ export async function listAcademicYears(ctx: OrgCtx, limit: number, cursor?: str
   return { data: data.map(toAcademicYear), nextCursor };
 }
 
-async function findAcademicYearOr404(ctx: OrgCtx, id: string) {
+export async function getAcademicYear(ctx: OrgCtx, id: string): Promise<AcademicYear> {
   const row = await repo.findAcademicYear(ctx, id);
   if (!row) throw notFound('Academic year');
-  return row;
-}
-
-export async function getAcademicYear(ctx: OrgCtx, id: string): Promise<AcademicYear> {
-  return toAcademicYear(await findAcademicYearOr404(ctx, id));
+  return toAcademicYear(row);
 }
 
 /**
@@ -85,12 +84,8 @@ export async function academicYears(ctx: OrgCtx) {
   return { years, current };
 }
 
-async function refuseYearOverlap(ctx: OrgCtx, start: string, end: string, exceptId?: string) {
-  const other = await repo.overlappingAcademicYear(ctx, start, end, exceptId);
-  if (other) {
-    throw unprocessable(`Academic years can't overlap. "${other.name}" runs ${range(other)}.`);
-  }
-}
+const yearsOverlap = (other: Named) =>
+  unprocessable(`Academic years can't overlap. "${other.name}" runs ${range(other)}.`);
 
 const yearNameTaken = () =>
   conflict('An academic year with that name already exists', { name: ['Taken'] });
@@ -99,12 +94,20 @@ export async function createAcademicYear(
   ctx: OrgCtx,
   input: CreateAcademicYear,
 ): Promise<AcademicYear> {
-  await refuseYearOverlap(ctx, input.startDate, input.endDate);
-  if (await repo.academicYearNameTaken(ctx, input.name)) throw yearNameTaken();
+  // Neither check needs the other's answer, so they go to D1 together.
+  const [other, nameTaken] = await Promise.all([
+    repo.overlappingAcademicYear(ctx, input.startDate, input.endDate),
+    repo.academicYearNameTaken(ctx, input.name),
+  ]);
+  if (other) throw yearsOverlap(other);
+  if (nameTaken) throw yearNameTaken();
 
-  const id = newId('academicYear');
-  await repo.insertAcademicYear(ctx, { id, orgId: ctx.orgId, ...input });
-  return getAcademicYear(ctx, id);
+  const row = await repo.insertAcademicYear(ctx, {
+    id: newId('academicYear'),
+    orgId: ctx.orgId,
+    ...input,
+  });
+  return toAcademicYear(row);
 }
 
 /** New dates must still hold every term of the year, and not overlap another year. */
@@ -113,27 +116,34 @@ export async function updateAcademicYear(
   id: string,
   input: UpdateAcademicYear,
 ): Promise<AcademicYear> {
-  const before = await findAcademicYearOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt, ...changes } = input;
+  const newDates = changes.startDate !== undefined || changes.endDate !== undefined;
+  // The year and every check on the change go to D1 together. The date checks read the date
+  // that wasn't sent from the stored year themselves.
+  const [before, other, outside, nameTaken] = await Promise.all([
+    repo.findAcademicYear(ctx, id),
+    newDates ? repo.otherYearOverlapping(ctx, id, changes) : undefined,
+    newDates ? repo.termLeftOutside(ctx, id, changes) : undefined,
+    changes.name !== undefined ? repo.academicYearNameTaken(ctx, changes.name, id) : false,
+  ]);
+  if (!before) throw notFound('Academic year');
+  if (before.updatedAt !== updatedAt) throw staleData();
   if (Object.keys(changes).length === 0) return toAcademicYear(before);
 
   const dates = mergedDates(before, changes);
   if (dates.changed) {
-    await refuseYearOverlap(ctx, dates.startDate, dates.endDate, id);
-    const outside = await repo.termOutside(ctx, id, dates.startDate, dates.endDate);
+    if (other) throw yearsOverlap(other);
     if (outside) {
       throw unprocessable(
         `"${outside.name}" (${range(outside)}) would fall outside the academic year. Change the term first.`,
       );
     }
   }
-  if (changes.name !== undefined && (await repo.academicYearNameTaken(ctx, changes.name, id))) {
-    throw yearNameTaken();
-  }
+  if (nameTaken) throw yearNameTaken();
 
-  await repo.updateAcademicYear(ctx, before, changes);
-  return getAcademicYear(ctx, id);
+  const updated = await repo.updateAcademicYear(ctx, before, changes);
+  if (!updated) throw notFound('Academic year');
+  return toAcademicYear(updated);
 }
 
 // ── Terms ───────────────────────────────────────────────────────────────────
@@ -144,36 +154,35 @@ export async function listTerms(
   cursor?: string,
   academicYearId?: string,
 ) {
-  if (academicYearId) await findAcademicYearOr404(ctx, academicYearId);
-  const rows = await repo.listTerms(ctx, limit, decodeStartDateCursor(cursor), academicYearId);
+  const [year, rows] = await Promise.all([
+    academicYearId ? repo.findAcademicYear(ctx, academicYearId) : undefined,
+    repo.listTerms(ctx, limit, decodeStartDateCursor(cursor), academicYearId),
+  ]);
+  if (academicYearId && !year) throw notFound('Academic year');
   const { data, nextCursor } = toPage(rows, limit, byStartDate);
   return { data: data.map(toTerm), nextCursor };
 }
 
-async function findTermOr404(ctx: OrgCtx, id: string) {
+export async function getTerm(ctx: OrgCtx, id: string): Promise<Term> {
   const row = await repo.findTerm(ctx, id);
   if (!row) throw notFound('Term');
-  return row;
+  return toTerm(row);
 }
 
-export async function getTerm(ctx: OrgCtx, id: string): Promise<Term> {
-  return toTerm(await findTermOr404(ctx, id));
-}
-
-/** A term sits inside its academic year and doesn't overlap the year's other terms. */
-async function checkTermDates(
-  ctx: OrgCtx,
+/**
+ * A term sits inside its academic year and doesn't overlap the year's other terms. `other` is
+ * a term its dates overlap, if the caller found one.
+ */
+function checkTermDates(
   year: repo.AcademicYearRow,
-  start: string,
-  end: string,
-  exceptId?: string,
+  dates: { startDate: string; endDate: string },
+  other: Named | undefined,
 ) {
-  if (start < year.startDate || end > year.endDate) {
+  if (dates.startDate < year.startDate || dates.endDate > year.endDate) {
     throw unprocessable(
       `A term must sit inside its academic year. "${year.name}" runs ${range(year)}.`,
     );
   }
-  const other = await repo.overlappingTerm(ctx, year.id, start, end, exceptId);
   if (other) {
     throw unprocessable(`Terms can't overlap. "${other.name}" runs ${range(other)}.`);
   }
@@ -183,41 +192,54 @@ const termNameTaken = () =>
   conflict('A term with that name already exists in this academic year', { name: ['Taken'] });
 
 export async function createTerm(ctx: OrgCtx, input: CreateTerm): Promise<Term> {
-  const year = await findAcademicYearOr404(ctx, input.academicYearId);
-  await checkTermDates(ctx, year, input.startDate, input.endDate);
-  if (await repo.termNameTaken(ctx, year.id, input.name)) throw termNameTaken();
+  // The two checks need only the year's id, so they go to D1 together with the read of the year.
+  const [year, other, nameTaken] = await Promise.all([
+    repo.findAcademicYear(ctx, input.academicYearId),
+    repo.overlappingTerm(ctx, input.academicYearId, input.startDate, input.endDate),
+    repo.termNameTaken(ctx, input.academicYearId, input.name),
+  ]);
+  if (!year) throw notFound('Academic year');
+  checkTermDates(year, input, other);
+  if (nameTaken) throw termNameTaken();
 
-  const id = newId('term');
-  await repo.insertTerm(ctx, { id, orgId: ctx.orgId, ...input });
-  return getTerm(ctx, id);
+  const row = await repo.insertTerm(ctx, { id: newId('term'), orgId: ctx.orgId, ...input });
+  return toTerm(row);
 }
 
 export async function updateTerm(ctx: OrgCtx, id: string, input: UpdateTerm): Promise<Term> {
-  const before = await findTermOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt, ...changes } = input;
+  const newDates = changes.startDate !== undefined || changes.endDate !== undefined;
+  // The term, its year and every check on the change go to D1 together. The checks find the
+  // term's year, and the date that wasn't sent, from the stored term themselves.
+  const [found, other, nameTaken] = await Promise.all([
+    repo.findTermWithYear(ctx, id),
+    newDates ? repo.otherTermOverlapping(ctx, id, changes) : undefined,
+    changes.name !== undefined ? repo.otherTermHasName(ctx, id, changes.name) : false,
+  ]);
+  if (!found) throw notFound('Term');
+  const before = found.term;
+  if (before.updatedAt !== updatedAt) throw staleData();
   if (Object.keys(changes).length === 0) return toTerm(before);
 
   const dates = mergedDates(before, changes);
   if (dates.changed) {
-    const year = await findAcademicYearOr404(ctx, before.academicYearId);
-    await checkTermDates(ctx, year, dates.startDate, dates.endDate, id);
+    if (!found.year) throw notFound('Academic year');
+    checkTermDates(found.year, dates, other);
   }
-  if (
-    changes.name !== undefined &&
-    (await repo.termNameTaken(ctx, before.academicYearId, changes.name, id))
-  ) {
-    throw termNameTaken();
-  }
+  if (nameTaken) throw termNameTaken();
 
-  await repo.updateTerm(ctx, before, changes);
-  return getTerm(ctx, id);
+  const updated = await repo.updateTerm(ctx, before, changes);
+  if (!updated) throw notFound('Term');
+  return toTerm(updated);
 }
 
 /** Refused while a class runs in the term. */
 export async function deleteTerm(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findTermOr404(ctx, id);
-  const classCount = await classes.countClasses(ctx, { termId: id });
+  const [before, classCount] = await Promise.all([
+    repo.findTerm(ctx, id),
+    classes.countClasses(ctx, { termId: id }),
+  ]);
+  if (!before) throw notFound('Term');
   if (classCount > 0) {
     throw unprocessable(`Delete this term's ${classCount} class(es) first.`);
   }
@@ -232,16 +254,13 @@ export async function listHolidays(
   cursor: string | undefined,
   filter: repo.HolidayFilter,
 ) {
-  if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
-  const rows = await repo.listHolidays(ctx, limit, decodeStartDateCursor(cursor), filter);
+  // The branch check and the page go to D1 together. An unknown branch is still a 404.
+  const [rows] = await Promise.all([
+    repo.listHolidays(ctx, limit, decodeStartDateCursor(cursor), filter),
+    filter.branchId ? branches.getBranch(ctx, filter.branchId) : undefined,
+  ]);
   const { data, nextCursor } = toPage(rows, limit, byStartDate);
   return { data: data.map(toHoliday), nextCursor };
-}
-
-async function findHolidayOr404(ctx: OrgCtx, id: string) {
-  const row = await repo.findHoliday(ctx, id);
-  if (!row) throw notFound('Holiday');
-  return row;
 }
 
 /**
@@ -250,19 +269,21 @@ async function findHolidayOr404(ctx: OrgCtx, id: string) {
  */
 export async function createHoliday(ctx: OrgCtx, input: CreateHoliday): Promise<Holiday> {
   const branchId = input.branchId ?? null;
-  if (branchId) await branches.getBranch(ctx, branchId);
-
-  const id = newId('holiday');
   const holiday = {
-    id,
+    id: newId('holiday'),
     orgId: ctx.orgId,
     name: input.name,
     startDate: input.startDate,
     endDate: input.endDate,
     branchId,
   };
-  await repo.insertHoliday(ctx, holiday, await classes.sessionsClosedBy(ctx, holiday));
-  return toHoliday(await findHolidayOr404(ctx, id));
+  // Counting the sessions it closes doesn't need the branch's row, so both go to D1 together.
+  // An unknown branch is still a 404, and nothing is written.
+  const [closing] = await Promise.all([
+    classes.sessionsClosedBy(ctx, holiday),
+    branchId ? branches.getBranch(ctx, branchId) : undefined,
+  ]);
+  return toHoliday(await repo.insertHoliday(ctx, holiday, closing));
 }
 
 /** The date ranges on which a branch is closed between two dates: its own holidays and org-wide ones. */
@@ -271,7 +292,8 @@ export function closedRanges(ctx: OrgCtx, branchId: string, from: string, to: st
 }
 
 export async function deleteHoliday(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findHolidayOr404(ctx, id);
+  const before = await repo.findHoliday(ctx, id);
+  if (!before) throw notFound('Holiday');
   await repo.softDeleteHoliday(ctx, before);
 }
 

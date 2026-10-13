@@ -497,6 +497,21 @@ describe('courses', () => {
     expect(recased.body.curriculum).toBe('ncea');
   });
 
+  it('compares a label the PATCH leaves alone as it is stored, ignoring case', async () => {
+    const { api, addCourse, pair } = await courseSetup();
+    await addCourse({ ...pair, curriculum: 'Cambridge', teachingMedium: 'Tamil' });
+    const ncea = await addCourse({ ...pair, curriculum: 'NCEA', teachingMedium: 'TAMIL' });
+    const patch = (body: Record<string, unknown>) =>
+      api('PATCH', `/courses/${ncea.id}`, { updatedAt: ncea.updatedAt, ...body });
+
+    // With its stored medium, the new curriculum would make it the same as the first course.
+    expect((await patch({ curriculum: 'cambridge' })).status).toBe(409);
+    // With another medium it wouldn't.
+    const changed = await patch({ curriculum: 'cambridge', teachingMedium: 'English' });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({ curriculum: 'cambridge', teachingMedium: 'English' });
+  });
+
   it('allows the same curriculum and medium for another subject or grade', async () => {
     const { addSubject, addGrade, addCourse, pair, maths, y10 } = await courseSetup();
     const english = await addSubject('English');

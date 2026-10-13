@@ -1,6 +1,6 @@
 import { courses, gradeLevels, now, subjects } from '@edustrux/db';
 import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
-import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type GradeLevelRow = typeof gradeLevels.$inferSelect;
@@ -72,23 +72,40 @@ export async function gradeLevelNameTaken(ctx: OrgCtx, name: string, exceptId?: 
   return row !== undefined;
 }
 
-export async function insertGradeLevel(ctx: OrgCtx, grade: NewGradeLevelRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(gradeLevels).values(grade)], {
-    action: 'grade_level.created',
-    entityType: 'grade_level',
-    entityId: grade.id,
-    after: grade,
-  });
+/** Returns the grade level as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertGradeLevel(
+  ctx: OrgCtx,
+  grade: NewGradeLevelRow & { id: string },
+): Promise<GradeLevelRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(gradeLevels).values(grade).returning()],
+    {
+      action: 'grade_level.created',
+      entityType: 'grade_level',
+      entityId: grade.id,
+      after: grade,
+    },
+  );
+  const row = (inserted as GradeLevelRow[])[0];
+  if (!row) throw new Error('Grade level missing after insert');
+  return row;
 }
 
-export async function updateGradeLevel(ctx: OrgCtx, before: GradeLevelRow, name: string) {
-  await writeWithAudit(
+/** Returns the grade level as updated, from the same batch. undefined if it was just deleted. */
+export async function updateGradeLevel(
+  ctx: OrgCtx,
+  before: GradeLevelRow,
+  name: string,
+): Promise<GradeLevelRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(gradeLevels)
         .set({ name })
-        .where(inOrg(ctx, gradeLevels, eq(gradeLevels.id, before.id))),
+        .where(inOrg(ctx, gradeLevels, eq(gradeLevels.id, before.id)))
+        .returning(),
     ],
     {
       action: 'grade_level.updated',
@@ -98,6 +115,7 @@ export async function updateGradeLevel(ctx: OrgCtx, before: GradeLevelRow, name:
       after: { name },
     },
   );
+  return (updated as GradeLevelRow[])[0];
 }
 
 export async function softDeleteGradeLevel(ctx: OrgCtx, before: GradeLevelRow) {
@@ -113,15 +131,23 @@ export async function softDeleteGradeLevel(ctx: OrgCtx, before: GradeLevelRow) {
   );
 }
 
-/** Sets every grade's position (1 = first) in one batch, with one audit row for the change. */
-export async function reorderGradeLevels(ctx: OrgCtx, beforeIds: string[], ids: string[]) {
-  await writeWithAudit(
+/**
+ * Sets every grade's position (1 = first) in one batch, with one audit row for the change.
+ * Returns the grade levels as updated, in the new order, from that batch.
+ */
+export async function reorderGradeLevels(
+  ctx: OrgCtx,
+  beforeIds: string[],
+  ids: string[],
+): Promise<GradeLevelRow[]> {
+  const [, ...updated] = await writeWithAudit(
     ctx,
     ids.map((id, i) =>
       ctx.db
         .update(gradeLevels)
         .set({ sortOrder: i + 1 })
-        .where(inOrg(ctx, gradeLevels, eq(gradeLevels.id, id))),
+        .where(inOrg(ctx, gradeLevels, eq(gradeLevels.id, id)))
+        .returning(),
     ),
     {
       action: 'grade_level.reordered',
@@ -131,6 +157,8 @@ export async function reorderGradeLevels(ctx: OrgCtx, beforeIds: string[], ids: 
       after: { ids },
     },
   );
+  // One statement per grade level, each returning the row it changed.
+  return (updated as GradeLevelRow[][]).flat();
 }
 
 // ── Subjects ────────────────────────────────────────────────────────────────
@@ -170,23 +198,35 @@ export async function subjectNameTaken(ctx: OrgCtx, name: string, exceptId?: str
   return row !== undefined;
 }
 
-export async function insertSubject(ctx: OrgCtx, subject: NewSubjectRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(subjects).values(subject)], {
-    action: 'subject.created',
-    entityType: 'subject',
-    entityId: subject.id,
-    after: subject,
-  });
+/** Returns the subject as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertSubject(
+  ctx: OrgCtx,
+  subject: NewSubjectRow & { id: string },
+): Promise<SubjectRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(subjects).values(subject).returning()],
+    { action: 'subject.created', entityType: 'subject', entityId: subject.id, after: subject },
+  );
+  const row = (inserted as SubjectRow[])[0];
+  if (!row) throw new Error('Subject missing after insert');
+  return row;
 }
 
-export async function updateSubject(ctx: OrgCtx, before: SubjectRow, name: string) {
-  await writeWithAudit(
+/** Returns the subject as updated, from the same batch. undefined if it was just deleted. */
+export async function updateSubject(
+  ctx: OrgCtx,
+  before: SubjectRow,
+  name: string,
+): Promise<SubjectRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(subjects)
         .set({ name })
-        .where(inOrg(ctx, subjects, eq(subjects.id, before.id))),
+        .where(inOrg(ctx, subjects, eq(subjects.id, before.id)))
+        .returning(),
     ],
     {
       action: 'subject.updated',
@@ -196,6 +236,7 @@ export async function updateSubject(ctx: OrgCtx, before: SubjectRow, name: strin
       after: { name },
     },
   );
+  return (updated as SubjectRow[])[0];
 }
 
 export async function softDeleteSubject(ctx: OrgCtx, before: SubjectRow) {
@@ -270,7 +311,7 @@ export async function countCourses(ctx: OrgCtx, filter: CourseFilter) {
 }
 
 /** Whether the org already has a course with this subject, grade level, curriculum and medium. */
-export async function courseTaken(ctx: OrgCtx, key: CourseKey, exceptId?: string) {
+export async function courseTaken(ctx: OrgCtx, key: CourseKey) {
   const row = await ctx.db
     .select({ id: courses.id })
     .from(courses)
@@ -282,33 +323,80 @@ export async function courseTaken(ctx: OrgCtx, key: CourseKey, exceptId?: string
         eq(courses.gradeLevelId, key.gradeLevelId),
         sameLabel(courses.curriculum, key.curriculum),
         sameLabel(courses.teachingMedium, key.teachingMedium),
-        exceptId ? ne(courses.id, exceptId) : undefined,
       ),
     )
     .get();
   return row !== undefined;
 }
 
-export async function insertCourse(ctx: OrgCtx, course: NewCourseRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(courses).values(course)], {
-    action: 'course.created',
-    entityType: 'course',
-    entityId: course.id,
-    after: course,
-  });
+/**
+ * Whether another course would be the same as this one once it has the new labels. null clears
+ * a label. A label that isn't sent stays as stored, and that one, with the course's subject and
+ * grade level, comes from the course's own row inside the statement, so this can be sent together
+ * with the read of the course.
+ */
+export async function otherCourseMatches(
+  ctx: OrgCtx,
+  id: string,
+  labels: Partial<Pick<CourseKey, 'curriculum' | 'teachingMedium'>>,
+) {
+  const self = alias(courses, 'self');
+  // `is` matches two missing labels, as sameLabel does for a value.
+  const label = (column: SQLiteColumn, stored: SQLiteColumn, value: string | null | undefined) =>
+    value === undefined ? sql`lower(${column}) is lower(${stored})` : sameLabel(column, value);
+  const row = await ctx.db
+    .select({ id: courses.id })
+    .from(self)
+    .innerJoin(
+      courses,
+      inOrg(
+        ctx,
+        courses,
+        eq(courses.subjectId, self.subjectId),
+        eq(courses.gradeLevelId, self.gradeLevelId),
+        label(courses.curriculum, self.curriculum, labels.curriculum),
+        label(courses.teachingMedium, self.teachingMedium, labels.teachingMedium),
+        ne(courses.id, self.id),
+      ),
+    )
+    .where(inOrg(ctx, self, eq(self.id, id)))
+    .get();
+  return row !== undefined;
 }
 
-export async function updateCourse(ctx: OrgCtx, before: CourseRow, changes: CourseChanges) {
-  await writeWithAudit(
+/** Returns the course as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertCourse(
+  ctx: OrgCtx,
+  course: NewCourseRow & { id: string },
+): Promise<CourseRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(courses).values(course).returning()],
+    { action: 'course.created', entityType: 'course', entityId: course.id, after: course },
+  );
+  const row = (inserted as CourseRow[])[0];
+  if (!row) throw new Error('Course missing after insert');
+  return row;
+}
+
+/** Returns the course as updated, from the same batch. undefined if it was just deleted. */
+export async function updateCourse(
+  ctx: OrgCtx,
+  before: CourseRow,
+  changes: CourseChanges,
+): Promise<CourseRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(courses)
         .set(changes)
-        .where(inOrg(ctx, courses, eq(courses.id, before.id))),
+        .where(inOrg(ctx, courses, eq(courses.id, before.id)))
+        .returning(),
     ],
     { action: 'course.updated', entityType: 'course', entityId: before.id, before, after: changes },
   );
+  return (updated as CourseRow[])[0];
 }
 
 export async function softDeleteCourse(ctx: OrgCtx, before: CourseRow) {

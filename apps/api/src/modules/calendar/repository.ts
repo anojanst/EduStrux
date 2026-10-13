@@ -1,7 +1,7 @@
 import { academicYears, holidays, now, terms } from '@edustrux/db';
-import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, gt, gte, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
-import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type AcademicYearRow = typeof academicYears.$inferSelect;
@@ -17,6 +17,13 @@ export type NewHolidayRow = typeof holidays.$inferInsert;
 
 type DateCursor = { date: string; id: string };
 type Dated = { startDate: SQLiteColumn; endDate: SQLiteColumn; id: SQLiteColumn };
+/** A date to compare with: a value, or another row's column. */
+type DateBound = string | SQLiteColumn;
+/**
+ * The dates a PATCH sends. A check that takes these reads the date that wasn't sent from the
+ * stored row, inside its own statement, so it can go to D1 together with the read of that row.
+ */
+export type NewDates = { startDate?: string; endDate?: string };
 
 /** Rows after the cursor, in (start date, id) order. */
 function afterCursor(table: Dated, cursor?: DateCursor) {
@@ -28,7 +35,7 @@ function afterCursor(table: Dated, cursor?: DateCursor) {
 }
 
 /** Ranges that share at least one day with [start, end] (both inclusive). */
-function overlapping(table: Dated, start: string, end: string) {
+function overlapping(table: Dated, start: DateBound, end: DateBound) {
   return and(lte(table.startDate, end), gte(table.endDate, start));
 }
 
@@ -80,48 +87,76 @@ export async function academicYearNameTaken(ctx: OrgCtx, name: string, exceptId?
   return row !== undefined;
 }
 
-/** Another academic year that shares a day with [start, end], if any. */
-export function overlappingAcademicYear(
-  ctx: OrgCtx,
-  start: string,
-  end: string,
-  exceptId?: string,
-) {
+/** An academic year that shares a day with [start, end], if any. */
+export function overlappingAcademicYear(ctx: OrgCtx, start: string, end: string) {
   return ctx.db
     .select()
     .from(academicYears)
-    .where(
-      inOrg(
-        ctx,
-        academicYears,
-        overlapping(academicYears, start, end),
-        exceptId ? ne(academicYears.id, exceptId) : undefined,
-      ),
-    )
+    .where(inOrg(ctx, academicYears, overlapping(academicYears, start, end)))
     .get();
 }
 
-export async function insertAcademicYear(ctx: OrgCtx, year: NewAcademicYearRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(academicYears).values(year)], {
-    action: 'academic_year.created',
-    entityType: 'academic_year',
-    entityId: year.id,
-    after: year,
-  });
+/** Another academic year that would share a day with this one once it has the new dates, if any. */
+export function otherYearOverlapping(ctx: OrgCtx, id: string, dates: NewDates) {
+  const self = alias(academicYears, 'self');
+  return ctx.db
+    .select({
+      name: academicYears.name,
+      startDate: academicYears.startDate,
+      endDate: academicYears.endDate,
+    })
+    .from(self)
+    .innerJoin(
+      academicYears,
+      inOrg(
+        ctx,
+        academicYears,
+        overlapping(
+          academicYears,
+          dates.startDate ?? self.startDate,
+          dates.endDate ?? self.endDate,
+        ),
+        ne(academicYears.id, self.id),
+      ),
+    )
+    .where(inOrg(ctx, self, eq(self.id, id)))
+    .get();
 }
 
+/** Returns the year as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertAcademicYear(
+  ctx: OrgCtx,
+  year: NewAcademicYearRow & { id: string },
+): Promise<AcademicYearRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(academicYears).values(year).returning()],
+    {
+      action: 'academic_year.created',
+      entityType: 'academic_year',
+      entityId: year.id,
+      after: year,
+    },
+  );
+  const row = (inserted as AcademicYearRow[])[0];
+  if (!row) throw new Error('Academic year missing after insert');
+  return row;
+}
+
+/** Returns the year as updated, from the same batch. undefined if it was just deleted. */
 export async function updateAcademicYear(
   ctx: OrgCtx,
   before: AcademicYearRow,
   changes: AcademicYearChanges,
-) {
-  await writeWithAudit(
+): Promise<AcademicYearRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(academicYears)
         .set(changes)
-        .where(inOrg(ctx, academicYears, eq(academicYears.id, before.id))),
+        .where(inOrg(ctx, academicYears, eq(academicYears.id, before.id)))
+        .returning(),
     ],
     {
       action: 'academic_year.updated',
@@ -131,6 +166,7 @@ export async function updateAcademicYear(
       after: changes,
     },
   );
+  return (updated as AcademicYearRow[])[0];
 }
 
 // ── Terms ───────────────────────────────────────────────────────────────────
@@ -164,87 +200,135 @@ export function findTerm(ctx: OrgCtx, id: string) {
     .get();
 }
 
-/** A term of this academic year that starts before `start` or ends after `end`, if any. */
-export function termOutside(ctx: OrgCtx, academicYearId: string, start: string, end: string) {
+/** A term and the academic year it belongs to, in one statement. */
+export function findTermWithYear(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select({ term: terms, year: academicYears })
+    .from(terms)
+    .leftJoin(academicYears, inOrg(ctx, academicYears, eq(academicYears.id, terms.academicYearId)))
+    .where(inOrg(ctx, terms, eq(terms.id, id)))
+    .get();
+}
+
+/** A term of this academic year that the year's new dates would leave outside it, if any. */
+export function termLeftOutside(ctx: OrgCtx, academicYearId: string, dates: NewDates) {
+  return ctx.db
+    .select({ name: terms.name, startDate: terms.startDate, endDate: terms.endDate })
+    .from(academicYears)
+    .innerJoin(
+      terms,
+      inOrg(
+        ctx,
+        terms,
+        eq(terms.academicYearId, academicYears.id),
+        or(
+          lt(terms.startDate, dates.startDate ?? academicYears.startDate),
+          gt(terms.endDate, dates.endDate ?? academicYears.endDate),
+        ),
+      ),
+    )
+    .where(inOrg(ctx, academicYears, eq(academicYears.id, academicYearId)))
+    .get();
+}
+
+/** A term of this academic year that shares a day with [start, end], if any. */
+export function overlappingTerm(ctx: OrgCtx, academicYearId: string, start: string, end: string) {
   return ctx.db
     .select()
     .from(terms)
     .where(
-      inOrg(
-        ctx,
-        terms,
-        eq(terms.academicYearId, academicYearId),
-        or(sql`${terms.startDate} < ${start}`, sql`${terms.endDate} > ${end}`),
-      ),
+      inOrg(ctx, terms, eq(terms.academicYearId, academicYearId), overlapping(terms, start, end)),
     )
     .get();
 }
 
-/** Another term of this academic year that shares a day with [start, end], if any. */
-export function overlappingTerm(
-  ctx: OrgCtx,
-  academicYearId: string,
-  start: string,
-  end: string,
-  exceptId?: string,
-) {
+/**
+ * Another term of the same academic year that would share a day with this one once it has the
+ * new dates, if any.
+ */
+export function otherTermOverlapping(ctx: OrgCtx, id: string, dates: NewDates) {
+  const self = alias(terms, 'self');
   return ctx.db
-    .select()
-    .from(terms)
-    .where(
+    .select({ name: terms.name, startDate: terms.startDate, endDate: terms.endDate })
+    .from(self)
+    .innerJoin(
+      terms,
       inOrg(
         ctx,
         terms,
-        eq(terms.academicYearId, academicYearId),
-        overlapping(terms, start, end),
-        exceptId ? ne(terms.id, exceptId) : undefined,
+        eq(terms.academicYearId, self.academicYearId),
+        overlapping(terms, dates.startDate ?? self.startDate, dates.endDate ?? self.endDate),
+        ne(terms.id, self.id),
       ),
     )
+    .where(inOrg(ctx, self, eq(self.id, id)))
     .get();
 }
 
-export async function termNameTaken(
-  ctx: OrgCtx,
-  academicYearId: string,
-  name: string,
-  exceptId?: string,
-) {
+export async function termNameTaken(ctx: OrgCtx, academicYearId: string, name: string) {
   const row = await ctx.db
     .select({ id: terms.id })
     .from(terms)
-    .where(
-      inOrg(
-        ctx,
-        terms,
-        eq(terms.academicYearId, academicYearId),
-        sameName(terms.name, name),
-        exceptId ? ne(terms.id, exceptId) : undefined,
-      ),
-    )
+    .where(inOrg(ctx, terms, eq(terms.academicYearId, academicYearId), sameName(terms.name, name)))
     .get();
   return row !== undefined;
 }
 
-export async function insertTerm(ctx: OrgCtx, term: NewTermRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(terms).values(term)], {
+/**
+ * Whether another term of this term's academic year has the name. The year comes from the term's
+ * own row inside the statement, so this can be sent together with the read of the term.
+ */
+export async function otherTermHasName(ctx: OrgCtx, id: string, name: string) {
+  const self = alias(terms, 'self');
+  const row = await ctx.db
+    .select({ id: terms.id })
+    .from(self)
+    .innerJoin(
+      terms,
+      inOrg(
+        ctx,
+        terms,
+        eq(terms.academicYearId, self.academicYearId),
+        sameName(terms.name, name),
+        ne(terms.id, self.id),
+      ),
+    )
+    .where(inOrg(ctx, self, eq(self.id, id)))
+    .get();
+  return row !== undefined;
+}
+
+/** Returns the term as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertTerm(ctx: OrgCtx, term: NewTermRow & { id: string }): Promise<TermRow> {
+  const [, inserted] = await writeWithAudit(ctx, [ctx.db.insert(terms).values(term).returning()], {
     action: 'term.created',
     entityType: 'term',
     entityId: term.id,
     after: term,
   });
+  const row = (inserted as TermRow[])[0];
+  if (!row) throw new Error('Term missing after insert');
+  return row;
 }
 
-export async function updateTerm(ctx: OrgCtx, before: TermRow, changes: TermChanges) {
-  await writeWithAudit(
+/** Returns the term as updated, from the same batch. undefined if it was just deleted. */
+export async function updateTerm(
+  ctx: OrgCtx,
+  before: TermRow,
+  changes: TermChanges,
+): Promise<TermRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(terms)
         .set(changes)
-        .where(inOrg(ctx, terms, eq(terms.id, before.id))),
+        .where(inOrg(ctx, terms, eq(terms.id, before.id)))
+        .returning(),
     ],
     { action: 'term.updated', entityType: 'term', entityId: before.id, before, after: changes },
   );
+  return (updated as TermRow[])[0];
 }
 
 export async function softDeleteTerm(ctx: OrgCtx, before: TermRow) {
@@ -322,19 +406,26 @@ export function closedRanges(ctx: OrgCtx, branchId: string, from: string, to: st
 
 /**
  * `closing` removes the sessions the holiday closes, in the same batch; how many is recorded in
- * the holiday's audit row.
+ * the holiday's audit row. Returns the holiday as stored, from that batch.
  */
 export async function insertHoliday(
   ctx: OrgCtx,
   holiday: NewHolidayRow & { id: string },
   closing: { count: number; statements: BatchItem<'sqlite'>[] },
-) {
-  await writeWithAudit(ctx, [ctx.db.insert(holidays).values(holiday), ...closing.statements], {
-    action: 'holiday.created',
-    entityType: 'holiday',
-    entityId: holiday.id,
-    after: { ...holiday, sessionsRemoved: closing.count },
-  });
+): Promise<HolidayRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(holidays).values(holiday).returning(), ...closing.statements],
+    {
+      action: 'holiday.created',
+      entityType: 'holiday',
+      entityId: holiday.id,
+      after: { ...holiday, sessionsRemoved: closing.count },
+    },
+  );
+  const row = (inserted as HolidayRow[])[0];
+  if (!row) throw new Error('Holiday missing after insert');
+  return row;
 }
 
 export async function softDeleteHoliday(ctx: OrgCtx, before: HolidayRow) {
