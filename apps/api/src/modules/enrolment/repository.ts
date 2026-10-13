@@ -1,6 +1,14 @@
 import { enrolments } from '@edustrux/db';
 import { asc, count, eq, gt, gte, isNull, lte, or, type SQL } from 'drizzle-orm';
-import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import {
+  idsFrom,
+  inIds,
+  inOrg,
+  writeWithAudit,
+  type IdQuery,
+  type Ids,
+  type OrgCtx,
+} from '../../db/scope';
 
 export type EnrolmentRow = typeof enrolments.$inferSelect;
 export type NewEnrolmentRow = typeof enrolments.$inferInsert;
@@ -9,14 +17,14 @@ export type NewEnrolmentRow = typeof enrolments.$inferInsert;
  * The part of the org's enrolments a caller may see: every one when empty, else those in the
  * classes in `classIds` and those of the students in `studentIds`. Either is enough.
  */
-export type Reach = { classIds?: string[]; studentIds?: string[] };
+export type Reach = { classIds?: Ids; studentIds?: Ids };
 
 export type EnrolmentFilter = { studentId?: string; classId?: string };
 
 /**
  * One list is a teacher's classes or a parent's children: a few ids, which the query goes
- * straight to. Both lists together are everything in a branch manager's branches, and only
- * narrow the page being read.
+ * straight to. Both lists together are everything in a branch manager's branches. Those are
+ * `wide`: the page is read in its own order and each enrolment looked up in them.
  */
 function within(reach: Reach): SQL | undefined {
   const inClasses = reach.classIds && inIds(enrolments.classId, reach.classIds);
@@ -124,22 +132,26 @@ export async function insertEnrolment(ctx: OrgCtx, row: NewEnrolmentRow & { id: 
   });
 }
 
-/** The classes any of these students holds an active enrolment in. */
-export async function activeClassIds(ctx: OrgCtx, studentIds: string[]) {
-  const rows = await ctx.db
-    .selectDistinct({ id: enrolments.classId })
-    .from(enrolments)
-    .where(inOrg(ctx, enrolments, inIds(enrolments.studentId, studentIds), active));
-  return rows.map((row) => row.id);
+/** The classes any of these students holds an active enrolment in, as ids to filter by. */
+export function activeClasses(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    enrolments,
+    enrolments.classId,
+    inIds(enrolments.studentId, studentIds),
+    active,
+  );
 }
 
-/** The students who hold an active enrolment in any of these classes. */
-export async function activeStudentIds(ctx: OrgCtx, classIds: string[]) {
-  const rows = await ctx.db
-    .selectDistinct({ id: enrolments.studentId })
-    .from(enrolments)
-    .where(inOrg(ctx, enrolments, inIds(enrolments.classId, classIds), active));
-  return rows.map((row) => row.id);
+/** The students who hold an active enrolment in any of these classes, as ids to filter by. */
+export function activeStudents(ctx: OrgCtx, classIds: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    enrolments,
+    enrolments.studentId,
+    inIds(enrolments.classId, classIds),
+    active,
+  );
 }
 
 /**
@@ -179,7 +191,7 @@ export function activeSpans(ctx: OrgCtx, studentId: string) {
 /** The active enrolments in these classes that cover some part of the dates, both included. */
 export function activeDuring(
   ctx: OrgCtx,
-  classIds: string[],
+  classIds: Ids,
   range: { startDate: string; endDate: string },
 ) {
   return ctx.db

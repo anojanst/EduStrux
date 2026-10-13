@@ -2420,6 +2420,9 @@ is the only deployed environment).
 
 ## D-100 · 2026-10-13 · A lookup by a list of ids goes to the ids
 
+**How a branch's invoices are read is superseded by D-104**, which also does what is listed
+under "Not changed here" for a reach that is a subquery.
+
 - **Context:** An audit took the query plan of every statement the test suite sends (TUI-91).
   A query for rows by a list of ids read every row the org has in the table, then checked the
   list. `inOrg` wrote `org_id = ?` beside the list from `inIds`, and production has no table
@@ -2540,3 +2543,125 @@ is the only deployed environment).
   - Meeting the budget needs reads that join across modules. The conventions for those come
     with the follow-on work and get their own decision.
 - **Tasks:** TUI-89, TUI-90, TUI-94 to TUI-98.
+
+## D-104 · 2026-10-14 · Reach as subqueries, and reading across modules by a query for ids
+
+- **Context:** D-102 set the budget at about 3 database trips in sequence and left the rule for
+  reads across modules to the follow-on work. A teacher, a parent or staff limited to some
+  branches spent one or two trips before the real read: the service worked out what they may
+  see by asking another module for a list of ids, which was read on its own (a teacher's
+  classes, then the students in them). D-100 had also left a reach that is a subquery reading
+  the whole org, because the id helper took real ids only. TUI-89 and TUI-94 to TUI-97 cut the
+  remaining trips module by module, so the who-can-see-what rules change once, here, and those
+  tasks don't rewrite them.
+- **Decision:**
+  - Ids to filter by are real ids or a query for them, under one type (`Ids`). A repository
+    filters by either with `inIds`, so its code reads the same for both. A query is written
+    into the statement it filters and is never sent on its own.
+  - A query is made with `idsFrom(ctx, table, column, …conditions)`. It filters by its org and
+    leaves out deleted rows itself, as every statement does. Org isolation never rests on the
+    outer statement alone.
+  - A lookup by a query is written as D-100 writes one by real ids: `+org_id = ?` beside
+    `id IN (SELECT …)` for primary keys, and `(org_id, column) IN (SELECT ?, id …)` for any other
+    column. It holds at every level of a query built from another, with no table statistics.
+  - Each reach list comes from the module that owns the rule, as a query:
+    - classes: the classes a member teaches, and the classes in some branches.
+    - people: a guardian's students and families, and the students and families of some
+      branches.
+    - enrolment: the students actively enrolled in some classes, and the classes some students
+      are actively enrolled in.
+    - One built from another composes them. A teacher's students are the active enrolments in
+      the teacher's classes, and a parent's classes the active enrolments of the parent's
+      children. Neither rule is written twice.
+  - Every service's reach is worked out with no database call, for every role. Nothing about
+    what a role sees changes.
+  - Narrow and wide reach:
+    - Ids are taken to be few: a parent's children, a teacher's classes. A statement goes to
+      them and sorts what it finds, as in D-100. Its cost follows the reach.
+    - Everything in some branches is marked wide by the module that owns the rule. A statement
+      never goes to wide ids. It reads its page in the page's own order and looks each row up
+      in the query, one row at a time, so it never reads the whole list.
+    - Wide is stated, not worked out: nothing in a statement tells a handful of rows from a
+      branch.
+    - This changes one thing in D-100. A branch's invoices were read from the family ids and
+      sorted. They are now read newest first, and each invoice's family is looked up.
+  - Read from their ids now, where they read the whole org before: a parent's families and
+    students and a teacher's families (D-100 had left these), and a teacher's or a parent's
+    sessions, which read every session of the org in the date range.
+  - Reading across modules:
+    - A repository still names only its own module's tables, and modules still call each other
+      through services.
+    - What crosses between modules without a trip is a query for ids. A service gives one
+      ("the classes this member teaches") or takes one ("the names of these students").
+    - To filter by another module's rows, a repository puts that module's query in its own
+      statement.
+    - To show another module's rows beside its own, a service gives that module's load-by-ids
+      function a query for the ids its own read returns, and sends the two together. Calls
+      sent together are one stage (D-099). The functions modules load by take a query, and the
+      ids on a page are the first rows of the page's own conditions, in its order.
+  - Weighed and not chosen:
+    - A query that can also be awaited for the real ids, as drizzle's builders can. An `await`
+      left in by mistake would send it, and nothing would say so.
+    - Joins across modules' tables in one repository. Each who-can-see-what rule would be
+      written again wherever it is joined.
+    - Looking each row up in the query for few ids too. From a class, the look-up reads every
+      enrolment in the class to find one parent's child, where the parent's own list is a
+      handful of rows.
+- **Consequences:**
+  - Counted in the test suite, as trips / stages, in a centre of two branches where every role
+    sees at least one row. Each role now costs what the owner costs:
+
+    | Request                           | Owner | Teacher, before | Parent, before | Staff of one branch, before |
+    | --------------------------------- | ----- | --------------- | -------------- | --------------------------- |
+    | `GET /families`, `/families/{id}` | 6 / 4 | 8 / 6           | 6 / 4          | 6 / 4                       |
+    | `GET /students`, `/students/{id}` | 4 / 3 | 6 / 5           | 4 / 3          | 4 / 3                       |
+    | `GET /enrolments`                 | 4 / 3 | 5 / 4           | 5 / 4          | 6 / 4                       |
+    | `GET /classes`, `/classes/{id}`   | 3 / 3 | 3 / 3           | 5 / 5          | 3 / 3                       |
+    | `GET /sessions`, `/sessions/{id}` | 2 / 2 | 2 / 2           | 4 / 4          | 2 / 2                       |
+    | `GET /invoices`, `/invoices/{id}` | 6 / 4 | 403, 1 / 1      | 7 / 5          | 7 / 5                       |
+
+  - Rows read, measured on a local D1 with a throwaway test that isn't in the repo. The centre
+    has 1,000 families with a student each, 40 classes, 2,000 enrolments, 4,000 invoices and 400
+    sessions in the date range. A page is 50, so 51 rows are read for it.
+    - A parent: 4 rows for their families, 7 for their students, 12 for their enrolments, 14
+      for their classes, 13 for their invoices, and 88 for 20 sessions. Sessions read 810
+      before.
+    - A teacher of 3 classes and about 180 students: 187 for a page of enrolments and 119 for
+      30 sessions (450 before). A page of their students reads 1,338 and of their families
+      999: the whole reach is read and sorted for each page. One student by id reads 680,
+      because the teacher's list is read to check one row.
+    - Staff of a branch with nine tenths of the centre: 136 for a page of enrolments and 113
+      for a page of invoices. Read from the family ids and sorted, as before, the same page of
+      invoices reads 3,781.
+  - The cost of wide falls on a small branch. Its rows are far apart in the page's order, so
+    more rows are read and looked up before the page fills, and every row of the org when the
+    branch has less than a page. Rows read for a page, in the same centre:
+
+    | Branch's share of the centre | Enrolments | Invoices | Invoices, read from the ids and sorted |
+    | ---------------------------- | ---------- | -------- | -------------------------------------- |
+    | 90%                          | 136        | 113      | 3,781                                  |
+    | 10%                          | 1,904      | 1,021    | 601                                    |
+    | 0.5% (5 families)            | 7,982      | 8,001    | 57                                     |
+
+  - Reading from the ids grows with the branch's whole history, on every page. Wide grows with
+    the centre, and only when the branch is small beside it. No statement can tell which it has
+    without table statistics. Staff limited to some branches already read families, students
+    and sessions the wide way.
+  - Fixing the small branch needs the branch on the row itself, on enrolments and invoices,
+    with an index on it. That is a schema change, and a family can move branch. Not done.
+  - No schema change and no migration.
+  - `apps/api/test/query-plans.test.ts` takes the plan of every reach, at each level of its
+    query, and fails when one reads an org's rows or sorts a wide page.
+    `apps/api/test/reach-trips.test.ts` holds a teacher, a parent and staff of one branch to
+    the owner's trips on each of these requests, and checks each sees their own records and not
+    the neighbour's.
+  - Two functions still return real ids, each in a trip of its own: a parent's children, for
+    the attendance roster, and the families of a branch, for the `?branchId` filter on
+    `GET /invoices`. So `GET /sessions/{id}/attendance` is 6 trips for a parent and 5 for
+    everyone else (8 before). TUI-89 and TUI-97 own those.
+  - A new reach is a query from the module that owns the rule. A service that reads ids first
+    to filter by them is a trip the budget has no room for.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers reading a branch's invoices in order, and reading across modules by a query for ids
+    and not by a join.
+- **Tasks:** TUI-99 (and TUI-89, TUI-94 to TUI-97, which build on it).

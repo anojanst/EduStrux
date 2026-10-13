@@ -66,14 +66,35 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
 - **D1 limit:** at most 100 bound values per SQL statement. Insert many rows in chunks, and pass
   a long id list with `inIds(column, ids)`, which binds it as one JSON value.
+- **Who can see what.** A service's `reachOf(ctx, access)` turns the caller's role into a filter
+  for its repository, and makes no D1 call (D-104). Where the rule belongs to another module,
+  ask that module's service for it as a query for ids: `classes.classesTaughtBy` and
+  `classesInBranches`, `people.studentsOfGuardian`, `studentsInBranches`, `familiesOfGuardian`
+  and `familiesInBranches`, `enrolment.studentsTaughtBy`, `classesOfChildren`,
+  `studentsEnrolledIn` and `classesOfStudents`. Never read the ids first to filter by them. A
+  new rule is a function like these in the module that owns it, built with `idsFrom`, or from
+  another module's query.
+- **Ids.** A list of ids to filter by has the type `Ids` (`apps/api/src/db/scope.ts`): real ids,
+  or a query for them that is written into the statement it filters and costs no trip. A
+  repository takes `Ids` wherever it takes ids and filters with `inIds(column, ids)`, the same
+  for both. `idsFrom(ctx, table, column, …conditions)` makes a query and puts the org in it.
+- **Reading across modules.** A repository names only its own module's tables. To filter by
+  another module's rows, take a query for ids from its service. To show another module's rows
+  beside yours, give its load-by-ids function (`people.studentNames`, `people.familyLabels`,
+  `classes.classLabels`) a query for the ids your read returns, made with `idsFrom` from the same
+  conditions and `firstIds` for a page, and send both with `Promise.all`: one stage (D-104).
 - **Bulk writes:** a change that adds or removes many sessions writes one audit row with the
   counts, not one per session (D-045). Other bulk writes follow that unless the owner decides
   otherwise.
 - **Rows read.** D1 bills the rows a statement reads, and production has no table statistics to
-  steer SQLite. For a lookup by a list of ids, give `inIds(column, ids)` straight to `inOrg`,
-  which then makes SQLite go to the ids (D-100). A list paged by id needs a unique index on
-  `(org_id, id)`, and an index one of its filters uses must end with `id` (D-101).
-  `apps/api/test/query-plans.test.ts` checks the plans: add a row there for a new lookup or list.
+  steer SQLite. For a lookup by ids, real or a query, give `inIds(column, ids)` straight to
+  `inOrg`, which then makes SQLite go to the ids (D-100, D-104). That suits ids that are few: a
+  parent's children, a teacher's classes. Everything in some branches is marked `wide` by the
+  function that makes the query. A statement never goes to wide ids: it reads its page in the
+  page's own order and looks each row up (D-104). Inside `and()` or `or()`, ids only narrow what
+  something else finds. A list paged by id needs a unique index on `(org_id, id)`, and an index
+  one of its filters uses must end with `id` (D-101). `apps/api/test/query-plans.test.ts` checks
+  the plans: add a row there for a new lookup, reach or list.
 - **Modules** (`apps/api/src/modules/<name>/`) own their routes, service and repository, and call
   each other only through services.
 - **API format**: JSON, camelCase, locale-neutral (no `Accept-Language`, no translated text).

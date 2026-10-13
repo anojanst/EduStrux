@@ -1,12 +1,18 @@
+import { enrolments } from '@edustrux/db';
+import { asc } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { firstIds, idsFrom, type OrgCtx } from '../src/db/scope';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
 import * as classes from '../src/modules/classes/repository';
+import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
 import * as enrolment from '../src/modules/enrolment/repository';
+import * as enrolmentService from '../src/modules/enrolment/service';
 import * as people from '../src/modules/people/repository';
-import { planOf, searchBy, searchIn, SORT, type Send } from './query-plans';
+import * as peopleService from '../src/modules/people/service';
+import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
 
 // D1 counts and bills the rows a statement reads, and production has no table statistics to
 // steer SQLite. These tests take the plan of the statements the repositories really send, on the
@@ -16,6 +22,8 @@ import { planOf, searchBy, searchIn, SORT, type Send } from './query-plans';
 
 const IDS = ['id_a', 'id_b'];
 const RANGE = { startDate: '2026-01-01', endDate: '2026-03-31' };
+/** Tables in a plan, each with the column it must be reached by. */
+type Reached = [table: string, column: string][];
 
 describe('a lookup by a list of ids goes to the ids (D-100)', () => {
   // What is looked up, the table, the column the ids are in, and the call that sends it.
@@ -41,18 +49,6 @@ describe('a lookup by a list of ids goes to the ids (D-100)', () => {
       'attendance',
       'id',
       (ctx) => attendance.saveMarks(ctx, 'ses_a', [], IDS, { before: [], after: [] }),
-    ],
-    [
-      'enrolments by student',
-      'enrolments',
-      'student_id',
-      (ctx) => enrolment.activeClassIds(ctx, IDS),
-    ],
-    [
-      'enrolments by class',
-      'enrolments',
-      'class_id',
-      (ctx) => enrolment.activeStudentIds(ctx, IDS),
     ],
     [
       'enrolments by class, to invoice',
@@ -140,6 +136,218 @@ describe('a lookup by a list of ids goes to the ids (D-100)', () => {
   it('reads one class’s enrolments to find who is expected at a lesson', async () => {
     const plan = await planOf((ctx) => enrolment.activeStudentIdsOn(ctx, 'cls_a', '2026-02-01'));
     expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+  });
+});
+
+describe('a lookup by a query for ids goes to the ids at every level (D-104)', () => {
+  const MEMBER = 'mem_a';
+  const taught = (ctx: OrgCtx) => enrolmentService.studentsTaughtBy(ctx, MEMBER);
+  const children = (ctx: OrgCtx) => peopleService.studentsOfGuardian(ctx, MEMBER);
+  const childrensClasses = (ctx: OrgCtx) => enrolmentService.classesOfChildren(ctx, MEMBER);
+  const WEEK = { from: '2026-02-01', to: '2026-02-07' };
+
+  // Each level of a reach, as the table it reads and the column it must be reached by.
+  const teachersClasses: Reached = [['classes', 'teacher_membership_id']];
+  const teachersStudents: Reached = [['enrolments', 'class_id'], ...teachersClasses];
+  const parentsFamilies: Reached = [
+    ['families', 'id'],
+    ['guardians', 'membership_id'],
+  ];
+  const parentsStudents: Reached = [['students', 'family_id'], ...parentsFamilies];
+  const parentsClasses: Reached = [['enrolments', 'student_id'], ...parentsStudents];
+
+  // What is looked up, the call that sends it, and every table in it with its column.
+  const lookups: [string, Send, Reached][] = [
+    [
+      'students by id, from the enrolments in some classes',
+      (ctx) => people.studentNames(ctx, enrolment.activeStudents(ctx, IDS)),
+      [
+        ['students', 'id'],
+        ['enrolments', 'class_id'],
+      ],
+    ],
+    [
+      'classes by id, from the enrolments of some students',
+      (ctx) => classes.classLabels(ctx, enrolment.activeClasses(ctx, IDS)),
+      [
+        ['classes', 'id'],
+        ['enrolments', 'student_id'],
+      ],
+    ],
+    [
+      'grades by student, from the enrolments in some classes',
+      (ctx) => people.listGrades(ctx, enrolment.activeStudents(ctx, IDS)),
+      [
+        ['student_grades', 'student_id'],
+        ['enrolments', 'class_id'],
+      ],
+    ],
+    [
+      'the names of a teacher’s students: two levels',
+      (ctx) => people.studentNames(ctx, taught(ctx)),
+      [['students', 'id'], ...teachersStudents],
+    ],
+    [
+      'the students a teacher reaches',
+      (ctx) => people.listStudents(ctx, 50, undefined, {}, { studentIds: taught(ctx) }),
+      [['students', 'id'], ...teachersStudents],
+    ],
+    [
+      'the families a teacher reaches',
+      (ctx) => people.listFamilies(ctx, 50, undefined, {}, { studentIds: taught(ctx) }),
+      [['families', 'id'], ['students', 'id'], ...teachersStudents],
+    ],
+    [
+      'the families a parent reaches',
+      (ctx) => people.listFamilies(ctx, 50, undefined, {}, { guardianMembershipId: MEMBER }),
+      parentsFamilies,
+    ],
+    [
+      'the students a parent reaches',
+      (ctx) => people.listStudents(ctx, 50, undefined, {}, { guardianMembershipId: MEMBER }),
+      [
+        ['students', 'family_id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'the enrolments a teacher reaches',
+      (ctx) =>
+        enrolment.listEnrolments(
+          ctx,
+          50,
+          undefined,
+          {},
+          { classIds: classesService.classesTaughtBy(ctx, MEMBER) },
+        ),
+      teachersStudents,
+    ],
+    [
+      'the enrolments a parent reaches: three levels',
+      (ctx) => enrolment.listEnrolments(ctx, 50, undefined, {}, { studentIds: children(ctx) }),
+      parentsClasses,
+    ],
+    [
+      'the classes a parent reaches: four levels',
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { classIds: childrensClasses(ctx) }),
+      [['classes', 'id'], ...parentsClasses],
+    ],
+    [
+      'the sessions a teacher reaches',
+      (ctx) => classes.listSessions(ctx, 50, undefined, WEEK, { teacherMembershipId: MEMBER }),
+      [['sessions', 'class_id'], ...teachersClasses],
+    ],
+    [
+      'the sessions a parent reaches',
+      (ctx) => classes.listSessions(ctx, 50, undefined, WEEK, { classIds: childrensClasses(ctx) }),
+      [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
+    ],
+    [
+      'the invoices a parent reaches',
+      (ctx) =>
+        billing.listInvoices(
+          ctx,
+          50,
+          undefined,
+          {},
+          { familyIds: peopleService.familiesOfGuardian(ctx, MEMBER), issuedOnly: true },
+        ),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+  ];
+
+  it.each(lookups)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  it('reads the names of the students on a page from the page, in one statement', async () => {
+    const page = (ctx: OrgCtx) =>
+      firstIds(idsFrom(ctx, enrolments, enrolments.studentId), 51, asc(enrolments.id));
+    const plan = await planOf((ctx) => people.studentNames(ctx, page(ctx)));
+    expect(plan).toMatch(searchBy('students', 'id'));
+    expect(plan).toMatch(searchIn('enrolments', 'enrolments_org_id_uq'));
+    expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('ids marked wide are checked row by row, and the page keeps its order (D-104)', () => {
+  const classesInBranches = (ctx: OrgCtx) => classesService.classesInBranches(ctx, IDS);
+  const studentsInBranches = (ctx: OrgCtx) => peopleService.studentsInBranches(ctx, IDS);
+  const familiesInBranches = (ctx: OrgCtx) => peopleService.familiesInBranches(ctx, IDS);
+  // A step that reads everything in the branches: what a wide reach must never cost a page.
+  const READS_THE_BRANCHES =
+    /^SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\? AND branch_id=\?/m;
+
+  // The list, the index its page is read along, the call, and the tables each row is looked up in.
+  const lists: [string, string, string, Send, string[]][] = [
+    [
+      'GET /enrolments, for staff of some branches',
+      'enrolments',
+      'enrolments_org_id_uq',
+      (ctx) =>
+        enrolment.listEnrolments(
+          ctx,
+          50,
+          undefined,
+          {},
+          { classIds: classesInBranches(ctx), studentIds: studentsInBranches(ctx) },
+        ),
+      ['classes', 'students', 'families'],
+    ],
+    [
+      'GET /enrolments?classId, for staff of some branches',
+      'enrolments',
+      'enrolments_org_class_idx',
+      (ctx) =>
+        enrolment.listEnrolments(
+          ctx,
+          50,
+          'id_a',
+          { classId: 'cls_a' },
+          { classIds: classesInBranches(ctx), studentIds: studentsInBranches(ctx) },
+        ),
+      ['classes', 'students', 'families'],
+    ],
+    [
+      'GET /invoices, for staff of some branches',
+      'invoices',
+      'invoices_org_id_uq',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, {}, { familyIds: familiesInBranches(ctx) }),
+      ['families'],
+    ],
+    [
+      'GET /invoices?status, for staff of some branches',
+      'invoices',
+      'invoices_org_status_idx',
+      (ctx) =>
+        billing.listInvoices(
+          ctx,
+          50,
+          'id_a',
+          { status: 'issued' },
+          { familyIds: familiesInBranches(ctx) },
+        ),
+      ['families'],
+    ],
+  ];
+
+  it.each(lists)('%s', async (_what, table, index, send, lookedUpIn) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchIn(table, index));
+    expect(plan).not.toContain(SORT);
+    for (const other of lookedUpIn) expect(plan).toMatch(searchBy(other, 'id'));
+    expect(plan).not.toMatch(READS_THE_BRANCHES);
+  });
+
+  it('finds one invoice by its id, then looks its family up', async () => {
+    const plan = await planOf((ctx) =>
+      billing.findInvoice(ctx, 'inv_a', { familyIds: familiesInBranches(ctx) }),
+    );
+    expect(plan).toMatch(searchBy('invoices', 'id'));
+    expect(plan).toMatch(searchBy('families', 'id'));
+    expect(plan).not.toMatch(READS_THE_BRANCHES);
   });
 });
 

@@ -192,6 +192,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |
 | Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them it waited for one after another (calls sent together count once), and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). The budget for every endpoint is about 3 trips in sequence: sign-in, one read stage, one write. Cloudflare Smart Placement isn't used for now (D-102). |
+| Reach and reads across modules | What a caller may see is worked out inside the statement that reads it, as a subquery, so a teacher, a parent or staff limited to some branches cost the same database calls as the owner. A module gets another module's rows by asking it for a query for ids, or by giving it one, and never reads its tables. Few ids (a parent's children, a teacher's classes) are gone to. Everything in some branches is not: the page is read in its own order and each row looked up (D-104). |
 
 ---
 
@@ -281,7 +282,7 @@ Student logins come later (v1.1+). The super-admin console sits outside org rout
 
 ## 7. Data model (core tables)
 
-All tables except `users` include `org_id`, `created_at`, `updated_at` and `deleted_at`. Indexes lead with `org_id`. A table with a list paged by id has a unique index on `(org_id, id)`, and an index one of that list's filters uses ends with `id`, so a page is read in order and never sorted (D-101). A lookup by a list of ids is written so SQLite goes to the ids, which holds with no table statistics (D-100).
+All tables except `users` include `org_id`, `created_at`, `updated_at` and `deleted_at`. Indexes lead with `org_id`. A table with a list paged by id has a unique index on `(org_id, id)`, and an index one of that list's filters uses ends with `id`, so a page is read in order and never sorted (D-101). A lookup by a list of ids is written so SQLite goes to the ids, which holds with no table statistics (D-100). The ids can be a query, and so can what a caller may see (D-104).
 
 | Area | Tables | Key columns |
 |---|---|---|

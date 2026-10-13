@@ -12,7 +12,7 @@ import {
   type SetSchedule,
   type UpdateClass,
 } from '@edustrux/shared';
-import type { Access, OrgCtx } from '../../db/scope';
+import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
 import {
   conflict,
   forbidden,
@@ -67,9 +67,10 @@ export function toSession(row: SessionWithClass, timezone: string): Session {
 
 /**
  * A role's scope as a filter on classes. Branch staff reach the classes in their branches, a
- * teacher the classes they teach, and a parent the classes their children are enrolled in.
+ * teacher the classes they teach, and a parent the classes their children are enrolled in. It
+ * costs no database trip: a parent's classes are a query, not a list read first (D-104).
  */
-async function reachOf(ctx: OrgCtx, access: Access): Promise<repo.Reach> {
+function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
   switch (access.scope) {
     case 'all':
       return {};
@@ -78,7 +79,7 @@ async function reachOf(ctx: OrgCtx, access: Access): Promise<repo.Reach> {
     case 'own':
       return access.role === 'teacher'
         ? { teacherMembershipId: access.membershipId }
-        : { classIds: await enrolment.classIdsOfChildren(ctx, access.membershipId) };
+        : { classIds: enrolment.classesOfChildren(ctx, access.membershipId) };
   }
 }
 
@@ -170,7 +171,7 @@ export async function listClasses(
     limit,
     decodeCursor(cursor),
     filter,
-    await reachOf(ctx, access),
+    reachOf(ctx, access),
   );
   const { data, nextCursor } = toPage(rows, limit);
   const slots = data.length
@@ -191,22 +192,28 @@ export async function listClasses(
 }
 
 export async function getClass(ctx: OrgCtx, access: Access, id: string): Promise<Class> {
-  const row = await findClassOr404(ctx, id, await reachOf(ctx, access));
+  const row = await findClassOr404(ctx, id, reachOf(ctx, access));
   return toClass(row, await repo.listSlots(ctx, [id]));
 }
 
-/** The classes in these branches. */
-export function classIdsInBranches(ctx: OrgCtx, branchIds: string[]) {
-  return repo.classIds(ctx, { branchIds });
+// Who a caller reaches, for other modules to filter by. Each is a query for ids, written into
+// the statement it filters: no database trip (D-104).
+
+/** The classes in these branches. Wide: a share of the org. */
+export function classesInBranches(ctx: OrgCtx, branchIds: string[]): IdQuery {
+  return repo.classesWithin(ctx, { branchIds });
 }
 
 /** The classes this member teaches. */
-export function classIdsTaughtBy(ctx: OrgCtx, teacherMembershipId: string) {
-  return repo.classIds(ctx, { teacherMembershipId });
+export function classesTaughtBy(ctx: OrgCtx, teacherMembershipId: string): IdQuery {
+  return repo.classesWithin(ctx, { teacherMembershipId });
 }
 
-/** What a record that points at a class shows of it, by class id, whoever is asking. */
-export async function classLabels(ctx: OrgCtx, ids: string[]) {
+/**
+ * What a record that points at a class shows of it, by class id, whoever is asking. `ids` can
+ * be a query: the labels of whatever another read returns, in the same stage.
+ */
+export async function classLabels(ctx: OrgCtx, ids: Ids) {
   return new Map((await repo.classLabels(ctx, ids)).map(({ id, ...label }) => [id, label]));
 }
 
@@ -222,7 +229,7 @@ export function classesBilledIn(ctx: OrgCtx, period: { termId: string } | DateRa
  * Each class's lesson dates in the range, in order, by class id: the lessons it holds, so not
  * the cancelled ones. A class with no lessons there isn't in the map.
  */
-export async function lessonDates(ctx: OrgCtx, classIds: string[], range: DateRange) {
+export async function lessonDates(ctx: OrgCtx, classIds: Ids, range: DateRange) {
   const dates = new Map<string, string[]>();
   for (const { classId, date } of await repo.lessonDates(ctx, classIds, range)) {
     const list = dates.get(classId);
@@ -300,7 +307,7 @@ export async function updateClass(
   id: string,
   input: UpdateClass,
 ): Promise<Class> {
-  const before = await findClassOr404(ctx, id, await reachOf(ctx, access));
+  const before = await findClassOr404(ctx, id, reachOf(ctx, access));
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
   const { updatedAt: _ignored, teacherId, ...rest } = input;
@@ -341,7 +348,7 @@ export async function updateClass(
  * a price rule of its own.
  */
 export async function deleteClass(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  const before = await findClassOr404(ctx, id, await reachOf(ctx, access));
+  const before = await findClassOr404(ctx, id, reachOf(ctx, access));
   const enrolmentCount = await enrolment.countEnrolments(ctx, { classId: id });
   if (enrolmentCount > 0) {
     throw unprocessable(`This class has ${enrolmentCount} enrolment(s), so it can't be deleted.`);
@@ -440,7 +447,7 @@ export async function setSchedule(
   classId: string,
   input: SetSchedule,
 ): Promise<ScheduleResult> {
-  const klass = await findClassOr404(ctx, classId, await reachOf(ctx, access));
+  const klass = await findClassOr404(ctx, classId, reachOf(ctx, access));
   const course = await curriculum.getCourse(ctx, klass.courseId);
   const resolved = resolveSlots(input.slots, course.durationMinutes);
   if ('errors' in resolved) throw validationFailed(resolved.errors);
@@ -495,7 +502,7 @@ export async function listSessions(
   cursor: string | undefined,
   query: Omit<repo.SessionFilter, 'spans'> & { studentId?: string },
 ) {
-  const reach = await reachOf(ctx, access);
+  const reach = reachOf(ctx, access);
   const { studentId, ...filter } = query;
   if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
   if (filter.roomId) await branches.getRoom(ctx, filter.roomId);
@@ -528,7 +535,7 @@ export async function listSessions(
 }
 
 export async function getSession(ctx: OrgCtx, access: Access, id: string): Promise<Session> {
-  const row = await repo.findSession(ctx, id, await reachOf(ctx, access));
+  const row = await repo.findSession(ctx, id, reachOf(ctx, access));
   if (!row) throw notFound('Session');
   const { timezone } = await orgClock(ctx);
   return toSession(row, timezone);
