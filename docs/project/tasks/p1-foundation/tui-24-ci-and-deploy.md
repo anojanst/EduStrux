@@ -7,8 +7,8 @@ module: infra
 priority: P1
 size: M
 endpoints: []
-branch: task/tui-24-deploy-workflow
-pr: 24
+branch: task/tui-24-ci-test-timeout
+pr: 26
 ---
 
 # TUI-24 CI pipeline + Cloudflare deploy (staging & prod)
@@ -32,10 +32,14 @@ until the app is finalised (#21, D-069). Undoing both before launch is in TUI-86
 docs. It runs `pnpm typecheck` and `pnpm test`, then `pnpm db:migrate:production`, then
 `pnpm deploy:production`. The repo is public, so Actions minutes are free. Recorded in D-076.
 
+**First run (2026-10-13):** merging #24 started the workflow, and it stopped at the tests, so
+nothing was migrated or deployed. 15 tests in `classes.test.ts` and `people.test.ts` ran past
+vitest's 5s default on the GitHub runner; none failed an assertion. `testTimeout` is now 30s.
+
 **Left:**
 
-- The owner adds the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Until
-  then every run fails at the migration step and nothing is deployed.
+- A run that gets through the migration and the deploy. The owner set both secrets on
+  2026-10-13; the token's permissions are untested until then.
 - Checks on pull requests (typecheck, test before merge) aren't set up. The workflow only checks
   after the merge, before it deploys.
 - Set `CLERK_AUTHORIZED_PARTIES` once the web app has an origin.
