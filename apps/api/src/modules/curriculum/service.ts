@@ -217,6 +217,16 @@ export async function getCourse(ctx: OrgCtx, id: string): Promise<Course> {
   return toCourse(await findCourseOr404(ctx, id));
 }
 
+/** Each of the given courses' default price, by course id. null = the course has none. */
+export async function defaultPrices(ctx: OrgCtx, ids: string[]) {
+  return new Map(
+    (await repo.defaultPrices(ctx, ids)).map(({ id, amount, currency }) => [
+      id,
+      amount !== null && currency !== null ? { amount, currency } : null,
+    ]),
+  );
+}
+
 /** The columns a default price is stored in. It must be in the org's currency. */
 async function priceColumns(ctx: OrgCtx, price: CreateCourse['defaultPrice']) {
   if (!price) return { defaultPriceAmount: null, defaultPriceCurrency: null };

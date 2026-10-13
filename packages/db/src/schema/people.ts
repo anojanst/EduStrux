@@ -18,10 +18,17 @@ export const families = sqliteTable(
     address: text('address'),
     // The guardian invoices are addressed to: the first one added, until another is chosen.
     billingGuardianId: text('billing_guardian_id'),
+    // What the family quotes on a bank transfer, copied onto its invoices. Set when the family
+    // is added and never changed.
+    bankReference: text('bank_reference'),
   },
   (t) => [
     index('families_org_name_idx').on(t.orgId, t.nameNorm, t.id),
     index('families_org_branch_idx').on(t.orgId, t.branchId),
+    // Deleted families keep theirs, so a late payment can't be matched to someone else.
+    uniqueIndex('families_org_bank_reference_uq')
+      .on(t.orgId, t.bankReference)
+      .where(sql`${t.bankReference} is not null`),
   ],
 );
 

@@ -80,7 +80,8 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Money and dates** go through the helpers in `packages/shared` (`money.ts`, `dates.ts`),
   shared by the API and the web app: decimal strings ↔ minor units without floats, local date
   maths, local time ↔ UTC in the org's timezone (DST rule D-016), and formatting with the org's
-  locale and date format.
+  locale and date format. An amount worked out from a price (pro-rata, tax) stays in integer
+  minor units and rounds halves up (D-093).
 - **Names** of families and people are stored as typed and again normalised, in a `*_norm` column
   filled by `normaliseName()` from `packages/shared`. Sort and search on the normalised column. A
   list in name order puts every sort key in its cursor with `byKeys` and `decodeKeys` (D-056).

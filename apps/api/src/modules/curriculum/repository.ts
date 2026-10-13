@@ -1,7 +1,7 @@
 import { courses, gradeLevels, now, subjects } from '@edustrux/db';
 import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
-import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type GradeLevelRow = typeof gradeLevels.$inferSelect;
 export type NewGradeLevelRow = typeof gradeLevels.$inferInsert;
@@ -245,6 +245,18 @@ export function findCourse(ctx: OrgCtx, id: string) {
     .from(courses)
     .where(inOrg(ctx, courses, eq(courses.id, id)))
     .get();
+}
+
+/** The default prices of the given courses. */
+export function defaultPrices(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({
+      id: courses.id,
+      amount: courses.defaultPriceAmount,
+      currency: courses.defaultPriceCurrency,
+    })
+    .from(courses)
+    .where(inOrg(ctx, courses, inIds(courses.id, ids)));
 }
 
 /** How many courses use a subject or a grade level. Neither can be deleted while any do. */

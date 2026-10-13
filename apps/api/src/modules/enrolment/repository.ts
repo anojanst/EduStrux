@@ -167,3 +167,25 @@ export function activeSpans(ctx: OrgCtx, studentId: string) {
     .from(enrolments)
     .where(inOrg(ctx, enrolments, eq(enrolments.studentId, studentId), active));
 }
+
+/** The active enrolments in these classes that cover some part of the dates, both included. */
+export function activeDuring(
+  ctx: OrgCtx,
+  classIds: string[],
+  range: { startDate: string; endDate: string },
+) {
+  return ctx.db
+    .select()
+    .from(enrolments)
+    .where(
+      inOrg(
+        ctx,
+        enrolments,
+        inIds(enrolments.classId, classIds),
+        active,
+        lte(enrolments.startDate, range.endDate),
+        or(isNull(enrolments.endDate), gte(enrolments.endDate, range.startDate)),
+      ),
+    )
+    .orderBy(asc(enrolments.id));
+}

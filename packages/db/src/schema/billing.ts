@@ -1,6 +1,6 @@
-import { PRICE_BASES } from '@edustrux/shared';
+import { INVOICE_STATUSES, PRICE_BASES, PRICE_SOURCES } from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';
 
 // How classes are priced. A rule prices one class, one course's classes, or (course_id and
@@ -45,4 +45,92 @@ export const priceRules = sqliteTable(
         .where(sql`${t.deletedAt} is null and ${t.basis} <> 'per_term'`),
     ];
   },
+);
+
+// What a family owes for one invoice run: a term, or a calendar month for classes with no term.
+// A run makes one invoice per family, with a line per enrolment it bills.
+export const invoices = sqliteTable(
+  'invoices',
+  {
+    ...orgColumns(),
+    familyId: text('family_id').notNull(),
+    status: text('status', { enum: INVOICE_STATUSES }).notNull().default('draft'),
+    // The period billed: term_id for a term run, month (`YYYY-MM`) for a monthly one.
+    termId: text('term_id'),
+    month: text('month'),
+    // Local dates, both included.
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    // Minor units, in `currency`: the sums of the lines. total = subtotal + tax.
+    currency: text('currency').notNull(),
+    subtotalAmount: integer('subtotal_amount').notNull(),
+    taxAmount: integer('tax_amount').notNull(),
+    totalAmount: integer('total_amount').notNull(),
+    // Copied from the family when the invoice is generated.
+    bankReference: text('bank_reference'),
+    dueDate: text('due_date'),
+    notes: text('notes'),
+    issuedAt: text('issued_at'),
+    voidedAt: text('voided_at'),
+    // The job that generated it.
+    jobId: text('job_id'),
+  },
+  (t) => [
+    index('invoices_org_family_idx').on(t.orgId, t.familyId),
+    index('invoices_org_status_idx').on(t.orgId, t.status),
+    index('invoices_org_term_idx').on(t.orgId, t.termId),
+    index('invoices_org_month_idx').on(t.orgId, t.month),
+    index('invoices_org_job_idx').on(t.orgId, t.jobId),
+  ],
+);
+
+// One enrolment's charge for the invoice's period. The price and the tax rate are copied on, so
+// changing or deleting a price rule or a tax rate later doesn't change an invoice.
+export const invoiceLines = sqliteTable(
+  'invoice_lines',
+  {
+    ...orgColumns(),
+    invoiceId: text('invoice_id').notNull(),
+    enrolmentId: text('enrolment_id').notNull(),
+    studentId: text('student_id').notNull(),
+    classId: text('class_id').notNull(),
+    // Copied from the invoice: the term id or the month, and the dates it covers.
+    periodKey: text('period_key').notNull(),
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    basis: text('basis', { enum: PRICE_BASES }).notNull(),
+    // The price for one `basis`, in the invoice's currency.
+    unitAmount: integer('unit_amount').notNull(),
+    // Lessons for per_lesson, packs for pack, 1 for per_term and per_month.
+    quantity: integer('quantity').notNull(),
+    // The lessons this line pays for. For a pack, the lessons its packs hold.
+    lessons: integer('lessons').notNull(),
+    // The lessons the class holds in the period. null for a pack, which isn't tied to one.
+    periodLessons: integer('period_lessons'),
+    // The enrolment's free-trial lessons that fell in the period.
+    freeLessons: integer('free_lessons').notNull().default(0),
+    // Where the price came from. null source = only the enrolment's override priced it.
+    priceSource: text('price_source', { enum: PRICE_SOURCES }),
+    priceRuleId: text('price_rule_id'),
+    priceOverridden: integer('price_overridden', { mode: 'boolean' }).notNull().default(false),
+    // The tax rate as it was when the invoice was generated. All null = no tax.
+    taxRateId: text('tax_rate_id'),
+    taxName: text('tax_name'),
+    taxRateBps: integer('tax_rate_bps'),
+    taxInclusive: integer('tax_inclusive', { mode: 'boolean' }),
+    // Minor units. total = subtotal + tax.
+    subtotalAmount: integer('subtotal_amount').notNull(),
+    taxAmount: integer('tax_amount').notNull(),
+    totalAmount: integer('total_amount').notNull(),
+    // Set with the invoice's voided_at, so the enrolment can be invoiced for the period again.
+    voidedAt: text('voided_at'),
+  },
+  (t) => [
+    index('invoice_lines_org_invoice_idx').on(t.orgId, t.invoiceId),
+    // An enrolment is invoiced once for a period. This is what makes a second run, a retried
+    // job or two runs at once unable to bill it twice.
+    uniqueIndex('invoice_lines_org_enrolment_period_uq')
+      .on(t.orgId, t.enrolmentId, t.periodKey)
+      .where(sql`${t.deletedAt} is null and ${t.voidedAt} is null`),
+  ],
 );

@@ -1,5 +1,5 @@
 import { classSchedules, classes, now, sessions } from '@edustrux/db';
-import { and, asc, count, eq, gt, gte, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 import type { DateRange, LocalMoment } from './schedule';
@@ -144,6 +144,32 @@ export function classLabels(ctx: OrgCtx, ids: string[]) {
     })
     .from(classes)
     .where(inOrg(ctx, classes, inIds(classes.id, ids)));
+}
+
+/**
+ * The classes one invoice run bills: a term's classes, or the classes with no term that run at
+ * some point in the dates given.
+ */
+export function classesBilledIn(ctx: OrgCtx, period: { termId: string } | DateRange) {
+  return ctx.db
+    .select({
+      id: classes.id,
+      courseId: classes.courseId,
+      termId: classes.termId,
+      branchId: classes.branchId,
+    })
+    .from(classes)
+    .where(
+      'termId' in period
+        ? inOrg(ctx, classes, eq(classes.termId, period.termId))
+        : inOrg(
+            ctx,
+            classes,
+            isNull(classes.termId),
+            lte(classes.startDate, period.endDate),
+            or(isNull(classes.endDate), gte(classes.endDate, period.startDate)),
+          ),
+    );
 }
 
 /** How many classes use a course, term, branch or room. None of those can be deleted while any do. */
@@ -349,6 +375,27 @@ export function upcomingSessions(ctx: OrgCtx, classId: string, from: LocalMoment
     .select()
     .from(sessions)
     .where(inOrg(ctx, sessions, eq(sessions.classId, classId), upcoming(from)));
+}
+
+/**
+ * The dates of these classes' lessons in the range, in order: scheduled sessions only. A class
+ * with two lessons on one day has that date twice.
+ */
+export function lessonDates(ctx: OrgCtx, classIds: string[], range: DateRange) {
+  return ctx.db
+    .select({ classId: sessions.classId, date: sessions.date })
+    .from(sessions)
+    .where(
+      inOrg(
+        ctx,
+        sessions,
+        inIds(sessions.classId, classIds),
+        eq(sessions.status, 'scheduled'),
+        gte(sessions.date, range.startDate),
+        lte(sessions.date, range.endDate),
+      ),
+    )
+    .orderBy(asc(sessions.date), asc(sessions.startTime), asc(sessions.id));
 }
 
 // A session is read with what a timetable needs from its class.

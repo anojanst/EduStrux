@@ -47,6 +47,12 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/tax-rates/{taxRateId}',
         '/api/v1/orgs/{orgId}/price-rules',
         '/api/v1/orgs/{orgId}/price-rules/{priceRuleId}',
+        '/api/v1/orgs/{orgId}/terms/{termId}/generate-invoices',
+        '/api/v1/orgs/{orgId}/invoices',
+        '/api/v1/orgs/{orgId}/invoices/generate-monthly',
+        '/api/v1/orgs/{orgId}/invoices/{invoiceId}',
+        '/api/v1/orgs/{orgId}/invoices/{invoiceId}/issue',
+        '/api/v1/orgs/{orgId}/invoices/{invoiceId}/void',
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);

@@ -27,6 +27,9 @@ export const Job = z
   .openapi('Job');
 export type Job = z.infer<typeof Job>;
 
+/** What a long action returns with 202. Poll `GET /jobs/{jobId}` with it. */
+export const JobStarted = z.object({ jobId: z.string() }).openapi('JobStarted');
+
 export const AuditEntry = z
   .object({
     id: z.string(),

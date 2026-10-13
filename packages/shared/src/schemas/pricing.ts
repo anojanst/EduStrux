@@ -20,6 +20,10 @@ export function basesOverlap(a: PriceBasis, b: PriceBasis): boolean {
   return [true, false].some((inTerm) => basisFitsClass(a, inTerm) && basisFitsClass(b, inTerm));
 }
 
+/** Where an enrolment's usual price came from, most specific first. */
+export const PRICE_SOURCES = ['class_rule', 'course_rule', 'course_default', 'org_rule'] as const;
+export type PriceSource = (typeof PRICE_SOURCES)[number];
+
 export const MIN_PACK_LESSONS = 2;
 export const MAX_PACK_LESSONS = 200;
 export const MAX_FREE_TRIAL_LESSONS = 20;

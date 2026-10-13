@@ -1,4 +1,5 @@
 import {
+  bankReferenceFor,
   localNow,
   newId,
   normaliseName,
@@ -207,6 +208,7 @@ export async function createFamily(
     branchId: input.branchId,
     address: input.address ?? null,
     billingGuardianId: null,
+    bankReference: bankReferenceFor(id),
   });
   return getFamily(ctx, access, id);
 }
@@ -481,6 +483,26 @@ export function studentIdsInBranches(ctx: OrgCtx, branchIds: string[]) {
 /** A parent's own children: the students of the families they are a signed-in guardian of. */
 export function studentIdsOfGuardian(ctx: OrgCtx, guardianMembershipId: string) {
   return repo.studentIds(ctx, { guardianMembershipId });
+}
+
+/** The families whose home branch is one of these. */
+export function familyIdsInBranches(ctx: OrgCtx, branchIds: string[]) {
+  return repo.familyIds(ctx, { branchIds });
+}
+
+/** A parent's own families: the ones they are a signed-in guardian of. */
+export function familyIdsOfGuardian(ctx: OrgCtx, guardianMembershipId: string) {
+  return repo.familyIds(ctx, { guardianMembershipId });
+}
+
+/** What a record that points at a family shows of it, by family id, whoever is asking. */
+export async function familyLabels(ctx: OrgCtx, ids: string[]) {
+  return new Map((await repo.familyLabels(ctx, ids)).map(({ id, ...label }) => [id, label]));
+}
+
+/** Each of the given students' family, by student id. */
+export async function familyIdsOfStudents(ctx: OrgCtx, ids: string[]) {
+  return new Map((await repo.studentFamilies(ctx, ids)).map((row) => [row.id, row.familyId]));
 }
 
 /** The names of the given students, by student id, whoever is asking. */

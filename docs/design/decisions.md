@@ -217,6 +217,8 @@ is the only deployed environment).
   - No dead-letter queue is configured: final failures are only logged. The retry limit is set in
     both the code and `wrangler.jsonc`, which must stay in step.
 - **Tasks:** TUI-66 (and TUI-37, TUI-45, TUI-60, whose handlers must be idempotent).
+- **Update 2026-10-13 (TUI-37):** The invoice run is the first job handler. It bills an enrolment
+  once for a period, so a retry or a message delivered again makes nothing twice (D-094).
 
 ## D-018 · 2026-10-07 · Only the job's starter and the owner can read a job
 
@@ -511,6 +513,9 @@ is the only deployed environment).
   and an enrolment's override are charged per term for a class in a term and per month for one
   with none (D-077). A `per_term` price rule only fits a class in a term and a `per_month` one a
   class with no term (D-081). The month-based invoice action is still undecided (TUI-37).
+- **Update 2026-10-13 (TUI-37):** The owner decided the month-based action:
+  `POST /invoices/generate-monthly` (D-089). A term run bills the classes in the term and a
+  monthly run the classes with no term (D-091).
 
 ## D-037 · 2026-10-08 · Academic year and term rules
 
@@ -728,6 +733,8 @@ is the only deployed environment).
   row per request, not one per student. Its `before` and `after` list only the students whose
   status changed, the first audit row to store only what changed. The general "changed fields
   only" option and archiving stay deferred (D-075).
+- **Update 2026-10-13 (TUI-37):** Invoice runs follow the rule: one `invoice.generated` row per
+  run, with the counts and the total, not one per invoice (D-094).
 
 ## D-046 · 2026-10-11 · A holiday added later removes the sessions it closes
 
@@ -1122,6 +1129,9 @@ is the only deployed environment).
 - **Tasks:** TUI-32 (and TUI-33, TUI-38, TUI-43, TUI-45, TUI-74, TUI-79).
 - **Update 2026-10-12 (TUI-33):** Deleting a student is now refused (422) while they have
   enrolments (D-063).
+- **Update 2026-10-13 (TUI-37):** The bank reference was added with invoices (TUI-37), not with
+  payments, with a backfill for the families that already existed. The Family now returns
+  `bankReference` (D-097).
 
 ## D-058 · 2026-10-12 · Cross-branch enrolment: the caller must reach both student and class
 
@@ -1746,6 +1756,10 @@ is the only deployed environment).
   - TUI-37 needs a pack balance per enrolment, to know when the next pack is invoiced.
   - The limits on both numbers are in D-081.
 - **Tasks:** TUI-36 (and TUI-37).
+- **Update 2026-10-13 (TUI-37):** The owner decided what uses a pack: every lesson the class
+  holds inside the enrolment's dates, attended or not (D-087). The balance is worked out, not
+  stored (D-092). Free-trial lessons are the enrolment's first lessons, whichever period they
+  fall in (D-091).
 
 ## D-079 · 2026-10-13 · Bundles are built with discounts (TUI-58), not with price rules
 
@@ -1777,6 +1791,8 @@ is the only deployed environment).
   - How the flag is set and moved is in D-084. Which rate a price gets is in D-082.
   - Invoices (TUI-37) apply the tax.
 - **Tasks:** TUI-36 (and TUI-37).
+- **Update 2026-10-13 (TUI-37):** Invoices apply the tax per line and copy the rate onto the
+  line (D-093).
 
 ## D-081 · 2026-10-13 · Price rule shape: one target, a basis and a price
 
@@ -1827,6 +1843,9 @@ is the only deployed environment).
     gets a 500, not a 409.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37).
+- **Update 2026-10-13 (TUI-37):** An invoice line copies the price and the tax rate, so later
+  rule changes or deletes don't change an invoice (D-093). A price left in another currency
+  after a currency change isn't invoiced: the run skips it as `currency_mismatch` (D-091).
 
 ## D-082 · 2026-10-13 · Which price applies: the most specific one wins
 
@@ -1866,6 +1885,9 @@ is the only deployed environment).
   - Transfers and withdrawals with pro-rata (TUI-46) read the same price terms.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37, TUI-46).
+- **Update 2026-10-13 (TUI-37):** Invoice runs turn the terms into amounts (D-086, D-087,
+  D-091 to D-093). An enrolment with no price is skipped as `no_price` (D-090). The month-based
+  path is `POST /invoices/generate-monthly` (D-089).
 
 ## D-083 · 2026-10-13 · Who reaches price rules (assumption, for the owner to confirm)
 
@@ -1962,3 +1984,358 @@ is the only deployed environment).
   - Bundles aren't part of these routes (D-079).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37).
+- **Update 2026-10-13 (TUI-37):** Invoices exist now, and deleting a price rule or a tax rate
+  still needs no check against them: a line copies what it needs (D-093, D-098).
+
+## D-086 · 2026-10-13 · Pro-rata is by lessons
+
+- **Context:** The handoff lists pro-rata on invoices, and D-082 left the maths to TUI-37. A
+  term or month price needs a rule for an enrolment that covers only part of the period. The
+  owner was asked during the build. The other option offered was by days.
+- **Decision:** The owner decided pro-rata is by lessons:
+  - A per-term or per-month price is charged as the lessons the enrolment covers ÷ the lessons
+    the class holds in the period.
+  - Holidays and cancelled lessons don't count.
+  - Free-trial lessons come off the same way.
+  - Example: 6 of 10 lessons at $450 is $270.
+- **Consequences:**
+  - An enrolment that covers every lesson in the period pays the whole price.
+  - The amount depends on the class's lessons, so a class is billed from its sessions. What
+    counts as a lesson is in D-091, and rounding is in D-093.
+  - By days wasn't chosen.
+  - Pro-rata for transfers and withdrawals (TUI-46) isn't built yet. It should follow the same
+    rule unless the owner says otherwise.
+- **Tasks:** TUI-37 (and TUI-46).
+
+## D-087 · 2026-10-13 · Packs are used by scheduled lessons, not attendance
+
+- **Context:** D-078 said a pack is invoiced up front and the next one "when those lessons are
+  used", without saying what uses a lesson. The owner was asked during the build.
+- **Decision:** The owner decided:
+  - Every lesson the class holds inside the enrolment's dates uses one lesson of the pack,
+    attended or not. Cancelled lessons don't.
+  - A run invoices enough packs to cover the lessons up to the end of the period and carries the
+    rest forward.
+  - Example: a 10-pack with 12 lessons in the term is 2 packs now, with 8 lessons left for next
+    term.
+- **Consequences:**
+  - This settles what D-078 left open.
+  - Attendance doesn't change what a pack is charged for: an absence still uses a lesson.
+  - A pack is on an invoice before its lessons are held.
+  - The balance is worked out from invoices and sessions, not stored (D-092).
+- **Tasks:** TUI-37.
+
+## D-088 · 2026-10-13 · One invoice per family per run, reached through the family's home branch
+
+- **Context:** A run needed to know how to group what it bills and which staff reach the
+  result. A family has a home branch (D-051), and its children can be in classes at other
+  branches (D-058). The owner was asked during the build. The other options offered were also
+  letting the classes' branches reach the invoice, and one invoice per student.
+- **Decision:** The owner decided:
+  - A run makes one invoice per family, with a line per enrolment.
+  - An invoice goes with its family's home branch. Staff limited to some branches see, change
+    and generate invoices only for the families whose home branch is theirs, as for the family
+    record (D-051), whichever branch the classes on it are in.
+  - A child in another branch's class is invoiced by the home branch or the owner.
+  - A run by branch-limited staff reports the enrolments it left out, with the reason
+    `other_branch`.
+- **Consequences:**
+  - A branch's staff can't bill, or see the invoice of, a child from another home branch who
+    attends their class. They still see the child on the roster by name (D-061).
+  - A run started by branch-limited staff is a partial run. The other families are billed by a
+    run from their own home branch, the owner or staff with no branch limit. Enrolments already
+    billed are left out of it (D-094).
+  - The full reach by role is in D-096.
+- **Tasks:** TUI-37.
+
+## D-089 · 2026-10-13 · The monthly run is `POST /invoices/generate-monthly`
+
+- **Context:** Classes with no term are billed monthly (D-036). D-036 and D-082 left the path of
+  the month-based "generate invoices" action undecided. The owner was asked during the build.
+  The other option offered was `POST /months/{month}/generate-invoices`.
+- **Decision:** The owner decided the month-based run is `POST /invoices/generate-monthly`, with
+  the body `{ "month": "2026-11" }`.
+- **Consequences:**
+  - This settles the path D-036 and D-082 left undecided. The endpoint is an addition to the
+    handoff's list, which had only the term one.
+  - There are two runs: `POST /terms/{termId}/generate-invoices` for a term's classes, and this
+    one for the classes with no term. A centre with both kinds of class runs both (D-091).
+  - `month` is a calendar month, `YYYY-MM`. Anything else is 400.
+  - There is no "months" resource.
+- **Tasks:** TUI-37.
+
+## D-090 · 2026-10-13 · Invoice runs apply no discounts yet; an enrolment with no price is skipped
+
+- **Context:** The TUI-37 task note listed discounts, and D-082 left it to TUI-37 to say what a
+  run does with an enrolment that has no price. Both were set as defaults and stated to the
+  owner before the build. They weren't put as questions, and the owner didn't object.
+- **Decision:**
+  - Discounts aren't built in TUI-37. They wait for TUI-58, which already owns every discount
+    type and bundles (D-079).
+  - An enrolment with no price is skipped and listed in the job's result with the reason
+    `no_price`. It doesn't fail the run.
+- **Consequences:**
+  - Until TUI-58, an invoice charges each enrolment its price with nothing taken off. The word
+    "discounts" in the TUI-37 task note isn't delivered by TUI-37.
+  - Invoices and lines hold no discount today. TUI-58 has to add that.
+  - A run succeeds even when it skips enrolments. Staff find the ones with no price in `skipped`
+    in the job's result.
+  - This settles the point D-082 left to TUI-37.
+- **Tasks:** TUI-37, TUI-58.
+
+## D-091 · 2026-10-13 · What a run bills and how lessons are counted
+
+- **Context:** The owner decided pro-rata by lessons and packs by scheduled lessons (D-086,
+  D-087). TUI-37 settled which enrolments a run looks at, what counts as a lesson, and when an
+  enrolment is left out.
+- **Decision:**
+  - A term run bills the active enrolments in the term's classes. A monthly run bills the active
+    enrolments in the classes with no term that run at some point in that calendar month.
+    Neither touches the other kind of class.
+  - The period is the term's dates, or the month's first to last day. An enrolment whose dates
+    don't touch the period isn't looked at. Withdrawn enrolments aren't billed (TUI-46).
+  - A lesson is one of the class's sessions with status `scheduled`, on a date the enrolment
+    covers. A cancelled session doesn't count, and a holiday has no session to count (D-046).
+  - A per-lesson price is charged up front for every lesson in the period (a whole term or
+    month), not in arrears.
+  - Free trial (D-078): the enrolment's first N lessons, whichever period they fall in. They
+    aren't charged. A per-lesson price skips them, a term or month price is reduced pro rata
+    (D-086), and they don't use a pack.
+  - A run leaves an enrolment out for one of seven reasons, each listed in the job's result:
+    - `no_price`: nothing prices it (D-090).
+    - `no_lessons`: the class holds no lessons in the period on the dates the enrolment covers.
+    - `free_trial`: all its lessons in the period are free-trial lessons.
+    - `free`: the price is 0, or the amount rounds to 0. No $0 lines or invoices are made.
+    - `pack_covers`: the packs already invoiced cover the period (D-092).
+    - `currency_mismatch`: the price isn't in the org's currency, which D-081 allows after a
+      currency change.
+    - `other_branch`: the family's home branch is outside the branches of whoever started the
+      run (D-088).
+- **Consequences:**
+  - A centre with both kinds of class runs the term run and the monthly run (D-089).
+  - A class with no schedule yet isn't billed: its enrolments are skipped as `no_lessons`.
+  - Sessions for a class with no term exist only 13 weeks ahead (D-044), so a monthly run
+    further ahead than that finds no lessons.
+  - A run reads the sessions as they are when it runs. A lesson cancelled or added afterwards
+    doesn't change an invoice already made. To bill differently, void the invoice and generate
+    again (D-095).
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37 (and TUI-46).
+
+## D-092 · 2026-10-13 · A pack's balance is worked out, not stored
+
+- **Context:** D-078 said TUI-37 needs a pack balance per enrolment, and the owner decided what
+  uses a pack (D-087). TUI-37 settled where the balance lives.
+- **Decision:**
+  - No balance is stored. Each run works it out.
+  - Lessons bought: the `lessons` on the enrolment's pack lines, on invoices that aren't void.
+  - Lessons used: the enrolment's lessons up to the end of the period, less its free-trial
+    lessons, less the lessons in periods the enrolment was invoiced for on another basis.
+  - Packs invoiced: enough to cover the shortfall. When none is needed the enrolment is skipped
+    as `pack_covers`.
+  - On a pack line, `quantity` is the number of packs, `lessons` the lessons they hold, and
+    `periodLessons` is null.
+- **Consequences:**
+  - Voiding a pack invoice gives its lessons back with no extra step: the next run invoices
+    them again.
+  - An enrolment that moves to a pack from another basis doesn't use a pack for the periods it
+    already paid for.
+  - No endpoint returns the balance.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37.
+
+## D-093 · 2026-10-13 · Invoice amounts: rounding, tax per line, the price copied onto the line
+
+- **Context:** D-082 left turning price terms into amounts to TUI-37, D-080 left applying the
+  tax, and D-081 said the price must be copied onto the invoice line.
+- **Decision:**
+  - Amounts stay in integer minor units. Rounding is to the minor unit, halves up.
+  - A line's charge is the price × the lessons for `per_lesson`, the price × the packs for
+    `pack`, and the price pro rata by lessons for `per_term` and `per_month` (D-086).
+  - Tax is worked out per line. An inclusive rate is split out of the charge. An exclusive one
+    is added to it. A line holds its subtotal (before tax), its tax and its total.
+  - The invoice's subtotal, tax and total are the sums of its lines'.
+  - Copied onto each line when it is generated: the unit price, the basis, the price's source
+    (`class_rule`, `course_rule`, `course_default` or `org_rule`, or null when only an override
+    priced it), the price rule's id, whether the price was an override, and the tax rate's id,
+    name, rate and inclusive flag.
+  - An invoice is in the org's currency.
+- **Consequences:**
+  - Changing or deleting a price rule or a tax rate later doesn't change an invoice. This is the
+    point D-081 left to TUI-37.
+  - Deleting a price rule or a tax rate needs no check against invoices (D-098).
+  - Tax is rounded on each line, not on the invoice's total.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37.
+
+## D-094 · 2026-10-13 · An enrolment is invoiced once for a period: repeat runs, the job, its audit row
+
+- **Context:** Job handlers must be idempotent (D-017), and D-045 said invoice runs should get
+  one audit row per bulk action. TUI-37 settled how.
+- **Decision:**
+  - An enrolment is invoiced once for a period: a term, or a month. A partial unique index on a
+    line's org, enrolment and period refuses a second line. Void and deleted lines don't count.
+  - A run leaves out the enrolments that already have a line for the period and counts them as
+    `alreadyInvoiced`.
+  - Everything a run makes is written as one D1 batch, with its audit row, so a failed try
+    leaves nothing behind.
+  - A later run that finds something new, such as a child enrolled after the first run, makes a
+    second invoice for that family and period. It doesn't add to the first.
+  - Each invoice records the job that made it. The job's result counts what the job made on any
+    of its tries, so a message delivered again reports the same result.
+  - Both generate routes also take an `Idempotency-Key`: a retry with the same key gets the
+    first answer back and starts no second job.
+  - The job type is `invoices.generate`, the first job handler registered. Its result is an
+    `InvoiceRunResult`, shown in the API docs:
+    `{ termId, month, periodStart, periodEnd, invoices, lines, total, alreadyInvoiced, skipped }`.
+    Each entry in `skipped` is `{ enrolmentId, studentId, classId, reason }`.
+  - The branches of whoever started the run are stored in the job's input, so the job bills the
+    families the starter reaches (D-088).
+  - Audit (D-045): one `invoice.generated` row per run, with entity type `job` and the job's id,
+    holding `termId`, `month`, `invoices`, `lines`, `total` and `currency`. A run that writes
+    nothing writes no audit row. `job.started` is still written when the job starts.
+  - Job visibility is unchanged (D-018).
+- **Consequences:**
+  - Running a period again is safe and bills only what is new.
+  - A family can hold more than one invoice for the same period.
+  - If two runs overlap, the unique index fails the later one's whole batch. Its retry then
+    leaves out what the other run billed.
+  - The audit log says how many invoices a run made, not which ones. The job id on each invoice
+    links them.
+  - A run is one D1 batch. A very large org (several thousand lines in one run) may need it
+    split.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37.
+
+## D-095 · 2026-10-13 · Invoice statuses, due date and notes, issuing and voiding
+
+- **Context:** The handoff listed the invoice statuses and the issue and void actions with no
+  rules.
+- **Decision:**
+  - The status values are `draft`, `issued`, `part_paid`, `paid` and `void`. The handoff wrote
+    "part-paid"; it is snake_case like the other enums.
+  - A run makes drafts. Only `draft`, `issued` and `void` are written so far. `part_paid` and
+    `paid` arrive with payments (TUI-38).
+  - `dueDate` is optional on both generate routes and applies to every invoice the run makes.
+    Null or left out means no due date. Issuing doesn't need one.
+  - `PATCH /invoices/{invoiceId}` changes only `dueDate` and `notes` (a note is at most 2000
+    characters), on a draft or an issued invoice. It takes `updatedAt`, and a stale one is 409.
+    A void invoice is `422 unprocessable` with `fields.status: ['Void']`.
+  - The lines are fixed. To bill differently, void the invoice and generate again.
+  - `POST /invoices/{invoiceId}/issue` moves a draft to `issued` and sets `issuedAt`. Any other
+    status is 422 with `fields.status: ['Not a draft']`.
+  - `POST /invoices/{invoiceId}/void` moves a draft or an issued invoice to `void`, sets
+    `voidedAt` on the invoice and its lines, and frees its enrolments to be invoiced for the
+    period again. One already void is 422 with `fields.status: ['Already void']`. One with
+    payments (`part_paid` or `paid`) is 422 with `fields.status: ['Has payments']`.
+  - Issue and void take no `updatedAt`: they check the status. Both take an `Idempotency-Key`.
+- **Consequences:**
+  - There are no credit notes and no line edits. Void and generate again is the only way to
+    correct an invoice, which is all transfers and withdrawals with pro-rata (TUI-46) have to
+    work with.
+  - The "has payments" rule is coded but can't happen until payments (TUI-38) set `part_paid`
+    and `paid`.
+  - Issuing sends no email: the email consumer is still a stub.
+  - An invoice has no number, only its `inv_` id and the family's bank reference (D-097).
+    Invoice PDFs (TUI-59) will need one.
+  - A void invoice stays in the list as `void`. There is no `DELETE`.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37 (and TUI-38, TUI-46, TUI-59).
+
+## D-096 · 2026-10-13 · Who reaches invoices
+
+- **Context:** Handoff §6's "Fees and payments" row gives each role a reach over billing, and
+  the owner decided an invoice goes with its family's home branch (D-088). TUI-37 settled the
+  rest for the invoice routes.
+- **Decision:**
+  - No new permission. Reading needs `billing:read`. The two generate routes, `PATCH`, issue and
+    void need `billing:write`.
+  - Owner: every invoice, read and write.
+  - Branch manager and front desk: read and write, by the family's home branch (D-088). No
+    branch list means every branch.
+  - The branch isn't stored on the invoice, so an invoice follows its family when the family
+    moves branch (D-057).
+  - Accountant: reads every invoice, and gets 403 on every write.
+  - Teacher: 403 on every route.
+  - Parent: reads their own family's invoices once they have been issued, and gets 403 on every
+    write. A draft is 404 for them. One issued and then voided stays visible, as void.
+  - An invoice outside the caller's reach is 404, as if it didn't exist.
+- **Consequences:**
+  - The parent rule is built now so the parent portal (TUI-39) can reuse it.
+  - The lines a parent reads include `priceSource` and `priceRuleId`. The portal (TUI-39) may
+    want to leave them out.
+  - Invoices are written by the same roles as price rules (D-083). The open question in handoff
+    §11 about who writes price rules is unchanged.
+  - Assumption: recorded from the implementation. The roles follow the handoff §6 row and
+    D-088; the owner hasn't stated the rest, including that a parent sees only issued invoices.
+- **Tasks:** TUI-37 (and TUI-39).
+
+## D-097 · 2026-10-13 · A family's bank reference
+
+- **Context:** The handoff lists a "unique bank reference per family" under fees. D-057 left it
+  to payments (TUI-38). Invoices show it, so TUI-37 built it.
+- **Decision:**
+  - `families` gained `bank_reference`: 8 characters, the last 8 characters of the family's id
+    in capitals.
+  - It is set when the family is added and never changes.
+  - It is unique in the org, held by a partial unique index. Deleted families keep theirs, so a
+    late payment can't be matched to another family.
+  - The Family returns it as `bankReference`, read-only. This adds a field to the Family
+    resource built in TUI-32 (D-057).
+  - It is copied onto each of the family's invoices as `bankReference` when the invoice is
+    generated.
+  - Families added before this got theirs from a migration, worked out the same way.
+- **Consequences:**
+  - This replaces D-057's plan to add it with payments. Payments (TUI-38) can match a bank
+    transfer to a family by it.
+  - A centre can't choose or change a family's reference.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37 (and TUI-38).
+
+## D-098 · 2026-10-13 · Invoice routes, tables, list and in-use checks
+
+- **Context:** More rules the TUI-37 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - The routes, all under the Billing tag:
+    - `POST /terms/{termId}/generate-invoices` and `POST /invoices/generate-monthly` (D-089)
+      return `202 { jobId }`. A `termId` the org doesn't have is 404.
+    - `GET /invoices` and `GET /invoices/{invoiceId}`.
+    - `PATCH /invoices/{invoiceId}`, `POST /invoices/{invoiceId}/issue` and
+      `POST /invoices/{invoiceId}/void` return 200 and the invoice (D-095).
+    - `GET /jobs/{jobId}` (TUI-66) is unchanged.
+  - The path parameters are `{termId}` and `{invoiceId}` (the handoff and the task file wrote
+    `{id}`), as in D-085.
+  - `GET /invoices` is cursor-paged, newest first by id, unlike the oldest-first lists in
+    handoff §5. Its filters are `?familyId`, `?branchId` (the family's home branch), `?termId`,
+    `?month` and `?status`. A filter id the org doesn't have is 404 (D-043), and so is a family
+    outside the caller's reach (D-096).
+  - Each invoice carries its lines, oldest enrolment first, and the family's name and home
+    branch (`familyName`, `branchId`). Each line carries the student's name and the class's name
+    and course. These are read live, as on enrolments (D-061).
+  - A new `invoices` table holds `family_id`, `status`, `term_id`, `month`, `period_start`,
+    `period_end`, `currency`, `subtotal_amount`, `tax_amount`, `total_amount`, `bank_reference`,
+    `due_date`, `notes`, `issued_at`, `voided_at` and `job_id`, plus the common columns.
+  - A new `invoice_lines` table holds `invoice_id`, `enrolment_id`, `student_id`, `class_id`,
+    `period_key` (the term's id or the month), `period_start`, `period_end`, `basis`,
+    `unit_amount`, `quantity`, `lessons`, `period_lessons`, `free_lessons`, `price_source`,
+    `price_rule_id`, `price_overridden`, `tax_rate_id`, `tax_name`, `tax_rate_bps`,
+    `tax_inclusive`, `subtotal_amount`, `tax_amount`, `total_amount` and `voided_at`, plus the
+    common columns. A partial unique index on org, enrolment and period key, over lines that are
+    neither deleted nor void, holds the once-per-period rule (D-094).
+  - `families` gained `bank_reference` and a partial unique index for it (D-097).
+  - An invoice line has the new id prefix `inl_`. `inv_` already existed.
+  - Audit rows for one invoice: `invoice.updated`, `invoice.issued` and `invoice.voided`, one
+    row each, with entity type `invoice`. The run's row is in D-094.
+  - No new in-use checks:
+    - A family, student, class or term with invoices already can't be deleted, because each
+      still has enrolments, and an enrolment can't be deleted (D-050, D-057, D-063).
+    - Deleting a price rule or a tax rate needs none, because a line copies what it needs
+      (D-093).
+- **Consequences:**
+  - The family's name on an invoice is read live, so renaming a family changes how its earlier
+    invoices read. Invoice PDFs (TUI-59) may want a snapshot of who the invoice is addressed to.
+  - The Invoice doesn't carry the org's tax number (D-039). A client reads it from the org.
+  - Not built here: `GET /invoices/{id}/pdf` (TUI-59), payments (TUI-38) and the portal's
+    invoice routes (TUI-39).
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-37 (and TUI-38, TUI-39, TUI-59).

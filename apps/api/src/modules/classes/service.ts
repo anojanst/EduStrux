@@ -211,6 +211,28 @@ export async function classLabels(ctx: OrgCtx, ids: string[]) {
 }
 
 /**
+ * The classes one invoice run bills: a term's classes, or the classes with no term that run at
+ * some point in the dates given.
+ */
+export function classesBilledIn(ctx: OrgCtx, period: { termId: string } | DateRange) {
+  return repo.classesBilledIn(ctx, period);
+}
+
+/**
+ * Each class's lesson dates in the range, in order, by class id: the lessons it holds, so not
+ * the cancelled ones. A class with no lessons there isn't in the map.
+ */
+export async function lessonDates(ctx: OrgCtx, classIds: string[], range: DateRange) {
+  const dates = new Map<string, string[]>();
+  for (const { classId, date } of await repo.lessonDates(ctx, classIds, range)) {
+    const list = dates.get(classId);
+    if (list) list.push(date);
+    else dates.set(classId, [date]);
+  }
+  return dates;
+}
+
+/**
  * The first and last day a class runs: its own dates, else its term's. A null end means until
  * further notice, which only a class with no term can have.
  */

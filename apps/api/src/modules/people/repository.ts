@@ -103,6 +103,28 @@ export function findFamily(ctx: OrgCtx, id: string, reach: Reach) {
     .get();
 }
 
+/** The ids of every family within reach. */
+export async function familyIds(ctx: OrgCtx, reach: Reach) {
+  const rows = await ctx.db
+    .select({ id: families.id })
+    .from(families)
+    .where(inOrg(ctx, families, within(ctx, reach)));
+  return rows.map((row) => row.id);
+}
+
+/** What a record that points at a family shows of it. */
+export function familyLabels(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({
+      id: families.id,
+      name: families.name,
+      branchId: families.branchId,
+      bankReference: families.bankReference,
+    })
+    .from(families)
+    .where(inOrg(ctx, families, inIds(families.id, ids)));
+}
+
 /** How many families have this home branch. A branch can't be deleted while any do. */
 export async function countFamilies(ctx: OrgCtx, branchId: string) {
   const row = await ctx.db
@@ -323,6 +345,14 @@ export async function studentIds(ctx: OrgCtx, reach: Reach) {
     .innerJoin(families, eq(families.id, students.familyId))
     .where(and(inOrg(ctx, students), inOrg(ctx, families, within(ctx, reach))));
   return rows.map((row) => row.id);
+}
+
+/** The family of each of the given students. */
+export function studentFamilies(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({ id: students.id, familyId: students.familyId })
+    .from(students)
+    .where(inOrg(ctx, students, inIds(students.id, ids)));
 }
 
 /** The names of the given students. */

@@ -126,12 +126,15 @@ describe('families', () => {
       branchId: main.id,
       address: '4 Kowhai Street',
       billingGuardianId: null,
+      // What the family quotes on a bank transfer: the end of its id, in capitals.
+      bankReference: expect.stringMatching(/^[0-9A-Z]{8}$/),
       guardians: [],
       students: [],
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
     const id = created.body.id as string;
+    expect(created.body.bankReference).toBe(id.slice(-8).toUpperCase());
 
     expect((await api('GET', `/families/${id}`)).body).toEqual(created.body);
     expect((await api('GET', '/families')).body).toEqual({

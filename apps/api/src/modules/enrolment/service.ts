@@ -188,3 +188,26 @@ export function studentIdsExpected(ctx: OrgCtx, classId: string, date: string) {
 export function spansOf(ctx: OrgCtx, studentId: string) {
   return repo.activeSpans(ctx, studentId);
 }
+
+/**
+ * What an invoice run bills in these classes: the active enrolments that cover some part of the
+ * dates, each with the dates it covers and its price override.
+ */
+export async function enrolmentsToInvoice(
+  ctx: OrgCtx,
+  classIds: string[],
+  range: { startDate: string; endDate: string },
+) {
+  const rows = await repo.activeDuring(ctx, classIds, range);
+  return rows.map((row) => ({
+    id: row.id,
+    studentId: row.studentId,
+    classId: row.classId,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    priceOverride:
+      row.priceOverrideAmount !== null && row.priceOverrideCurrency !== null
+        ? { amount: row.priceOverrideAmount, currency: row.priceOverrideCurrency }
+        : null,
+  }));
+}
