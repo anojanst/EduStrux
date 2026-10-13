@@ -1343,6 +1343,9 @@ is the only deployed environment).
     pipeline (the other half of TUI-24) waits for the owner's go-ahead: GitHub Actions minutes on
     a private repo are a billing matter.
 - **Tasks:** TUI-24.
+- **Update 2026-10-13:** The owner asked for a GitHub Actions workflow that deploys on merge
+  (D-076). The repository is public (checked with `gh repo view` on 2026-10-13), not private as
+  written above, so standard GitHub-hosted runners cost nothing.
 
 ## D-066 · 2026-10-12 · Production on Cloudflare: the resources created
 
@@ -1648,6 +1651,59 @@ is the only deployed environment).
     for TUI-54.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-34 (and TUI-46, TUI-54, TUI-79).
+
+## D-076 · 2026-10-13 · Merging to main deploys production
+
+- **Context:** Production was deployed by hand (D-067), so it fell behind `main`: the attendance
+  work (#23, migration 0009) was merged on 2026-10-13 and not deployed. The owner asked "are we
+  deploying the app to cloudflare when we merge pr to main?", was told no, and asked: "can we have
+  a yaml as a github action".
+- **Decision:**
+  - A GitHub Actions workflow, `.github/workflows/deploy-production.yml`, runs on every push to
+    `main`, which is every merged pull request. In one job it installs from the lockfile, then
+    runs `pnpm typecheck`, `pnpm test`, `pnpm db:migrate:production` and
+    `pnpm deploy:production`, in that order. A step that fails stops the ones after it.
+  - It uses the same two scripts as a deploy from a machine, so the D-065 flags still apply: a
+    deploy from the workflow never creates resources.
+  - It needs two repository secrets, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The
+    owner creates the token and sets both. Claude doesn't handle either value.
+  - Chosen by Claude while building it, not stated by the owner:
+    - A merge that only changes `docs/`, Markdown files or `.claude/` doesn't start it.
+    - It can be started by hand from the Actions tab, and deploys only when run on `main`.
+    - One deploy runs at a time, and a run that has started isn't cancelled by a newer merge.
+    - The three actions it uses are pinned to a commit, and the Cloudflare token is given only
+      to the migrate and deploy steps.
+    - Nothing runs on pull requests.
+- **Consequences:**
+  - A merge is now a production release. Merged migrations are applied to the production D1 with
+    no person in between: there is no staging (D-064) and no approval step.
+  - Migrations run before the deploy. If the deploy then fails, the database is ahead of the
+    running code until a later run succeeds, so a migration has to work with the Worker version
+    before it.
+  - The checks run after the merge, not before it. A failing test stops the deploy, but `main` is
+    already broken by then. Checks on pull requests would catch it earlier and aren't set up.
+  - Until the owner sets the two secrets, every run fails at the migration step and nothing is
+    deployed. The first run is the one started by merging this workflow, and it also releases
+    what `main` already holds: migration 0009 and the attendance routes.
+  - A long-lived Cloudflare token that can deploy to the account now sits in GitHub's secrets.
+    The repository is public, so the workflow has no pull-request trigger: a pull request from a
+    fork can't start it or reach the token. Its run logs are public.
+  - Billing (D-065): the repository is public, so GitHub-hosted runners are free. If it is made
+    private, each run uses the plan's Actions minutes; the job is capped at 15 minutes.
+  - Not verified: the workflow hasn't run on GitHub. Its steps were run from a clean clone on
+    2026-10-13: the install, typecheck, the tests (362 passed), a local migration with no
+    terminal attached, and a dry run of the production deploy. The real migrate and deploy steps
+    need the token.
+  - The token needs three account permissions and nothing else: Workers Scripts: Edit, D1: Edit
+    and Queues: Edit. Cloudflare's docs say a deploy needs no permission on the resources a
+    Worker is bound to, and that querying a D1 database does. Wrangler 4.147's code shows a
+    deploy lists the queues and rewrites each consumer's settings. Not tested with a real token:
+    the first run will show whether that is right. A custom domain (TUI-3) will add Zone →
+    Workers Routes: Edit for its zone.
+  - Access (D-069) is set in the Cloudflare dashboard and a deploy shouldn't change it. No deploy
+    has run since it was turned on, so check after the first run that the address still goes to
+    the Access sign-in page.
+- **Tasks:** TUI-24.
 
 ## D-077 · 2026-10-13 · What a price is charged for: one billing period of the class
 

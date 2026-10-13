@@ -150,7 +150,9 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 
 - **One deployed environment for now.** There is no staging. A dev environment comes when work on v1.1 starts (D-064).
 - **Address:** workers.dev until the domain is registered (TUI-3, D-023). The `edustrux-api` part is the account's workers.dev subdomain and can be changed in the Cloudflare dashboard (D-066).
-- **Deploy:** apply new migrations, then deploy (`pnpm db:migrate:production`, `pnpm deploy:production`). A deploy never creates resources: a binding to one that doesn't exist fails it. New resources, plan changes and paid products need the owner's approval first (D-065).
+- **Deploy:** merging to `main` deploys it. A GitHub Actions workflow runs typecheck and the tests, applies new migrations to the production D1, then deploys the Worker (`pnpm db:migrate:production`, `pnpm deploy:production`). A failed check or migration stops it before the deploy. Merges that only change docs are skipped. The same two commands still deploy from a machine (D-076). A deploy never creates resources: a binding to one that doesn't exist fails it. New resources, plan changes and paid products need the owner's approval first (D-065).
+  - A merge is a production release. Nothing sits between a merged migration and the production database: there is no staging (D-064) and no approval step (D-076).
+  - The workflow needs the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, which the owner sets. Without them a run fails at the migration step and deploys nothing (D-076).
 - **Config:** one wrangler config holds both. Its top level is local; `env.production` is the deployed Worker, with its vars and bindings repeated (D-067).
 - **Access gate:** the production Worker is behind Cloudflare Access until the app is finalised. The owner set it up in the Cloudflare dashboard on 2026-10-12 (D-069).
   - Nothing is public, including `GET /api/v1/health` and the API docs. Without an Access sign-in, a request gets a 302 to the Access sign-in page (checked on `/`, the health check, the docs, the spec and `/api/v1/me`).
@@ -163,7 +165,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 - **API docs:** Swagger UI and the spec are on in production until launch. While Access is on they aren't public; without it, anyone with the URL can read the routes and schemas. All data stays behind Clerk sign-in. Once the v1.1 dev environment exists, the docs move there (D-068, D-069).
 - **Before launch (TUI-86):** two manual steps, and nothing does either automatically. Remove or narrow Access in the Cloudflare dashboard: the web app is served by the same Worker, so customers are blocked while it covers all traffic (D-069). Set `ENABLE_DOCS` back to `false` under `env.production` and redeploy (D-068).
 - **Clerk:** the owner set `CLERK_SECRET_KEY` on the Worker on 2026-10-12. Checked before Access was on: a call without a token returned 401. A signed-in call hasn't been checked (D-068).
-- **Not ready yet:** `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp` claim isn't checked. The CI pipeline isn't built: it needs the owner's go-ahead (D-065, D-066).
+- **Not ready yet:** `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp` claim isn't checked. Checks on pull requests aren't set up: typecheck and the tests run after a merge, before the deploy, not before the merge (D-076).
 
 ---
 
