@@ -21,4 +21,4 @@ pr:
 
 202 + jobId via startJob(); the handler must be idempotent (D-017). Idempotency-Key. Pro-rata, tax, discounts. Status draft/issued/paid/part-paid/void. Unique bank reference per family.
 
-Prices come from `loadPricing()` in the billing service (TUI-36, D-081). It returns the price terms only: this task counts lessons for per-lesson prices, packs and free-trial lessons (D-077), does the pro-rata, applies the tax rate and copies the price onto the invoice line.
+Prices come from `loadPricing()` in the billing service (TUI-36, D-082). It returns the price terms only: this task counts lessons for per-lesson prices, packs and free-trial lessons (D-078), does the pro-rata, applies the tax rate and copies the price onto the invoice line.

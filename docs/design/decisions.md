@@ -509,8 +509,8 @@ is the only deployed environment).
   needs a `startDate` (D-049) and has its sessions generated 13 weeks ahead (D-044).
 - **Update 2026-10-13 (TUI-36):** Pricing handles both kinds of class. A course's default price
   and an enrolment's override are charged per term for a class in a term and per month for one
-  with none (D-076). A `per_term` price rule only fits a class in a term and a `per_month` one a
-  class with no term (D-080). The month-based invoice action is still undecided (TUI-37).
+  with none (D-077). A `per_term` price rule only fits a class in a term and a `per_month` one a
+  class with no term (D-081). The month-based invoice action is still undecided (TUI-37).
 
 ## D-037 · 2026-10-08 · Academic year and term rules
 
@@ -574,8 +574,8 @@ is the only deployed environment).
   price rules (TUI-36) will need that check.
 - **Tasks:** TUI-35 (and TUI-36, TUI-37).
 - **Update 2026-10-13 (TUI-36):** The owner decided one tax rate is the org's default and
-  applies to every price that doesn't name its own (D-079). Tax rates gained `isDefault` for it
-  (D-083). Deleting a tax rate is now refused (422) while a price rule names it (D-084).
+  applies to every price that doesn't name its own (D-080). Tax rates gained `isDefault` for it
+  (D-084). Deleting a tax rate is now refused (422) while a price rule names it (D-085).
 
 ## D-040 · 2026-10-08 · Calendar and tax-rate lists, names, dates and permissions
 
@@ -679,9 +679,9 @@ is the only deployed environment).
 - **Update 2026-10-11 (TUI-32):** Deleting a grade level is also refused (422) while a student
   grade record uses it (D-057).
 - **Update 2026-10-13 (TUI-36):** The owner decided what the default price is charged for: one
-  billing period of the class, a term or a month (D-076). A price rule for the course or the
-  class replaces it (D-081). Deleting a course is also refused (422) while a price rule prices
-  it (D-084).
+  billing period of the class, a term or a month (D-077). A price rule for the course or the
+  class replaces it (D-082). Deleting a course is also refused (422) while a price rule prices
+  it (D-085).
 
 ## D-044 · 2026-10-11 · Sessions for a class with no term are generated 13 weeks ahead
 
@@ -874,7 +874,7 @@ is the only deployed environment).
 - **Update 2026-10-12 (TUI-34):** No attendance check was added. A class with attendance already
   has enrolments, and those block deleting it (D-063, D-075).
 - **Update 2026-10-13 (TUI-36):** Deleting a class is also refused (422) while it has a price
-  rule of its own. The rule isn't deleted with the class (D-084).
+  rule of its own. The rule isn't deleted with the class (D-085).
 
 ## D-050 · 2026-10-11 · Schedule slots, class and session lists, in-use checks and paths
 
@@ -911,7 +911,7 @@ is the only deployed environment).
 - **Update 2026-10-12 (TUI-33):** `GET /sessions` now takes `?studentId`, which the handoff
   wrote as `?student` (D-063).
 - **Update 2026-10-13 (TUI-36):** Deleting a course is also refused (422) while a price rule
-  prices it (D-084).
+  prices it (D-085).
 
 ## D-051 · 2026-10-11 · A family has a home branch
 
@@ -1267,7 +1267,7 @@ is the only deployed environment).
 - **Tasks:** TUI-33 (and TUI-36, TUI-37, TUI-46).
 - **Update 2026-10-13 (TUI-36):** The owner decided what the override is charged for. It
   replaces the amount and keeps the basis of the price it replaces: one billing period of the
-  class (a term or a month), unless a price rule says per lesson or per pack (D-076, D-081).
+  class (a term or a month), unless a price rule says per lesson or per pack (D-077, D-082).
 
 ## D-063 · 2026-10-12 · Enrolment list and routes, in-use checks, the sessions student filter
 
@@ -1302,7 +1302,7 @@ is the only deployed environment).
   active enrolment covers its date, plus anyone already marked at it (D-072). Attendance added no
   in-use checks of its own: the enrolment ones above already cover it (D-075).
 - **Update 2026-10-13 (TUI-36):** Deleting a class is also refused (422) while it has a price
-  rule of its own (D-084).
+  rule of its own (D-085).
 
 ## D-064 · 2026-10-12 · One deployed environment for now: production
 
@@ -1649,7 +1649,7 @@ is the only deployed environment).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-34 (and TUI-46, TUI-54, TUI-79).
 
-## D-076 · 2026-10-13 · What a price is charged for: one billing period of the class
+## D-077 · 2026-10-13 · What a price is charged for: one billing period of the class
 
 - **Context:** D-043 and D-062 left open what a course's `defaultPrice` and an enrolment's
   `priceOverride` are charged for, and said price rules (TUI-36) must define it. The owner was
@@ -1663,13 +1663,13 @@ is the only deployed environment).
   - This settles the point D-043 and D-062 left open.
   - A course with both kinds of class charges its default price per term on one and per month on
     the other. A `per_term` and a `per_month` price rule can sit side by side on the course to
-    price them apart (D-080).
+    price them apart (D-081).
   - The API descriptions of `Course.defaultPrice` and `Enrolment.priceOverride` now say what
     they are charged for.
-  - Turning a price into an invoice amount is TUI-37 (D-081).
+  - Turning a price into an invoice amount is TUI-37 (D-082).
 - **Tasks:** TUI-36 (and TUI-37).
 
-## D-077 · 2026-10-13 · Packs and free trial lessons
+## D-078 · 2026-10-13 · Packs and free trial lessons
 
 - **Context:** TUI-36 covers packs and a free trial, and the handoff didn't say what either
   means. The owner was asked during the build.
@@ -1682,10 +1682,10 @@ is the only deployed environment).
   - Nothing counts lessons yet. A rule with a pack size or a free trial only stores the numbers
     until TUI-37.
   - TUI-37 needs a pack balance per enrolment, to know when the next pack is invoiced.
-  - The limits on both numbers are in D-080.
+  - The limits on both numbers are in D-081.
 - **Tasks:** TUI-36 (and TUI-37).
 
-## D-078 · 2026-10-13 · Bundles are built with discounts (TUI-58), not with price rules
+## D-079 · 2026-10-13 · Bundles are built with discounts (TUI-58), not with price rules
 
 - **Context:** The TUI-36 task listed per-subject pricing and bundles (a price by number of
   subjects: 1, 2, 3+; grade bundles like "Year 10 core"), from handoff §7. The owner was asked
@@ -1702,7 +1702,7 @@ is the only deployed environment).
     apply.
 - **Tasks:** TUI-36, TUI-58.
 
-## D-079 · 2026-10-13 · One tax rate is the org's default; a price rule can name another
+## D-080 · 2026-10-13 · One tax rate is the org's default; a price rule can name another
 
 - **Context:** D-039 gave an org zero or more named tax rates, but nothing said which rate
   applies to a price. Price rules (TUI-36) needed that. The owner was asked during the build.
@@ -1712,11 +1712,11 @@ is the only deployed environment).
 - **Consequences:**
   - Tax rates gained an `isDefault` flag and price rules an optional `taxRateId`. This extends
     D-039.
-  - How the flag is set and moved is in D-083. Which rate a price gets is in D-081.
+  - How the flag is set and moved is in D-084. Which rate a price gets is in D-082.
   - Invoices (TUI-37) apply the tax.
 - **Tasks:** TUI-36 (and TUI-37).
 
-## D-080 · 2026-10-13 · Price rule shape: one target, a basis and a price
+## D-081 · 2026-10-13 · Price rule shape: one target, a basis and a price
 
 - **Context:** The handoff listed a `price_rules` table and four routes with no fields. TUI-36
   settled what a rule holds and which rules can exist together.
@@ -1734,7 +1734,7 @@ is the only deployed environment).
   - `packLessons` is an integer from 2 to 200. It is required when the basis is `pack` and
     refused otherwise (400 on `packLessons`).
   - `freeTrialLessons` is an integer from 0 to 20, default 0, allowed on any basis.
-  - `taxRateId` is optional. Null means the org's default tax rate (D-079). To charge no tax on
+  - `taxRateId` is optional. Null means the org's default tax rate (D-080). To charge no tax on
     one price while the org has a default, name a 0% rate.
   - A rule has no name. Clients label it from its target and basis.
   - A rule keeps its target and basis: `PATCH /price-rules/{priceRuleId}` takes only `price`,
@@ -1766,7 +1766,7 @@ is the only deployed environment).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37).
 
-## D-081 · 2026-10-13 · Which price applies: the most specific one wins
+## D-082 · 2026-10-13 · Which price applies: the most specific one wins
 
 - **Context:** A class can be priced by its own rule, its course's rule, its course's default
   price and the org-wide rule, and an enrolment can carry an override. TUI-36 settled the order.
@@ -1776,17 +1776,17 @@ is the only deployed environment).
   - The most specific price wins, in this order:
     1. the class's own rule;
     2. the course's rule that fits the class (in a term or not);
-    3. the course's `defaultPrice`, charged per term or per month by the kind of class (D-076),
+    3. the course's `defaultPrice`, charged per term or per month by the kind of class (D-077),
        with no free trial;
     4. the org-wide rule that fits the class.
   - A rule that doesn't fit the class's kind is skipped and the search goes on.
   - A course's default price beats the org-wide rule because it is about that course. A course's
     rule beats the course's default price.
-  - An enrolment's `priceOverride` replaces only the amount (D-076). The basis, pack size, free
+  - An enrolment's `priceOverride` replaces only the amount (D-077). The basis, pack size, free
     trial and tax rate stay those of the price it replaces. If nothing else prices the class, the
     override is charged per billing period (per term or per month) with no trial.
   - Tax: the rule's `taxRateId`, else the org's default tax rate, else none. A course default
-    price and a bare override use the org's default (D-079).
+    price and a bare override use the org's default (D-080).
   - If no rule fits, the course has no default price and the enrolment has no override, the
     enrolment has no price (null).
   - For one enrolment the resolver returns the price terms: `price`, `basis`, `packLessons`,
@@ -1797,7 +1797,7 @@ is the only deployed environment).
   - It returns the price terms only, not an amount for a term or a month. No endpoint returns a
     resolved price.
   - TUI-37 turns the terms into amounts: it counts lessons for per-lesson prices, packs (a pack
-    balance per enrolment, D-077) and free-trial lessons, works out pro-rata for per-term and
+    balance per enrolment, D-078) and free-trial lessons, works out pro-rata for per-term and
     per-month prices, and applies the tax from `taxRateId`.
   - TUI-37 decides what invoice generation does with an enrolment that has no price.
   - The month-based "generate invoices" path is still undecided (D-036).
@@ -1805,7 +1805,7 @@ is the only deployed environment).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37, TUI-46).
 
-## D-082 · 2026-10-13 · Who reaches price rules (assumption, for the owner to confirm)
+## D-083 · 2026-10-13 · Who reaches price rules (assumption, for the owner to confirm)
 
 - **Context:** Handoff §6's "Fees and payments" row gives each role a reach over billing. The
   permissions `billing:read` and `billing:write` already existed; price rules are the first
@@ -1839,9 +1839,9 @@ is the only deployed environment).
     changed here.
 - **Tasks:** TUI-36.
 
-## D-083 · 2026-10-13 · The default tax rate: set explicitly, at most one per org
+## D-084 · 2026-10-13 · The default tax rate: set explicitly, at most one per org
 
-- **Context:** The owner decided one tax rate is the org's default (D-079). TUI-36 settled how
+- **Context:** The owner decided one tax rate is the org's default (D-080). TUI-36 settled how
   the flag is set and moved.
 - **Decision:**
   - `TaxRate` has `isDefault`. `POST /tax-rates` takes it as optional (default false) and
@@ -1866,7 +1866,7 @@ is the only deployed environment).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37).
 
-## D-084 · 2026-10-13 · Price rule routes, table, audit rows and in-use checks
+## D-085 · 2026-10-13 · Price rule routes, table, audit rows and in-use checks
 
 - **Context:** More rules the TUI-36 implementation settled that the handoff didn't cover.
 - **Decision:**
@@ -1875,14 +1875,14 @@ is the only deployed environment).
     other routes. There's no `GET /price-rules/{priceRuleId}`, as in the handoff's list.
   - `GET /price-rules` is cursor-paged, oldest first by id, with filters `?courseId` and
     `?classId`: that course's or that class's own rules. A filter id the org doesn't have is 404
-    (D-043, D-050), and so is a class outside the caller's reach (D-082).
+    (D-043, D-050), and so is a class outside the caller's reach (D-083).
   - `POST` returns 201. `PATCH` takes `updatedAt` (stale is 409), and one that sends only
     `updatedAt` returns the rule unchanged (D-034). `DELETE` is a soft delete and returns 204.
   - A new `price_rules` table holds `course_id`, `class_id`, `branch_id` (the class's branch,
-    D-082; the API doesn't expose it), `basis`, `price_amount`, `price_currency`,
+    D-083; the API doesn't expose it), `basis`, `price_amount`, `price_currency`,
     `pack_lessons`, `free_trial_lessons` (default 0) and `tax_rate_id`, plus the common columns.
-    Two partial unique indexes over non-deleted rows hold the one-rule-per-target rule (D-080).
-  - `tax_rates` gained `is_default` (default false) and a partial unique index for it (D-083).
+    Two partial unique indexes over non-deleted rows hold the one-rule-per-target rule (D-081).
+  - `tax_rates` gained `is_default` (default false) and a partial unique index for it (D-084).
   - A price rule has the new id prefix `prr_`.
   - Each write writes one audit row: `price_rule.created`, `price_rule.updated` or
     `price_rule.deleted`, with entity type `price_rule`.
@@ -1897,6 +1897,6 @@ is the only deployed environment).
 - **Consequences:**
   - A course or a class with a price rule is deleted in two steps: its rule first.
   - `DELETE /tax-rates/{taxRateId}` can now return 422, which it couldn't before.
-  - Bundles aren't part of these routes (D-078).
+  - Bundles aren't part of these routes (D-079).
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-36 (and TUI-37).
