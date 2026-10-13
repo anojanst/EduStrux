@@ -7,8 +7,8 @@ module: infra
 priority: P1
 size: M
 endpoints: []
-branch: task/tui-24-production-deploy
-pr: 19
+branch: task/tui-24-deploy-workflow
+pr: 24
 ---
 
 # TUI-24 CI pipeline + Cloudflare deploy (staging & prod)
@@ -27,8 +27,15 @@ Recorded in D-064 to D-067.
 in production until launch (#20, D-068), and the owner put the Worker behind Cloudflare Access
 until the app is finalised (#21, D-069). Undoing both before launch is in TUI-86.
 
+**Done (2026-10-13):** deploy on merge. The owner asked for a GitHub Actions workflow:
+`.github/workflows/deploy-production.yml` runs on every merge to `main` that changes more than
+docs. It runs `pnpm typecheck` and `pnpm test`, then `pnpm db:migrate:production`, then
+`pnpm deploy:production`. The repo is public, so Actions minutes are free. Recorded in D-076.
+
 **Left:**
 
-- The CI pipeline (typecheck, test). Needs the owner's go-ahead first: GitHub Actions minutes on
-  a private repo are a billing matter.
+- The owner adds the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Until
+  then every run fails at the migration step and nothing is deployed.
+- Checks on pull requests (typecheck, test before merge) aren't set up. The workflow only checks
+  after the merge, before it deploys.
 - Set `CLERK_AUTHORIZED_PARTIES` once the web app has an origin.

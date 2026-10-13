@@ -1,0 +1,65 @@
+name: Deploy production
+
+# Merging to main deploys it: typecheck and test, apply new migrations to the production D1, then
+# deploy the Worker. Needs the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+# (README, Deploying).
+on:
+  push:
+    branches: [main]
+    # Docs, board and skill changes don't change the Worker.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.claude/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, in merge order. A run that has started is never cancelled part-way
+# through a migration.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Check, migrate and deploy
+    # A manual run can be started from any branch. Only main is ever deployed.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions are pinned to a commit: this job holds the production Cloudflare token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the pnpm version in package.json's `packageManager`.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      # Migrations first, so the new code never runs against the old schema. The token is only
+      # given to these two steps.
+      - name: Apply migrations to the production D1
+        run: pnpm db:migrate:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # `deploy:production` never creates resources (D-065).
+      - name: Deploy the Worker
+        run: pnpm deploy:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
