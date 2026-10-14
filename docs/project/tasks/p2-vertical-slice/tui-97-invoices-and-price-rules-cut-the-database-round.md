@@ -17,7 +17,7 @@ endpoints:
   - GET|POST /tax-rates
   - PATCH|DELETE /tax-rates/{id}
   - POST /terms/{id}/generate-invoices
-branch:
+branch: task/tui-97-billing-round-trips
 pr:
 ---
 
