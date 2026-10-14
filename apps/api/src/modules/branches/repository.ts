@@ -1,7 +1,7 @@
 import { branches, now, rooms, type Db } from '@edustrux/db';
 import { and, asc, count, eq, gt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
-import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type BranchRow = typeof branches.$inferSelect;
 export type NewBranchRow = typeof branches.$inferInsert;
@@ -87,7 +87,12 @@ export async function updateBranch(
         .where(inOrg(ctx, branches, eq(branches.id, before.id)))
         .returning(),
     ],
-    { action: 'branch.updated', entityType: 'branch', entityId: before.id, before, after: changes },
+    {
+      action: 'branch.updated',
+      entityType: 'branch',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
   );
   return (updated as BranchRow[])[0];
 }
@@ -203,7 +208,12 @@ export async function updateRoom(
         .where(inOrg(ctx, rooms, eq(rooms.id, before.id)))
         .returning(),
     ],
-    { action: 'room.updated', entityType: 'room', entityId: before.id, before, after: changes },
+    {
+      action: 'room.updated',
+      entityType: 'room',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
   );
   return (updated as RoomRow[])[0];
 }

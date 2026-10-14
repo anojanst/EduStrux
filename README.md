@@ -63,7 +63,10 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   auth → membership (404 for non-members) → the route's single permission (403). Where that
   permission's scope is `branch` or `own`, pass `access(c)` to the service, which narrows its
   queries to the caller's branches or own records and returns 404 outside them (D-048).
-- **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
+- **Writes** go through `writeWithAudit`, which batches them with an audit-log row. An update
+  spreads `changedFields(before, changes)` (`apps/api/src/db/scope.ts`) into its audit entry,
+  so `before` and `after` hold only the fields whose value changes. Creates and deletes store
+  the whole row (D-113, D-125).
 - **Rules two requests can break at once.** A service checks its rules on what it read, so two
   requests at once can both pass. Where that would leave the data wrong, the database holds the
   rule too: a partial unique index where one can (D-094), else a trigger in a custom SQL

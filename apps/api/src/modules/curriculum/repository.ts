@@ -1,7 +1,7 @@
 import { courses, gradeLevels, now, subjects } from '@edustrux/db';
 import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
-import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type GradeLevelRow = typeof gradeLevels.$inferSelect;
 export type NewGradeLevelRow = typeof gradeLevels.$inferInsert;
@@ -111,8 +111,7 @@ export async function updateGradeLevel(
       action: 'grade_level.updated',
       entityType: 'grade_level',
       entityId: before.id,
-      before,
-      after: { name },
+      ...changedFields(before, { name }),
     },
   );
   return (updated as GradeLevelRow[])[0];
@@ -232,8 +231,7 @@ export async function updateSubject(
       action: 'subject.updated',
       entityType: 'subject',
       entityId: before.id,
-      before,
-      after: { name },
+      ...changedFields(before, { name }),
     },
   );
   return (updated as SubjectRow[])[0];
@@ -394,7 +392,12 @@ export async function updateCourse(
         .where(inOrg(ctx, courses, eq(courses.id, before.id)))
         .returning(),
     ],
-    { action: 'course.updated', entityType: 'course', entityId: before.id, before, after: changes },
+    {
+      action: 'course.updated',
+      entityType: 'course',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
   );
   return (updated as CourseRow[])[0];
 }

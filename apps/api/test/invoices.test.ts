@@ -776,7 +776,9 @@ describe('an invoice', () => {
       updatedAt: expect.any(String),
     });
     expect(patched.body.updatedAt).not.toBe(invoice.updatedAt);
-    expect((await lastAudit())[0]).toMatchObject({
+    expect((await lastAudit())[0]).toEqual({
+      id: expect.any(String),
+      createdAt: expect.any(String),
       action: 'invoice.updated',
       entityType: 'invoice',
       entityId: invoice.id,
@@ -831,7 +833,9 @@ describe('an invoice', () => {
       issuedAt: expect.any(String),
       updatedAt: expect.any(String),
     });
-    expect((await lastAudit())[0]).toMatchObject({
+    expect((await lastAudit())[0]).toEqual({
+      id: expect.any(String),
+      createdAt: expect.any(String),
       action: 'invoice.issued',
       entityType: 'invoice',
       entityId: invoice.id,
@@ -869,12 +873,14 @@ describe('an invoice', () => {
       total: invoice.total,
     });
     expect(voided.body.lines).toEqual(invoice.lines);
-    expect((await lastAudit())[0]).toMatchObject({
+    expect((await lastAudit())[0]).toEqual({
+      id: expect.any(String),
+      createdAt: expect.any(String),
       action: 'invoice.voided',
       entityType: 'invoice',
       entityId: invoice.id,
       actorUserId: owner.userId,
-      before: { status: 'issued' },
+      before: { status: 'issued', voidedAt: null },
       after: { status: 'void', voidedAt: voided.body.voidedAt },
     });
 

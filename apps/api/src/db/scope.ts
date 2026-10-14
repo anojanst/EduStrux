@@ -197,6 +197,25 @@ export type AuditEntry = {
   after?: unknown;
 };
 
+/**
+ * An update's `before` and `after` for its audit row: only the fields it changes, each with its
+ * old and new value (D-113). A field sent with the value it already has is left out, so an update
+ * that changes nothing stores `{}` in both. Creates and deletes keep the whole row.
+ */
+export function changedFields(before: object, changes: object) {
+  const old = before as Record<string, unknown>;
+  const was: Record<string, unknown> = {};
+  const is: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(changes)) {
+    if (value === undefined) continue; // left out of the update's `set`
+    const previous = old[field] ?? null;
+    if (JSON.stringify(previous) === JSON.stringify(value)) continue;
+    was[field] = previous;
+    is[field] = value;
+  }
+  return { before: was, after: is };
+}
+
 export function auditInsert(ctx: OrgCtx, entry: AuditEntry) {
   return ctx.db.insert(auditLog).values({
     id: newId('audit'),

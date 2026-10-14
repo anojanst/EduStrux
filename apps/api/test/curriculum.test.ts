@@ -377,13 +377,17 @@ describe('courses', () => {
       entityType: 'course',
       entityId: created.body.id,
       actorUserId: owner.userId,
-      before: { curriculum: 'Cambridge', defaultPriceAmount: 4500, durationMinutes: 60 },
-      after: {
-        curriculum: 'NCEA',
-        defaultPriceAmount: 5000,
-        defaultPriceCurrency: 'NZD',
-        durationMinutes: 90,
-      },
+    });
+    // Only what changed: the currency was sent as it was (D-113).
+    expect(audit.body.data[1].before).toEqual({
+      curriculum: 'Cambridge',
+      defaultPriceAmount: 4500,
+      durationMinutes: 60,
+    });
+    expect(audit.body.data[1].after).toEqual({
+      curriculum: 'NCEA',
+      defaultPriceAmount: 5000,
+      durationMinutes: 90,
     });
   });
 
