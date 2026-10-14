@@ -322,21 +322,19 @@ export function toInvoice(
 /**
  * A role's scope as a filter on invoices. An invoice goes with its family: branch staff reach
  * the invoices of the families whose home branch is one of theirs, whichever branch the classes
- * on them are in. A parent reaches their own family's invoices once they have been issued.
+ * on them are in. A parent reaches their own family's invoices once they have been issued. It
+ * costs no database trip: the families are a query, not ids read first (D-104).
  */
-async function invoiceReach(ctx: OrgCtx, access: Access): Promise<repo.InvoiceReach> {
+function invoiceReach(ctx: OrgCtx, access: Access): repo.InvoiceReach {
   switch (access.scope) {
     case 'all':
       return {};
     case 'branch':
       return access.branchIds
-        ? { familyIds: await people.familyIdsInBranches(ctx, access.branchIds) }
+        ? { familyIds: people.familiesInBranches(ctx, access.branchIds) }
         : {};
     case 'own':
-      return {
-        familyIds: await people.familyIdsOfGuardian(ctx, access.membershipId),
-        issuedOnly: true,
-      };
+      return { familyIds: people.familiesOfGuardian(ctx, access.membershipId), issuedOnly: true };
   }
 }
 
@@ -380,7 +378,7 @@ export async function listInvoices(
     status?: InvoiceStatus;
   },
 ) {
-  const reach = await invoiceReach(ctx, access);
+  const reach = invoiceReach(ctx, access);
   const { branchId, ...filter } = query;
   if (filter.familyId) await people.getFamily(ctx, access, filter.familyId);
   if (filter.termId) await calendar.getTerm(ctx, filter.termId);
@@ -408,7 +406,7 @@ async function findInvoiceOr404(ctx: OrgCtx, id: string, reach: repo.InvoiceReac
 }
 
 export async function getInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
-  const row = await findInvoiceOr404(ctx, id, await invoiceReach(ctx, access));
+  const row = await findInvoiceOr404(ctx, id, invoiceReach(ctx, access));
   return (await loadInvoices(ctx, [row]))[0]!;
 }
 
@@ -419,7 +417,7 @@ export async function updateInvoice(
   id: string,
   input: UpdateInvoice,
 ): Promise<Invoice> {
-  const before = await findInvoiceOr404(ctx, id, await invoiceReach(ctx, access));
+  const before = await findInvoiceOr404(ctx, id, invoiceReach(ctx, access));
   if (before.updatedAt !== input.updatedAt) throw staleData();
   const { updatedAt: _ignored, ...changes } = input;
   if (Object.keys(changes).length === 0) return (await loadInvoices(ctx, [before]))[0]!;
@@ -433,7 +431,7 @@ export async function updateInvoice(
 
 /** A draft becomes issued: from then on its family's parents can see it. */
 export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
-  const before = await findInvoiceOr404(ctx, id, await invoiceReach(ctx, access));
+  const before = await findInvoiceOr404(ctx, id, invoiceReach(ctx, access));
   if (before.status !== 'draft') {
     throw unprocessable('Only a draft invoice can be issued.', { status: ['Not a draft'] });
   }
@@ -446,7 +444,7 @@ export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Pro
  * again. One with payments on it can't: the payments have to come off first.
  */
 export async function voidInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
-  const before = await findInvoiceOr404(ctx, id, await invoiceReach(ctx, access));
+  const before = await findInvoiceOr404(ctx, id, invoiceReach(ctx, access));
   if (before.status === 'void') {
     throw unprocessable('This invoice is already void.', { status: ['Already void'] });
   }

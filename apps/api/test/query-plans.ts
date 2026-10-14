@@ -66,3 +66,11 @@ export function searchIn(table: string, index: string): RegExp {
 
 /** The step SQLite adds when no index gives the rows in the order asked for. */
 export const SORT = 'USE TEMP B-TREE FOR ORDER BY';
+
+/**
+ * Matches a plan with a step that reads every row an org has in a table: it scans the table, or
+ * enters an index by the org alone. A page with no filter does that on purpose, along the index
+ * that holds its order, so check this only where every table should be reached by ids.
+ */
+export const READS_AN_ORG =
+  /^(SCAN (?!json_each)\w+|SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\?\))/m;

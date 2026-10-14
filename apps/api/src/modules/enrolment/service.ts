@@ -1,5 +1,5 @@
 import { localNow, newId, type CreateEnrolment, type Enrolment } from '@edustrux/shared';
-import type { Access, OrgCtx } from '../../db/scope';
+import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
 import { conflict, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as classes from '../classes/service';
@@ -37,24 +37,24 @@ export function toEnrolment(
 /**
  * A role's scope as a filter on enrolments. Branch staff reach the enrolments in their branches'
  * classes and those of their branches' students, wherever the class is. A teacher reaches the
- * enrolments in the classes they teach, and a parent their own children's.
+ * enrolments in the classes they teach, and a parent their own children's. It costs no database
+ * trip: each list is a query the other module gives, not ids read first (D-104).
  */
-async function reachOf(ctx: OrgCtx, access: Access): Promise<repo.Reach> {
+function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
   switch (access.scope) {
     case 'all':
       return {};
-    case 'branch': {
-      if (!access.branchIds) return {};
-      const [classIds, studentIds] = await Promise.all([
-        classes.classIdsInBranches(ctx, access.branchIds),
-        people.studentIdsInBranches(ctx, access.branchIds),
-      ]);
-      return { classIds, studentIds };
-    }
+    case 'branch':
+      return access.branchIds
+        ? {
+            classIds: classes.classesInBranches(ctx, access.branchIds),
+            studentIds: people.studentsInBranches(ctx, access.branchIds),
+          }
+        : {};
     case 'own':
       return access.role === 'teacher'
-        ? { classIds: await classes.classIdsTaughtBy(ctx, access.membershipId) }
-        : { studentIds: await people.studentIdsOfGuardian(ctx, access.membershipId) };
+        ? { classIds: classes.classesTaughtBy(ctx, access.membershipId) }
+        : { studentIds: people.studentsOfGuardian(ctx, access.membershipId) };
   }
 }
 
@@ -86,7 +86,7 @@ export async function listEnrolments(
     limit,
     decodeCursor(cursor),
     filter,
-    await reachOf(ctx, access),
+    reachOf(ctx, access),
   );
   const { data, nextCursor } = toPage(rows, limit);
   return { data: await loadEnrolments(ctx, data), nextCursor };
@@ -169,14 +169,27 @@ export function countEnrolments(ctx: OrgCtx, filter: repo.EnrolmentFilter) {
   return repo.countEnrolments(ctx, filter);
 }
 
+// Who a caller reaches, for other modules to filter by. Each is a query for ids, written into
+// the statement it filters: no database trip (D-104).
+
+/** The students who hold an active enrolment in any of these classes. */
+export function studentsEnrolledIn(ctx: OrgCtx, classIds: Ids): IdQuery {
+  return repo.activeStudents(ctx, classIds);
+}
+
+/** The classes any of these students holds an active enrolment in. */
+export function classesOfStudents(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return repo.activeClasses(ctx, studentIds);
+}
+
 /** A teacher's "own" students: those with an active enrolment in a class they teach. */
-export async function studentIdsTaughtBy(ctx: OrgCtx, teacherMembershipId: string) {
-  return repo.activeStudentIds(ctx, await classes.classIdsTaughtBy(ctx, teacherMembershipId));
+export function studentsTaughtBy(ctx: OrgCtx, teacherMembershipId: string): IdQuery {
+  return studentsEnrolledIn(ctx, classes.classesTaughtBy(ctx, teacherMembershipId));
 }
 
 /** A parent's "own children's" classes: those one of their children is actively enrolled in. */
-export async function classIdsOfChildren(ctx: OrgCtx, parentMembershipId: string) {
-  return repo.activeClassIds(ctx, await people.studentIdsOfGuardian(ctx, parentMembershipId));
+export function classesOfChildren(ctx: OrgCtx, parentMembershipId: string): IdQuery {
+  return classesOfStudents(ctx, people.studentsOfGuardian(ctx, parentMembershipId));
 }
 
 /** Who is expected at a class's lesson on `date`: the students whose active enrolment covers it. */
@@ -195,7 +208,7 @@ export function spansOf(ctx: OrgCtx, studentId: string) {
  */
 export async function enrolmentsToInvoice(
   ctx: OrgCtx,
-  classIds: string[],
+  classIds: Ids,
   range: { startDate: string; endDate: string },
 ) {
   const rows = await repo.activeDuring(ctx, classIds, range);

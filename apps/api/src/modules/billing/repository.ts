@@ -17,7 +17,14 @@ import {
   sum,
 } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
-import { inIds, inOrg, writeWithAudit, type AuditEntry, type OrgCtx } from '../../db/scope';
+import {
+  inIds,
+  inOrg,
+  writeWithAudit,
+  type AuditEntry,
+  type Ids,
+  type OrgCtx,
+} from '../../db/scope';
 
 export type TaxRateRow = typeof taxRates.$inferSelect;
 export type NewTaxRateRow = typeof taxRates.$inferInsert;
@@ -47,7 +54,7 @@ export type InvoiceChanges = Partial<Pick<NewInvoiceRow, 'dueDate' | 'notes'>>;
 export type InvoiceFilter = {
   familyId?: string;
   /** Only these families' invoices: a home-branch filter. */
-  familyIds?: string[];
+  familyIds?: Ids;
   termId?: string;
   month?: string;
   status?: InvoiceStatus;
@@ -57,7 +64,7 @@ export type InvoiceFilter = {
  * families in `familyIds`. `issuedOnly` leaves out the ones that were never issued, which is
  * all a parent sees.
  */
-export type InvoiceReach = { familyIds?: string[]; issuedOnly?: boolean };
+export type InvoiceReach = { familyIds?: Ids; issuedOnly?: boolean };
 
 // D1 binds at most 100 values per statement. An invoice row has 21 columns and a line 30.
 const INVOICES_PER_INSERT = 4;
@@ -307,7 +314,10 @@ const invoiceFilter = (filter: InvoiceFilter) => [
   filter.status ? eq(invoices.status, filter.status) : undefined,
 ];
 
-/** Spread into `inOrg`, so the families a caller reaches are ids the query goes straight to. */
+/**
+ * Spread into `inOrg`, so a parent's families are ids the query goes straight to. The families
+ * of branch staff are `wide`: the page is read in its own order and each invoice checked.
+ */
 const withinInvoiceReach = (reach: InvoiceReach) => [
   reach.familyIds ? inIds(invoices.familyId, reach.familyIds) : undefined,
   reach.issuedOnly ? isNotNull(invoices.issuedAt) : undefined,
@@ -346,7 +356,7 @@ export function findInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach) {
 }
 
 /** The lines of the given invoices, each invoice's oldest enrolment first. */
-export function listLines(ctx: OrgCtx, invoiceIds: string[]) {
+export function listLines(ctx: OrgCtx, invoiceIds: Ids) {
   return ctx.db
     .select()
     .from(invoiceLines)
@@ -358,7 +368,7 @@ export function listLines(ctx: OrgCtx, invoiceIds: string[]) {
  * What these enrolments have been invoiced for so far, for any period: their lines on invoices
  * that aren't void, each with the job that generated its invoice.
  */
-export function linesInvoiced(ctx: OrgCtx, enrolmentIds: string[]) {
+export function linesInvoiced(ctx: OrgCtx, enrolmentIds: Ids) {
   return ctx.db
     .select({
       enrolmentId: invoiceLines.enrolmentId,

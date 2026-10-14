@@ -1,7 +1,16 @@
 import { classSchedules, classes, now, sessions } from '@edustrux/db';
 import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
-import { inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import {
+  idsFrom,
+  inIds,
+  inOrg,
+  wide,
+  writeWithAudit,
+  type IdQuery,
+  type Ids,
+  type OrgCtx,
+} from '../../db/scope';
 import type { DateRange, LocalMoment } from './schedule';
 
 export type ClassRow = typeof classes.$inferSelect;
@@ -21,7 +30,7 @@ export type NewSessionRow = typeof sessions.$inferInsert;
  * The part of the org's classes a caller may see or change: every class when empty, else only
  * those in `branchIds`, or taught by `teacherMembershipId`, or listed in `classIds`.
  */
-export type Reach = { branchIds?: string[]; teacherMembershipId?: string; classIds?: string[] };
+export type Reach = { branchIds?: string[]; teacherMembershipId?: string; classIds?: Ids };
 
 /** A class a student is enrolled in, and the dates (both included) the enrolment covers. */
 export type EnrolledSpan = { classId: string; startDate: string; endDate: string | null };
@@ -73,6 +82,18 @@ const reachConditions = (reach: Reach) => [
 function within(reach: Reach): SQL | undefined {
   return and(...reachConditions(reach));
 }
+
+/** Whether the reach is a few classes: a teacher's or a parent's, not a branch's or the org's. */
+const fewClasses = (reach: Reach) =>
+  reach.teacherMembershipId !== undefined || reach.classIds !== undefined;
+
+/**
+ * The reach as a condition on sessions. A teacher's or a parent's are the sessions of a few
+ * classes, which `inOrg` goes to. Branch staff's are a big share of the org's: those are read in
+ * date order, and `within` checks the class each one is read with.
+ */
+const sessionReach = (ctx: OrgCtx, reach: Reach) =>
+  fewClasses(reach) ? inIds(sessions.classId, classesWithin(ctx, reach)) : undefined;
 
 /** The spans are bound as one JSON value, so a student in many classes stays under D1's limit. */
 const inSpans = (spans: EnrolledSpan[]) =>
@@ -132,17 +153,18 @@ export function findClass(ctx: OrgCtx, id: string, reach: Reach) {
     .get();
 }
 
-/** The ids of every class within reach. */
-export async function classIds(ctx: OrgCtx, reach: Reach) {
-  const rows = await ctx.db
-    .select({ id: classes.id })
-    .from(classes)
-    .where(inOrg(ctx, classes, within(reach)));
-  return rows.map((row) => row.id);
+/**
+ * Every class within reach, as ids to filter another table by. A teacher's or a parent's are a
+ * few. The classes of some branches are `wide`: a statement checks its rows against them and
+ * never reads them all.
+ */
+export function classesWithin(ctx: OrgCtx, reach: Reach): IdQuery {
+  const ids = idsFrom(ctx, classes, classes.id, ...reachConditions(reach));
+  return fewClasses(reach) ? ids : wide(ids);
 }
 
 /** What a record that points at a class shows of it. */
-export function classLabels(ctx: OrgCtx, ids: string[]) {
+export function classLabels(ctx: OrgCtx, ids: Ids) {
   return ctx.db
     .select({
       id: classes.id,
@@ -303,7 +325,7 @@ export async function softDeleteClass(ctx: OrgCtx, before: ClassRow) {
 // ── Weekly slots ────────────────────────────────────────────────────────────
 
 /** The weekly slots of the given classes, each class's in weekday then start-time order. */
-export function listSlots(ctx: OrgCtx, classIds: string[]) {
+export function listSlots(ctx: OrgCtx, classIds: Ids) {
   return ctx.db
     .select()
     .from(classSchedules)
@@ -390,7 +412,7 @@ export function upcomingSessions(ctx: OrgCtx, classId: string, from: LocalMoment
  * The dates of these classes' lessons in the range, in order: scheduled sessions only. A class
  * with two lessons on one day has that date twice.
  */
-export function lessonDates(ctx: OrgCtx, classIds: string[], range: DateRange) {
+export function lessonDates(ctx: OrgCtx, classIds: Ids, range: DateRange) {
   return ctx.db
     .select({ classId: sessions.classId, date: sessions.date })
     .from(sessions)
@@ -449,6 +471,7 @@ export function listSessions(
           filter.teacherId ? eq(sessions.teacherMembershipId, filter.teacherId) : undefined,
           filter.classId ? eq(sessions.classId, filter.classId) : undefined,
           filter.spans ? inSpans(filter.spans) : undefined,
+          sessionReach(ctx, reach),
           after,
         ),
         inOrg(
