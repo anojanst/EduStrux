@@ -346,6 +346,27 @@ describe('rooms', () => {
     );
   });
 
+  it('refuses renaming a room to a name another room in its branch has', async () => {
+    const { api, main, addBranch, addRoom } = await setup();
+    const room = await addRoom(main.id, 'Room 1');
+    await addRoom(main.id, 'Room 2');
+    await addRoom((await addBranch('Albany')).id, 'Hall');
+    const rename = (name: string, updatedAt = room.updatedAt) =>
+      api('PATCH', `/rooms/${room.id}`, { updatedAt, name });
+
+    const taken = await rename('ROOM 2');
+    expect(taken.status).toBe(409);
+    expect(taken.body.error).toMatchObject({ code: 'conflict', fields: { name: ['Taken'] } });
+    // A stale updatedAt is reported before the name.
+    const stale = await rename('Room 2', '2020-01-01T00:00:00.000Z');
+    expect(stale.body.error.code).toBe('stale_data');
+
+    // Its own name in another case, and a name only another branch uses, are both free.
+    const recased = await rename('ROOM 1');
+    expect(recased.status).toBe(200);
+    expect((await rename('Hall', recased.body.updatedAt)).status).toBe(200);
+  });
+
   it('never moves a room to another branch', async () => {
     const { api, main, addBranch, addRoom } = await setup();
     const room = await addRoom(main.id, 'Room 1');
