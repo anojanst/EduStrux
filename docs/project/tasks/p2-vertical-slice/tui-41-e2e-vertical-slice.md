@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-41-e2e-vertical-slice
-pr:
+pr: 42
 ---
 
 # TUI-41 E2E test: onboarding → class → enrolment → invoice → payment
