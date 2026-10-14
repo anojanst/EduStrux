@@ -80,7 +80,10 @@ before for everyone but a parent, and more rows are read. On a local D1, for a c
 everyone marked: 248 rows for a `GET` (153 before) and 248 for the reads of a `PUT` (214
 before). They follow the class, not the centre.
 
-Not measured on production after the change. Every response says what it cost in its
+Measured on production after the change, on 2026-10-14, with the same test: 8 at a time, 33.2
+requests a second and a 227 ms median (was 13.9 and 546 ms); 20 at a time, 51.3 a second and a
+363 ms median, with one unexplained `500`. The owner accepted this speed, and the web app is to
+mark attendance optimistically (D-109). Every response says what it cost in its
 `Server-Timing` header, so a deployed `PUT` can be checked with `curl -i`.
 
 Left for later:
@@ -93,8 +96,10 @@ Left for later:
 - The names in one call, which would take `GET` to 5 calls and `PUT` to 6. It needs a query for
   ids from either of two tables, which the id helper doesn't have (D-105).
 
-Left in production by the test: the org "Load test 2026-10-13 09:05 (safe to delete)",
-`org_01m4t84ydweta7j49mvxm0zyzk`, with 12 students, 6 classes, 84 sessions and 1,000 marks.
+Left in production by the tests: three orgs named "Load test … (safe to delete)", each with 12
+students, 6 classes, 84 sessions and about 1,000 marks: `org_01m4t84ydweta7j49mvxm0zyzk`
+(2026-10-13), `org_01m4w9sq340g7jdsv1z87yhym1` and `org_01m4w9ytcgx5157w114y9vjhz3`
+(2026-10-14).
 
 Added by the audit of every endpoint on 2026-10-13: `GET /sessions/{id}/attendance` makes 7 to
 10 database trips. The causes shared with other endpoints have their own tasks: the two trips of
