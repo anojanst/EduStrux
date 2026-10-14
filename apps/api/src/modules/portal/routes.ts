@@ -1,0 +1,82 @@
+import { createRoute } from '@hono/zod-openapi';
+import {
+  PortalChildList,
+  PortalInvoice,
+  PortalInvoiceQuery,
+  PortalSession,
+  PortalSessionQuery,
+  page,
+} from '@edustrux/shared';
+import { access, orgCtx } from '../../db/scope';
+import { createRouter, errors, json } from '../../lib/openapi';
+import { roleAccess } from '../../middleware/permission';
+import { OrgParams } from '../orgs/routes';
+import * as service from './service';
+
+// The parent portal: a signed-in parent's view of their own family (D-126). Every route is for
+// the parent role alone, and every other role gets 403. Each needs the permission the parent
+// already reads the same data with, at `own` scope: people, classes or billing.
+
+const listChildrenRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/portal/children',
+  tags: ['Parent portal'],
+  summary: 'List my children',
+  description:
+    'Every student of the families you are a guardian of, in name order, each with their ' +
+    'family’s name and their active enrolments. The whole list is returned.',
+  middleware: roleAccess('parent', 'people:read'),
+  request: { params: OrgParams },
+  responses: {
+    200: json(PortalChildList, 'Your children'),
+    ...errors(401, 403, 404),
+  },
+});
+
+const listSessionsRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/portal/sessions',
+  tags: ['Parent portal'],
+  summary: 'My children’s timetable',
+  description:
+    'The sessions your children are enrolled for from `from` to `to` (both included), on the ' +
+    'dates each enrolment covers, in date then start-time order. Cancelled sessions are ' +
+    'included. Each names which of your children it is for. `studentId` gives one child’s; ' +
+    'anyone else’s is 404.',
+  middleware: roleAccess('parent', 'classes:read'),
+  request: { params: OrgParams, query: PortalSessionQuery },
+  responses: {
+    200: json(page(PortalSession).openapi('PortalSessionPage'), 'A page of sessions'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const listInvoicesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/portal/invoices',
+  tags: ['Parent portal'],
+  summary: 'My invoices',
+  description:
+    'Your families’ invoices once issued, newest first, each with `paid` and `balance`. A ' +
+    'voided one stays, as void. `familyId` must be one of your families (404).',
+  middleware: roleAccess('parent', 'billing:read'),
+  request: { params: OrgParams, query: PortalInvoiceQuery },
+  responses: {
+    200: json(page(PortalInvoice).openapi('PortalInvoicePage'), 'A page of invoices'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+export const portalRoutes = createRouter()
+  .openapi(listChildrenRoute, async (c) => {
+    const data = await service.listChildren(orgCtx(c), access(c));
+    return c.json({ data, nextCursor: null }, 200);
+  })
+  .openapi(listSessionsRoute, async (c) => {
+    const { limit, cursor, ...query } = c.req.valid('query');
+    return c.json(await service.listSessions(orgCtx(c), access(c), limit, cursor, query), 200);
+  })
+  .openapi(listInvoicesRoute, async (c) => {
+    const { limit, cursor, ...query } = c.req.valid('query');
+    return c.json(await service.listInvoices(orgCtx(c), access(c), limit, cursor, query), 200);
+  });

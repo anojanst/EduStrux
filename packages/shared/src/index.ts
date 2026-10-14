@@ -16,5 +16,6 @@ export * from './schemas/orgs';
 export * from './schemas/payments';
 export * from './schemas/people';
 export * from './schemas/platform';
+export * from './schemas/portal';
 export * from './schemas/pricing';
 export * from './schemas/tax';

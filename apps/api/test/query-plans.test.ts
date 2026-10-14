@@ -152,6 +152,7 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
   const taught = (ctx: OrgCtx) => enrolmentService.studentsTaughtBy(ctx, MEMBER);
   const children = (ctx: OrgCtx) => peopleService.studentsOfGuardian(ctx, MEMBER);
   const childrensClasses = (ctx: OrgCtx) => enrolmentService.classesOfChildren(ctx, MEMBER);
+  const parentsOwn = (ctx: OrgCtx) => people.familiesWithin(ctx, { guardianMembershipId: MEMBER });
   const WEEK = { from: '2026-02-01', to: '2026-02-07' };
 
   // Each level of a reach, as the table it reads and the column it must be reached by.
@@ -265,6 +266,38 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
         ['enrolments', 'student_id'],
         ['classes', 'id'],
       ],
+    ],
+    [
+      'the sessions on a parent’s children’s timetable',
+      (ctx) =>
+        classes.listSessions(
+          ctx,
+          50,
+          undefined,
+          { ...WEEK, enrolled: timetableOf(ctx, children(ctx)) },
+          { classIds: childrensClasses(ctx) },
+        ),
+      [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
+    ],
+    [
+      'the active enrolments of a parent’s children',
+      (ctx) => enrolment.activeOf(ctx, children(ctx)),
+      parentsClasses,
+    ],
+    [
+      'the students of a parent’s families',
+      (ctx) => people.studentsOfFamilies(ctx, parentsOwn(ctx), {}),
+      parentsStudents,
+    ],
+    [
+      'the names of a parent’s families',
+      (ctx) => people.familyLabels(ctx, parentsOwn(ctx)),
+      parentsFamilies,
+    ],
+    [
+      'the grades of a parent’s children',
+      (ctx) => people.listGrades(ctx, people.studentIdsOfFamilies(ctx, parentsOwn(ctx), {})),
+      [['student_grades', 'student_id'], ...parentsStudents],
     ],
     [
       'a class’s term, read with the class',

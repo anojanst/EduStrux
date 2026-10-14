@@ -17,6 +17,7 @@ import { meRoutes } from './modules/me/routes';
 import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
+import { portalRoutes } from './modules/portal/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
   if (c.env.ENABLE_DOCS !== 'true') return c.json(errorBody('not_found', 'Route not found'), 404);
@@ -39,6 +40,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', enrolmentRoutes);
   app.route('/', attendanceRoutes);
   app.route('/', billingRoutes);
+  app.route('/', portalRoutes);
 
   // API docs: generated from the route definitions above.
   app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {

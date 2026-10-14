@@ -152,6 +152,15 @@ export function activeClasses(ctx: OrgCtx, studentIds: Ids): IdQuery {
   );
 }
 
+/** The active enrolments of these students, oldest first. */
+export function activeOf(ctx: OrgCtx, studentIds: Ids) {
+  return ctx.db
+    .select()
+    .from(enrolments)
+    .where(inOrg(ctx, enrolments, inIds(enrolments.studentId, studentIds), active))
+    .orderBy(asc(enrolments.id));
+}
+
 /** The students who hold an active enrolment in any of these classes, as ids to filter by. */
 export function activeStudents(ctx: OrgCtx, classIds: Ids): IdQuery {
   return idsFrom(

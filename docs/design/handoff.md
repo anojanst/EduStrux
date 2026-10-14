@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-14 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-15 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -208,7 +208,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Branches, rooms, grade levels, subjects, academic years, terms, holidays (D-033, D-040) | Full | Read | Read | Read | Read | Read |
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
-| Families and students (D-051, D-053, D-060) | Full | Branch | Branch | Own classes, read | Own family, read | — |
+| Families and students (D-051, D-053, D-060, D-126) | Full | Branch | Branch | Own classes, read | Own family, read | — |
 | Courses (D-041, D-110) | Full | Full, org-wide | Full, org-wide | Read, no default price | Read, no default price | Read |
 | Classes and timetable (D-048, D-060) | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Enrolments (D-058, D-059) | Full | Branch | Branch | Own classes, read | Own children, read | — |
@@ -235,6 +235,7 @@ Families, guardians and students (D-051, D-053, D-060):
 - A family has a home branch, and its guardians and students go with it. A branch manager or front desk member reads and writes only the families whose home branch is one of their membership's branches. No branch list means every branch.
 - A child in a class at another branch shows on that class's roster by name: each enrolment and each attendance record carries the student's name (D-061, D-072). The class's branch also sees the child's emergency contacts, read only (D-112, not built yet; see Attendance below). Only the home branch, the owner and staff with no branch limit change the family record.
 - A parent reads only the families where one of the guardians is linked to their membership (the guardian's `membershipId`), and changes nothing.
+- A student's `notes` are for staff: a parent doesn't see them. Teachers and every other role do (D-126). Not built yet: today a parent still gets them through the student and family routes, until TUI-105 changes it. The parent portal already leaves them out.
 - A teacher reads only the students who hold an active enrolment in a class they teach, and those students' families with all their guardians. A family's other children are left out of its `students` list and are 404 (D-060).
 - An accountant gets 403.
 - A family, guardian or student outside the caller's reach is 404, as if it didn't exist. Adding a family to a branch outside the member's branches, or moving one there, is 403.
@@ -282,6 +283,12 @@ Payments (D-121):
 - An accountant reads every payment and gets 403 on every write. A teacher gets 403 on every route.
 - A parent reads their own family's payments and gets 403 on every write. D-096 covered only invoices, so this is an assumption from the build, for the owner to confirm.
 - A payment outside the caller's reach is 404, as if it didn't exist.
+
+Parent portal (D-126):
+
+- The portal routes are for the parent role alone. The owner and every staff role get 403.
+- Each route needs the permission the parent already reads the same data with: `people:read`, `classes:read` or `billing:read`. No new permission.
+- The portal reads with the parent's own reach, so it shows nothing the other routes don't already let them read.
 
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
@@ -377,7 +384,7 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `DELETE /staff/{membershipId}`
 
 ### Families and students
-The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only); a teacher the students who hold an active enrolment in a class they teach, with those students' families and guardians but not their siblings (read only). An accountant gets 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053, D-060).
+The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only), without the students' `notes` (D-126; not built yet, today they get them, TUI-105); a teacher the students who hold an active enrolment in a class they teach, with those students' families and guardians but not their siblings (read only). An accountant gets 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053, D-060).
 
 - `GET|POST /families` (`GET` filter `?branchId`) · `GET|PATCH|DELETE /families/{familyId}`: in name order. Every response carries the family's `guardians` and `students`. `branchId`, the home branch, is required, and `PATCH` can move the family to another branch; branch-limited staff adding or moving a family to a branch outside theirs get 403. `billingGuardianId` must be one of the family's guardians (422) and can't be set to null. `bankReference` is read-only: what the family quotes on a bank transfer, set when the family is added and shown on its invoices (D-097). `DELETE` is refused (422) while the family has students; otherwise it also deletes the guardians (D-051, D-054, D-057)
 - `POST /families/{familyId}/guardians` · `PATCH|DELETE /guardians/{guardianId}`: any contact person, with an `emergencyContact` flag (default true). The family's first guardian becomes its billing contact. `email` and `phone` are optional; `preferredChannel` is `email` (default), `sms` or `whatsapp`; `membershipId` is read-only. `PATCH` can't move a guardian to another family. `DELETE` is refused (422) for the billing contact (D-053, D-054)
@@ -475,10 +482,10 @@ What a payment does (D-118 to D-120):
 - `GET|PUT /notification-settings` (automatic messages and reminders on or off)
 
 ### Parent portal
-Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
-- `GET /portal/children`
-- `GET /portal/sessions`
-- `GET /portal/invoices`: the parent rule is already built on `GET /invoices`, for this to reuse: their own family's invoices, once issued (D-096). Each carries its `paid` and `balance` (D-119)
+Parents sign in through Clerk like staff and hold a `parent` membership (D-021). Every portal route is for the parent role alone: the owner and every staff role get 403. Each reads with the parent's own reach, through the modules that own the data, so it shows nothing the other routes don't already let them read. The portal owns no tables (D-126).
+- `GET /portal/children`: every student of the families the parent is a signed-in guardian of, in name order. Not paged: `nextCursor` is always null, as for grade levels (D-035). Each child carries `familyId`, `familyName`, `branchId` (the family's home branch), `firstName`, `lastName`, `dateOfBirth`, `gradeLevelId` (the current year's grade) and `enrolments`: their active enrolments, oldest first, as `GET /enrolments` returns them. No `notes`: they are for staff (D-126)
+- `GET /portal/sessions` (`from` and `to` required, both included; filter `?studentId`): only the sessions a child's active enrolment covers, on the dates it covers, by date, start time, then id. `GET /sessions` gives a parent every session of their children's classes (D-060). Each is a session as `GET /sessions` returns it, plus `children` (`[{ id, firstName, lastName }]`): which of the parent's children it is for. Cancelled sessions are included. A `studentId` that isn't one of the parent's children is 404 (D-126)
+- `GET /portal/invoices` (filters `?familyId`, `?status`): their own families' invoices once issued, newest first, by the parent rule on `GET /invoices` (D-096). A voided one stays, as void. Each carries its `paid` and `balance` (D-119). The lines leave out `priceSource` and `priceRuleId`. A `familyId` that isn't one of the parent's families is 404 (D-126)
 - `GET /portal/invoices/{id}/pdf`
 - `POST /portal/absence-notices`
 - `GET /portal/makeup-credits`
