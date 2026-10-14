@@ -3385,3 +3385,31 @@ under "Not changed here" for a reach that is a subquery.
     end-to-end test (TUI-41) can now include recording a payment.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-38 (and TUI-41, TUI-59, TUI-63).
+
+## D-123 · 2026-10-14 · The end-to-end test includes payment, moves the clock, and inserts what invites will make
+
+- **Context:** D-114 had payment join the first end-to-end test once payments were built. TUI-38
+  has merged (D-118 to D-122), so TUI-41 builds the test with it. The implementation settled how
+  the test gets through steps that need a later moment or features not built yet.
+- **Decision:**
+  - The first end-to-end test runs onboarding → class setup → enrolment → attendance → invoice
+    generation → payment, as D-114 planned. It ends with the parent reading the attendance,
+    invoices and payments, and a check of the whole audit trail: each write's row and who made
+    it.
+  - The order follows D-114: attendance is marked at the first lesson, and the owner bills the
+    term in its first week. A per-term price doesn't depend on attendance.
+  - The test moves the clock forward to the first lesson, in the test and in the API (they run
+    in the same Workers isolate). Only `Date` is faked. Sessions are only made for lessons still
+    to come, and attendance can only be marked from the lesson's day, so the flow can't go on
+    without a lesson coming round. No other test moves the clock yet.
+  - Each request signs a fresh token, as a client's Clerk session keeps one fresh, so tokens
+    don't expire after the clock moves.
+  - The teacher's and parent's memberships, and the guardian's link to the parent, are written
+    straight to the database, because invitations aren't built yet (TUI-42, TUI-72; D-053).
+  - Further end-to-end flows go in the same test file, beside this one.
+- **Consequences:**
+  - D-114 is done: the test covers the flow handoff §11 suggested, plus attendance.
+  - When invitations exist (TUI-42, TUI-72), the direct inserts are replaced by the invite flow.
+  - When the parent portal is built (TUI-39), its view joins the test.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-41 (and TUI-38, TUI-39, TUI-42, TUI-72).
