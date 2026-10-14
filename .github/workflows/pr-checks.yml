@@ -1,0 +1,45 @@
+name: PR checks
+
+# Typecheck and test every pull request before it is merged (D-117). The checks don't block a
+# merge: the main ruleset doesn't require them, so a red run is for the owner to weigh.
+on:
+  # Never `pull_request_target`: a pull request from a fork must reach no token or secret.
+  pull_request:
+    # Docs, board and skill changes don't change the code, as in the deploy workflow.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.claude/**'
+
+permissions:
+  contents: read
+
+# A new push to the pull request replaces the run still going for the old one.
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Pinned to the same commits as the deploy workflow.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the pnpm version in package.json's `packageManager`.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test

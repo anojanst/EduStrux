@@ -142,6 +142,10 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 hooks in `.githooks/` (installed by `pnpm install`) block commits and pushes to `main`. See the
 Git workflow in [CLAUDE.md](CLAUDE.md).
 
+Every pull request runs `pnpm typecheck` and `pnpm test`
+([.github/workflows/pr-checks.yml](.github/workflows/pr-checks.yml)), except one that only changes
+`docs/`, Markdown files or `.claude/`. A failing run doesn't block the merge (D-117, D-124).
+
 Claude Code commits and opens PRs as a separate bot account, so you can review and approve them.
 Set it up once with `scripts/setup-claude-bot.sh <bot-username>`.
 
