@@ -182,7 +182,7 @@ export async function createPriceRule(
   access: Access,
   input: CreatePriceRule,
 ): Promise<PriceRule> {
-  reachOf(access);
+  reachOf(access); // A parent reaches no price rule: 403 before anything is read.
   // What the rule would price is known from the request, so whether that target already has a
   // rule is read beside the class, the course and the tax rate it names.
   const target = { classId: input.classId ?? null, courseId: input.courseId ?? null };

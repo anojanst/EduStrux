@@ -2544,6 +2544,95 @@ under "Not changed here" for a reach that is a subquery.
     with the follow-on work and get their own decision.
 - **Tasks:** TUI-89, TUI-90, TUI-94 to TUI-98.
 
+## D-103 · 2026-10-14 · Billing reads once and writes once, and an Idempotency-Key's two calls stay
+
+- **Context:** D-102 set the budget at about 3 database trips in sequence, and D-104 the rule
+  for reading across modules. TUI-97 brought the billing endpoints to them. Three things came
+  up that neither settles: what a write answers with, how a page of invoices stays whole when
+  its parts are read together, and the `Idempotency-Key`, which costs two calls of its own.
+- **Decision:**
+  - After sign-in, every billing endpoint waits for D1 once to read and, if it writes, once to
+    write. The checks a request needs are read together and judged in the order they always
+    ran in, so the same error is reported when several apply.
+  - An invoice's lines, and the family, students and classes named on it, are read beside it,
+    each by a query for the invoice (D-104). Each read carries the caller's reach, so for an
+    invoice outside it they find nothing.
+  - A page of invoices and the lines of the invoices on it are read in one D1 batch: one call
+    and one moment. As two statements sent together, an invoice added in between would move the
+    page the lines are read for, and an invoice could be shown with no lines.
+  - The names on a page belong to other modules, so they are read by statements of their own,
+    each by a query for the page. If a name is missing because the page moved in that moment,
+    the names are read again by the ids themselves.
+  - `PATCH /invoices/{invoiceId}`, issue and void answer with the invoice as their own write
+    stored it, with the lines and names read before the write. Adding or changing a price rule
+    or a tax rate answers with the row its write stored. None reads again.
+  - One case still reads again: two requests issue the same draft at once, and the one that
+    changed nothing answers 200 with the invoice as it now is, as it always did.
+  - `?familyId` on `GET /invoices` checks the family with one read of its own row. It loaded the
+    family with its guardians, students and grades. Who may filter by which family is unchanged
+    (D-096, D-098).
+  - `?branchId` on `GET /invoices` filters by a query for the branch's families. The ids were
+    read first, which D-104 had left to this task.
+  - The `Idempotency-Key` is unchanged. It costs one call before the handler, to claim the key,
+    and one after, to store the answer. A write with a key waits for 5 calls in sequence, where
+    the budget is 3. Neither call can go without weakening what the key promises:
+    - The claim has to be made after the caller is known to be a member with the permission,
+      and before anything is written. Sent with sign-in, anyone could hold a key in an org's
+      name. Sent with the handler's reads, every handler would have to wait for it before it
+      writes, and nothing would hold one to that.
+    - The answer isn't known until the write has returned, so it can't be stored in the
+      write's batch. Stored after the response has gone, a quick retry would get 409 in place
+      of the first answer, and a store that failed would leave the key held with nobody told.
+  - Two reads that covered a whole org no longer do:
+    - A caller who reaches a few families, a parent, has `?termId`, `?month` and `?status` only
+      narrow the page read from those families. SQLite entered by the filter, so a parent's
+      `GET /invoices?status=issued` read every issued invoice the org has.
+    - An invoice run's count of its lines goes to the run's invoices. It read every invoice
+      line the org has, as D-100 had listed.
+- **Consequences:**
+  - Counted in the test suite as trips / stages, each request on its heaviest path. The invoice
+    reads cost the same for the owner, a parent and staff limited to one branch:
+
+    | Request                                             | Before  | After |
+    | --------------------------------------------------- | ------- | ----- |
+    | `GET /invoices/{invoiceId}`                         | 6 / 4   | 6 / 2 |
+    | `GET /invoices`                                     | 6 / 4   | 5 / 2 |
+    | `GET /invoices?familyId&branchId&termId&status`     | 14 / 10 | 8 / 2 |
+    | `PATCH /invoices/{invoiceId}`, issue, void          | 8 / 6   | 7 / 3 |
+    | Issue, void, with an `Idempotency-Key`              | 10 / 8  | 9 / 5 |
+    | `POST /terms/{termId}/generate-invoices`            | 3 / 3   | 3 / 3 |
+    | The same, with an `Idempotency-Key`                 | 5 / 5   | 5 / 5 |
+    | `POST /invoices/generate-monthly`                   | 2 / 2   | 2 / 2 |
+    | `GET /price-rules`, `GET /tax-rates`                | 2 / 2   | 2 / 2 |
+    | `GET /price-rules?classId&courseId`                 | 5 / 5   | 5 / 3 |
+    | `POST /price-rules`, for a class, with a tax rate   | 7 / 7   | 6 / 4 |
+    | `POST /price-rules`, for a course                   | 5 / 5   | 4 / 3 |
+    | `PATCH /price-rules/{priceRuleId}`, with a tax rate | 5 / 5   | 4 / 3 |
+    | `DELETE /price-rules/{priceRuleId}`                 | 3 / 3   | 3 / 3 |
+    | `POST /tax-rates`                                   | 4 / 4   | 3 / 3 |
+    | `PATCH /tax-rates/{taxRateId}`, with a new name     | 5 / 5   | 4 / 3 |
+    | `DELETE /tax-rates/{taxRateId}`                     | 4 / 4   | 4 / 3 |
+
+  - Two requests are one stage over the budget: `GET /price-rules?classId` (3) and
+    `POST /price-rules` for a class (4). Checking a class reads the class and then its weekly
+    slots. TUI-96 reads those together, which brings both to the budget with no change here.
+  - Some requests make more calls than before, in the same 2 stages. An invoice that isn't
+    there, or is outside the caller's reach, costs 6 calls where it cost 2: what a found one
+    costs. So the count of calls no longer says whether an invoice exists, which D-099 had left
+    unchecked for invoices. A list with no invoices costs 5 where it cost 2.
+  - Nothing a client sees changes: the same responses, status codes, amounts and audit rows.
+    No schema change and no migration.
+  - `people` gained one function for billing, in a file of its own: whether a family exists
+    and the caller reaches it.
+  - `apps/api/test/billing-trips.test.ts` holds each endpoint to its stages and pins its trips.
+    `apps/api/test/query-plans.test.ts` takes the plan of each new lookup, and fails if a
+    parent's filtered list or a run's line count reads a whole org again.
+  - The names on a page being read again when the page moved isn't covered by a test: it takes
+    a write landing between two statements of one request.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers leaving the `Idempotency-Key` at two calls outside the budget.
+- **Tasks:** TUI-97 (and TUI-96 for the class check).
+
 ## D-104 · 2026-10-14 · Reach as subqueries, and reading across modules by a query for ids
 
 - **Context:** D-102 set the budget at about 3 database trips in sequence and left the rule for
