@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|PUT /sessions/{id}/attendance
 branch: task/tui-89-94-95-96-97-round-trips
-pr: 34
+pr: 39
 ---
 
 # TUI-89 Attendance: cut the database round trips when marking

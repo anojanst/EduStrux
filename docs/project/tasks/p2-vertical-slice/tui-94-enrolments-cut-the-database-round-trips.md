@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|POST /enrolments
 branch: task/tui-89-94-95-96-97-round-trips
-pr: 37
+pr: 39
 ---
 
 # TUI-94 Enrolments: cut the database round trips
@@ -125,3 +125,7 @@ What it costs:
   makes that happen and checks the names.
 
 These are counts from the local test database. Nothing was measured on production.
+
+Shipped in PR #39 together with the other four module tasks (TUI-89, TUI-94, TUI-95, TUI-96,
+TUI-97). On that combined code the paths above that waited on another task are within the budget,
+and the trip tests hold them to it.

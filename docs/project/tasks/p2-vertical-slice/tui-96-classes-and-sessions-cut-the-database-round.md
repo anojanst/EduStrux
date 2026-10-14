@@ -13,7 +13,7 @@ endpoints:
   - GET /sessions
   - GET /sessions/{id}
 branch: task/tui-89-94-95-96-97-round-trips
-pr: 36
+pr: 39
 ---
 
 # TUI-96 Classes and sessions: cut the database round trips
@@ -111,3 +111,7 @@ Left for later:
 - `classes.classDates` takes a class that was already read, so a caller that needs a class and
   its dates still waits twice. `calendar/for-classes.ts` reads a class's term by a query, which
   is what a one-stage version needs.
+
+Shipped in PR #39 together with the other four module tasks (TUI-89, TUI-94, TUI-95, TUI-96,
+TUI-97). On that combined code the paths above that waited on another task are within the budget,
+and the trip tests hold them to it.

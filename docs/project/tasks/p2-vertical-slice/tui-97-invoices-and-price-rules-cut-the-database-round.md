@@ -18,7 +18,7 @@ endpoints:
   - PATCH|DELETE /tax-rates/{id}
   - POST /terms/{id}/generate-invoices
 branch: task/tui-89-94-95-96-97-round-trips
-pr: 38
+pr: 39
 ---
 
 # TUI-97 Invoices and price rules: cut the database round trips
@@ -110,3 +110,7 @@ reach as subqueries (TUI-99). The table at the top was counted before those.
 - Two reads that covered a whole org no longer do: a parent's `GET /invoices?status=`, and an
   invoice run's count of its lines.
 - An invoice run's own reads are as they were. The budget is for the request, which answers 202.
+
+Shipped in PR #39 together with the other four module tasks (TUI-89, TUI-94, TUI-95, TUI-96,
+TUI-97). On that combined code the paths above that waited on another task are within the budget,
+and the trip tests hold them to it.
