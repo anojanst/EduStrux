@@ -202,7 +202,10 @@ should be able to follow it without reading the code.
   commit the task files as `chore(board): link PR #N (TUI-n)`, with the same `Task:` and
   attribution lines, and push. The PR is squash-merged, so this adds no noise to `main`.
 - If this session has the `ccd_pr` tools, call `get_status`, and `bind_pr` if it doesn't report
-  this PR. Don't poll CI.
+  this PR. Then turn on Auto-fix for it without asking: `set_monitor` with `auto_fix: true`,
+  `address_comments: true` and the PR's url (the owner wants it on every PR). The app then wakes
+  the session on CI failures, merge conflicts and review comments. Fix them on this branch as new
+  commits: merge `main` in for a conflict, and ask the owner if a rebase is needed. Don't poll CI.
 - With `--update`, post a PR comment listing what changed (`gh pr comment <n> --body-file <file>`),
   and change the task file only if its status changes (e.g. a draft whose checks now pass
   becomes `done`).
