@@ -44,6 +44,6 @@ Cloudflare Access sign-in page.
 **Not part of this task:**
 
 - Checks on pull requests (typecheck, test before merge) weren't built. The workflow checks after
-  the merge, before it deploys.
+  the merge, before it deploys. The owner decided to add them on 2026-10-14 (D-117): TUI-104.
 - `CLERK_AUTHORIZED_PARTIES` is set once the web app has an origin. It is on the before-launch
   list in TUI-86.

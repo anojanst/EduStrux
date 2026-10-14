@@ -626,6 +626,9 @@ is the only deployed environment).
 
 ## D-042 · 2026-10-11 · Every role reads courses (assumption, for the owner to confirm)
 
+**Superseded by D-110** (the owner decided: every role reads courses, but teachers and parents
+get them without the default price).
+
 - **Context:** When the owner chose "owner and branch staff" for course writes (D-041), the
   option's text said accountants would lose read access: it assumed reads would move to
   `classes:read`. The build kept `org:read` instead.
@@ -735,6 +738,8 @@ is the only deployed environment).
   only" option and archiving stay deferred (D-075).
 - **Update 2026-10-13 (TUI-37):** Invoice runs follow the rule: one `invoice.generated` row per
   run, with the counts and the total, not one per invoice (D-094).
+- **Update 2026-10-14:** The owner decided option 1: an update's audit row stores only the fields
+  that changed (D-113). Archiving (option 3) waits until the database size needs it.
 
 ## D-046 · 2026-10-11 · A holiday added later removes the sessions it closes
 
@@ -1229,6 +1234,8 @@ is the only deployed environment).
 - **Update 2026-10-12 (TUI-34):** Attendance was built keeping this behaviour. The class's branch
   marks a cross-branch child by name and still gets no guardian or emergency contacts. That is an
   assumption the owner hasn't confirmed, so the question stays open in handoff §11 (D-074).
+- **Update 2026-10-14:** The owner decided the class's branch sees a cross-branch child's
+  emergency contacts: name, relationship and phone, read only (D-112).
 
 ## D-062 · 2026-10-12 · Enrolment rules: dates, price override, status, duplicates, capacity
 
@@ -1393,6 +1400,8 @@ is the only deployed environment).
 - **Update 2026-10-12:** The Worker's workers.dev address is no longer public. The owner put the
   Worker behind Cloudflare Access until the app is finalised, so every request needs an Access
   sign-in first, including `GET /api/v1/health` (D-069).
+- **Update 2026-10-14:** The owner confirmed the account is on the Workers Free plan (D-115).
+  Nothing was changed.
 
 ## D-067 · 2026-10-12 · Wrangler config: the top level is local, `env.production` is deployed
 
@@ -1614,6 +1623,9 @@ is the only deployed environment).
 
 ## D-074 · 2026-10-12 · Cross-branch children are marked by name (assumption, for the owner to confirm)
 
+**"No contacts for the class's branch" is superseded by D-112** (it sees the child's emergency
+contacts). Marking the child by name is unchanged.
+
 - **Context:** D-061 and handoff §11 left a question to TUI-34. Branch-limited staff of a class's
   branch see a child from another home branch by name, but can't open the student or the family,
   so they have no guardian or emergency contacts for that child. Should they get them?
@@ -1661,8 +1673,13 @@ is the only deployed environment).
     for TUI-54.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-34 (and TUI-46, TUI-54, TUI-79).
+- **Update 2026-10-14:** The owner decided the general option: an update's audit row stores only
+  the fields that changed (D-113). Archiving stays deferred.
 
 ## D-076 · 2026-10-13 · Merging to main deploys production
+
+**"Nothing runs on pull requests" is superseded by D-117** (typecheck and the tests run on every
+pull request, not required to merge). The owner confirmed the other four details Claude chose.
 
 - **Context:** Production was deployed by hand (D-067), so it fell behind `main`: the attendance
   work (#23, migration 0009) was merged on 2026-10-13 and not deployed. The owner asked "are we
@@ -1890,6 +1907,9 @@ is the only deployed environment).
   path is `POST /invoices/generate-monthly` (D-089).
 
 ## D-083 · 2026-10-13 · Who reaches price rules (assumption, for the owner to confirm)
+
+**Who writes price rules is superseded by D-111** (only the owner writes org-wide and course
+rules; branch managers and front desk write class rules in their branches). Reads are unchanged.
 
 - **Context:** Handoff §6's "Fees and payments" row gives each role a reach over billing. The
   permissions `billing:read` and `billing:write` already existed; price rules are the first
@@ -2927,6 +2947,249 @@ under "Not changed here" for a reach that is a subquery.
     covers a query for ids that reads a column of the row it filters, and answering a class
     write without reading the class again.
 - **Tasks:** TUI-96 (and TUI-95, which the timetable's third stage waits on).
+
+## D-109 · 2026-10-14 · The attendance write's speed is accepted, and the web app marks optimistically
+
+- **Context:** TUI-89 began with a measurement: marking one student on production took a median
+  of 546 ms, with 11 database trips. The endpoint performance tasks (TUI-89 to TUI-99) cut the
+  trips and the rows read (D-099 to D-105), and D-105 left production unmeasured. On
+  2026-10-14, with them merged and deployed (`main` at `2397cac`), the same test was run again
+  and the owner was given the numbers below.
+- **Decision:** Stated by the owner on 2026-10-14: "363 ms is not a bad number. in frontend we
+  can optimistically update the ui and sync with response to give an seemless feel".
+  - The attendance write's speed on production is accepted as it is.
+  - The web app (P7 UI) marks attendance optimistically: it shows the mark at once, sends the
+    `PUT`, and syncs with the roster the response returns.
+- **Consequences:**
+  - What was measured: the same test each time, 1,000 single-student
+    `PUT /sessions/{sessionId}/attendance` through the API, from NZ via Cloudflare's Auckland
+    edge, with one-off scripts that aren't in the repo. Times are in ms. "Wait on D1" is the
+    median of the `dur` that the `Server-Timing` header reported (D-099).
+
+    | Production run     | At a time | Per second | Median | p95 | p99 | Fastest | Wait on D1 |
+    | ------------------ | --------- | ---------- | ------ | --- | --- | ------- | ---------- |
+    | Before, 2026-10-13 | 8         | 13.9       | 546    | 682 | 777 | 363     | –          |
+    | After, 2026-10-14  | 8         | 33.2       | 227    | 306 | 336 | 144     | 193        |
+    | After, 2026-10-14  | 20        | 51.3       | 363    | 468 | 503 | 138     | 333        |
+    - After the fixes, 8 at a time: the 1,000 marks took 30.1 s, all returned 200 and all read
+      back. The header reported 7 trips, 3 in sequence, which is the budget of D-102. 193 ms
+      over 3 stages is about 64 ms a stage, not the 40 ms a trip that TUI-89 estimated and
+      D-099 repeated.
+    - After the fixes, 20 at a time: the 1,000 marks took 19.5 s. 999 returned 200 and one
+      returned 500 (`internal_error`), and the read-back confirmed that its mark wasn't saved.
+      Its cause isn't known: production hides the error detail, and the Worker's logs weren't
+      checked.
+    - Local (`wrangler dev`): 55.8 requests a second and a 139 ms median before the fixes.
+      After them, 8 at a time: 85.3 a second, a 92 ms median, 7 trips, 3 in sequence.
+
+  - The speed accepted is the 363 ms median at 20 at a time, and 227 ms at 8. No further work
+    to cut it is planned. This keeps to D-102: the write is at its budget of about 3 trips in
+    sequence, and Cloudflare Smart Placement stays "not now".
+  - Why it suits the API as built:
+    - The `PUT` merges (D-071). A mark already in place changes nothing and writes no second
+      audit row, so sending a mark again after a failed or lost response is safe.
+    - The response is the whole roster (D-072, D-105), which the UI can sync against.
+  - Marking optimistically hides latency, not capacity. From 8 to 20 at a time, throughput rose
+    1.5 times and each request got 60% slower (a median of 227 ms to 363 ms), almost all of it
+    waiting on D1 (193 ms to 333 ms). Where throughput levels off wasn't tested.
+  - Left in the production database by the tests: three orgs named "Load test … (safe to
+    delete)", each with 12 students, 6 classes, 84 sessions and about 1,000 attendance rows:
+    - `org_01m4t84ydweta7j49mvxm0zyzk`, made 2026-10-13 09:05 UTC
+    - `org_01m4w9sq340g7jdsv1z87yhym1`, made 2026-10-14 04:12 UTC
+    - `org_01m4w9ytcgx5157w114y9vjhz3`, made 2026-10-14 04:15 UTC
+  - Assumptions: what this asks of the UI, read from the decision, not stated by the owner.
+    - A failed save has to be retried and, if it still fails, shown to the teacher, because a
+      mark shown at once looks saved. One request in 1,000 failed in the run of 20 at a time.
+    - A response's roster is as its own request read it (D-105). With several marks in flight
+      for one session, an answer can lack a mark sent just before or after it, so the UI can't
+      simply replace what it shows with each answer.
+    - Offline attendance stays in v1.1 (handoff §8). A mark shown at once still needs its
+      request to reach the API.
+- **Tasks:** TUI-89 (the measurement); TUI-57 and TUI-40 (the screens that mark attendance).
+- **Update 2026-10-14:** The owner decided the three load-test orgs above are to be removed from
+  production now. Claude writes the delete SQL and tests it on a local database. The owner runs
+  it on production, because permanently deleting production data is the owner's to do. Not run
+  yet.
+
+## D-110 · 2026-10-14 · Teachers and parents read courses without the default price
+
+- **Context:** D-042 recorded from the build that every role reads all courses, default prices
+  included, as an assumption for the owner to confirm (handoff §11). The owner was asked: "Who
+  may read courses, including their default prices? It's built so every role reads them
+  (D-042)."
+- **Decision:** The owner picked "Hide prices from teachers, parents — Everyone still sees the
+  courses, but teachers and parents get them without the default price."
+  - Every role still reads all courses.
+  - Teachers and parents get them without the default price.
+  - The owner, branch managers, front desk and accountants still see it.
+- **Consequences:**
+  - This supersedes D-042. Who writes courses is unchanged (D-041).
+  - Not built yet: today every role gets `defaultPrice`. TUI-100 changes
+    `GET /courses` for teachers and parents. Whether the field is left out or sent as null is for
+    that task.
+  - A teacher could still read `priceOverride` on the enrolments of the classes they teach
+    (D-083). Asked as a follow-up the same day, the owner picked "Hide it from teachers": a
+    teacher gets no enrolment's `priceOverride` either, so teachers see no prices of any kind.
+    Parents keep seeing their own children's prices, which they pay (Claude's wording, in the
+    option the owner picked).
+- **Tasks:** TUI-100 (and TUI-30).
+
+## D-111 · 2026-10-14 · Price rules: the owner writes org-wide and course rules, branch staff their classes'
+
+- **Context:** D-083 recorded from the build that branch managers and front desk add, change and
+  delete price rules like the owner, and that org-wide and course rules ignore a member's branch
+  limit. It was an assumption for the owner to confirm (handoff §11).
+- **Decision:** The owner picked "You org-wide, staff their branches — Only the owner sets
+  org-wide and course-wide rules. Branch managers and front desk set rules only for classes in
+  their own branches, like every other branch-limited write."
+  - Org-wide rules and course rules: only the owner adds, changes and deletes them.
+  - Class rules: the owner for every class; branch managers and front desk only for the classes
+    in their branches.
+- **Consequences:**
+  - This supersedes who writes price rules in D-083. Reads are unchanged: the owner, branch
+    managers, front desk and accountants read; teachers and parents get 403.
+  - Not built yet: branch managers and front desk still write org-wide and course rules. A task
+    to be filed changes it.
+  - Assumptions (Claude's, not the owner's):
+    - A branch manager or front desk member with no branch list writes class rules in every
+      branch, since no branch list means every branch elsewhere (handoff §6). They still don't
+      write org-wide or course rules.
+    - Branch staff writing an org-wide or course rule get 403, as an accountant does on a write.
+  - Branch managers and front desk write courses for the whole org (D-041), and a course's
+    default price comes before the org-wide rule (D-082), so through it they could still price a
+    course's classes in every branch. Asked as a follow-up the same day, the owner picked "Only
+    you set default prices": branch managers and front desk still create and change courses, but
+    only the owner sets or changes a course's `defaultPrice`.
+- **Tasks:** TUI-101 (and TUI-36).
+
+## D-112 · 2026-10-14 · The class's branch sees a cross-branch child's emergency contacts
+
+- **Context:** A child whose family's home branch is another one shows on a class's roster by
+  name. Branch-limited staff of the class's branch can't open the student or the family, so they
+  had no guardian or emergency contacts for the child (D-061). Attendance was built keeping that,
+  as an assumption for the owner to confirm (D-074, handoff §11).
+- **Decision:** The owner picked "Emergency contacts — For children on their class rosters, they
+  see the guardians marked as emergency contacts, with name, relationship and phone. Read-only;
+  the rest of the family record stays with the home branch."
+  - Branch managers and front desk see, for a child on the roster of a class in their branches,
+    the guardians with the emergency-contact flag (D-054): name, relationship and phone.
+  - Read only. They still can't open or change the student, the family or its other guardians.
+    The family record stays with the home branch.
+- **Consequences:**
+  - This supersedes D-074's "no contacts" for the class's branch. Marking the child by name is
+    unchanged.
+  - Not built yet. TUI-102 adds it. Where the API carries the contacts (on the roster,
+    on the enrolment or in a route of its own) is for that task.
+  - The class's teacher already reaches the child's family and every guardian (D-060). Nothing
+    changes for teachers.
+  - A guardian's emergency-contact flag is on by default (D-054), so unless staff turn it off,
+    every guardian of the family shows. Asked as a follow-up the same day, the owner kept it on by
+    default. A guardian's email isn't included.
+- **Tasks:** TUI-102 (and TUI-33, TUI-34).
+
+## D-113 · 2026-10-14 · An update's audit row stores only the fields that changed
+
+- **Context:** The audit log grows with every write, and an update stores the whole previous row
+  in `before`. The owner deferred the question on 2026-10-07, and the TUI-79 task file lists three
+  options. Option 2, one audit row per bulk action, was decided in D-045. In a local test of 1,000
+  centres over a year (2026-10-13), `audit_log` was 4.6 GB of a 10.2 GB database. That figure
+  came with the question to the owner and isn't recorded elsewhere in the repo.
+- **Decision:** The owner picked "Changed fields only — Updates store only the fields that
+  changed, in before and after; attendance already works this way (D-075). One change in the
+  shared write helper. Archiving waits until the database size needs it."
+  - Option 1 is decided: an update's audit row stores only the fields that changed, in `before`
+    and `after`.
+  - Option 3, archiving old audit rows to R2, is deferred until the database size needs it. No
+    size was set for when.
+- **Consequences:**
+  - Not built yet: an update still stores the whole row. TUI-103 changes it.
+  - "One change in the shared write helper" is Claude's estimate in the option text, not the
+    owner's.
+  - Only updates change. Creates and deletes keep what they store today: the option names updates
+    only.
+  - How much of the 4.6 GB it saves wasn't measured.
+  - The three options in the TUI-79 note are settled: 1 here, 2 in D-045, 3 deferred.
+- **Tasks:** TUI-103 (and TUI-79).
+
+## D-114 · 2026-10-14 · The first end-to-end test runs onboarding to invoice generation, built now
+
+- **Context:** Handoff §11 asked which flows get end-to-end tests first, and suggested onboarding
+  → class setup → enrolment → invoice generation → payment. Payments (TUI-38) aren't built yet.
+  The test is TUI-41.
+- **Decision:** The owner picked "Suggested flow, start now — Onboarding → class setup →
+  enrolment → attendance → invoice generation, built now with what exists. Payment is added to
+  the same test when it lands."
+  - The first end-to-end test runs onboarding → class setup → enrolment → attendance → invoice
+    generation, with the endpoints that exist now.
+  - Payment is added to the same test when payments are built (TUI-38).
+- **Consequences:**
+  - Attendance is in the flow. The handoff's suggestion didn't have it.
+  - TUI-41 doesn't wait for payments.
+  - It is an API-level test, as D-001 has end-to-end tests until the web app.
+- **Tasks:** TUI-41 (and TUI-38).
+
+## D-115 · 2026-10-14 · The Cloudflare account is on the Workers Free plan
+
+- **Context:** The account's Workers plan couldn't be seen during the deploy, and nothing was
+  changed. The handoff's cost model assumes Workers Paid at $5/month. D-066 asked the owner to
+  confirm the plan (handoff §11).
+- **Decision:** The owner answered "Free". The account is on the Workers Free plan. Nothing was
+  changed.
+- **Consequences:**
+  - The Free limits that apply, as the question to the owner stated them (written by Claude, not
+    measured against the app): 100,000 requests a day and 10 ms of CPU per request; in D1,
+    5 million rows read and 100,000 rows written a day. Past a limit, requests fail rather than
+    bill. These match Cloudflare's limits and pricing pages as read on 2026-10-14.
+  - Not part of the question: Cloudflare's pricing page gives D1 on Workers Free 5 GB of storage
+    in total for the account. Handoff §3's capacity figures (a 10 GB database, about 1,000
+    centres for a year) assume Workers Paid. D-066's Free queue limits (messages kept 24 hours,
+    10,000 queue operations a day) weren't checked again.
+  - Whether the heavier work, such as an invoice run or a PDF, fits in 10 ms of CPU hasn't been
+    measured.
+  - Moving to Workers Paid is a billing change and stays the owner's call (D-065). The handoff's
+    cost model still counts Workers Paid at $5/month; it isn't changed.
+  - This answers the plan question D-066 left open.
+- **Tasks:** TUI-24 (no code change).
+
+## D-116 · 2026-10-14 · The v1.1 accounting export is a CSV download
+
+- **Context:** Handoff §11 asked which format the v1.1 accounting export takes: Xero, QuickBooks
+  or CSV.
+- **Decision:** The owner picked "CSV only — A download that any accounting tool can import. The
+  least work, but the centre imports it by hand."
+  - The v1.1 accounting export is a CSV file. No Xero or QuickBooks integration is planned for it.
+- **Consequences:**
+  - "The least work, but the centre imports it by hand" is Claude's description in the option
+    text, not the owner's.
+  - What the file holds (invoices, payments, which columns) isn't decided. That is for the v1.1
+    task that builds it.
+  - Nothing changes in the MVP.
+- **Tasks:** none yet (v1.1).
+
+## D-117 · 2026-10-14 · Typecheck and tests run on pull requests
+
+- **Context:** D-076 listed five details of the deploy workflow that Claude chose, not the
+  owner. One was "Nothing runs on pull requests", so typecheck and the tests ran only after a
+  merge, when `main` had already changed. The owner was shown all five.
+- **Decision:** The owner picked "Add checks on PRs — Typecheck and tests run on every pull
+  request before you merge. The repo is public, so GitHub's runners cost nothing. The other four
+  details stay as built."
+  - Typecheck and the tests run on every pull request.
+  - The `main` ruleset doesn't require them: the owner picked this over "Checks on PRs,
+    required".
+  - The owner confirmed the other four details: a merge that only changes docs doesn't start the
+    deploy; it can be started by hand and deploys only on `main`; one deploy runs at a time and
+    isn't cancelled by a newer merge; the actions are pinned to a commit and only the migrate and
+    deploy steps get the Cloudflare token.
+- **Consequences:**
+  - Not built yet. TUI-104 adds it. Until then the checks run after a merge, before
+    the deploy (D-076).
+  - A failing check doesn't block a merge. The owner sees it and decides.
+  - Billing (D-065): free while the repository is public. If it is made private, each run uses
+    the plan's Actions minutes (D-076).
+  - Assumption (Claude's): the checks run with no secrets, so a pull request from a fork reaches
+    no token. D-076 gave the deploy workflow no pull-request trigger for that reason.
+- **Tasks:** TUI-104 (and TUI-24).
 
 ## D-118 · 2026-10-14 · A payment: its methods, and allocations that add up to it
 

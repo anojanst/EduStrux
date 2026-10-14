@@ -47,7 +47,7 @@ A global SaaS for running tuition centres, from a solo tutor up to a centre with
 | Spending | Anything that results in billing goes through the owner. No cloud resource is created, no plan changed and no paid product enabled without the owner's approval (D-065). |
 
 ### Rough unit economics (USD)
-- **Fixed costs at launch:** about $6.25/month. That's Cloudflare Workers Paid at $5 plus the domain at $15/year. Clerk, Resend and monitoring start on free tiers. Which Workers plan the account is on isn't confirmed yet (D-066, §11).
+- **Fixed costs at launch:** about $6.25/month. That's Cloudflare Workers Paid at $5 plus the domain at $15/year. Clerk, Resend and monitoring start on free tiers. The account is on Workers Free today; moving to Paid is the owner's call (D-115, D-065).
 - **Average profit per centre** at the 4:1 mix is about **$11.20/month**. Paddle's fee is the biggest variable cost, taking about 10% of a $9.90 Solo plan.
 - **Target:** NZ$500 is about US$281/month (at 1.78 NZD per USD), which needs about **26 centres** (about 21 Solo and 5 Small).
 - **Costs you'll likely add before ~26 centres:**
@@ -86,7 +86,7 @@ A Cloudflare Worker can only bind to D1 databases declared in its config ahead o
 So the plan is:
 - One shared D1 database. Every table except `users` has `org_id`, and every index starts with `org_id`.
 - `org_id` scoping is enforced in **one place**: org middleware plus a repository layer that is the only code allowed to touch D1. Every repository function takes `orgId`.
-- **Capacity:** at roughly 8 MB per centre per year, the 10 GB D1 limit holds 1,000+ centres for a year. That's far beyond the ~30-centre target, at no extra cost. The Workers Paid plan includes 5 GB storage, 25B row reads and 50M row writes per month.
+- **Capacity:** at roughly 8 MB per centre per year, the 10 GB D1 limit holds about 1,000 centres for a year. That's far beyond the ~30-centre target, at no extra cost. A local test of 1,000 centres over a year came to 10.2 GB, 4.6 GB of it audit log; updates storing only the fields that changed is decided to cut that (D-113). The Workers Paid plan includes 5 GB storage, 25B row reads and 50M row writes per month. The account is on Workers Free today: 5 GB stored in total, 5M rows read and 100,000 written a day, and past a limit queries fail rather than bill (D-115).
 - **Growth path:** if needed later (near 5–10 GB, write contention, or per-region data), move to **Durable Objects with SQLite per org** or to Postgres. Keeping all data access behind the org-scoped repository layer keeps that migration contained.
 - **Region:** one shared D1 database lives in one region. The launch region is **Oceania** (`oc` location hint), near the first NZ/AU centres. Writes from other regions are slower, which is acceptable for admin work; D1 read replicas can serve reads closer to users later. A per-region database is needed only when a customer requires data residency (the v1.1 "choose data region" feature) (D-024).
 
@@ -138,7 +138,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 4. **Permission check:** each route declares one permission (e.g. `billing:write`). The membership's role and branch scope decide.
 5. **Validation:** shared Zod schemas parse the body and query.
 6. **Module service** applies the business rules (pricing, make-up policy, clashes).
-7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045). Marking a session's attendance gets one row for the request, listing the students whose status changed, not one per student (D-075). An invoice run gets one row for the run, with the counts and the total, not one per invoice (D-094).
+7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045). Marking a session's attendance gets one row for the request, listing the students whose status changed, not one per student (D-075). An invoice run gets one row for the run, with the counts and the total, not one per invoice (D-094). An update's row is to store only the fields that changed, in `before` and `after`; decided, not built yet, so today it stores the whole row (D-113).
 8. Slow side effects (emails, bulk invoices, PDF batches) go to a Queue, and the API returns immediately. A single PDF (e.g. `GET /invoices/{id}/pdf`) takes a second or two and is rendered in the request (D-025).
 
 ### Environments and deploy
@@ -165,7 +165,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 - **API docs:** Swagger UI and the spec are on in production until launch. While Access is on they aren't public; without it, anyone with the URL can read the routes and schemas. All data stays behind Clerk sign-in. Once the v1.1 dev environment exists, the docs move there (D-068, D-069).
 - **Before launch (TUI-86):** two manual steps, and nothing does either automatically. Remove or narrow Access in the Cloudflare dashboard: the web app is served by the same Worker, so customers are blocked while it covers all traffic (D-069). Set `ENABLE_DOCS` back to `false` under `env.production` and redeploy (D-068). Also decide then whether routes without sign-in keep the `Server-Timing` header: its call count could show whether a record exists (D-099).
 - **Clerk:** the owner set `CLERK_SECRET_KEY` on the Worker on 2026-10-12. Checked before Access was on: a call without a token returned 401. A signed-in call hasn't been checked (D-068).
-- **Not ready yet:** `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp` claim isn't checked. Checks on pull requests aren't set up: typecheck and the tests run after a merge, before the deploy, not before the merge (D-076).
+- **Not ready yet:** `CLERK_AUTHORIZED_PARTIES` is empty until the web app has an origin, so the token's `azp` claim isn't checked. Checks on pull requests aren't built yet: the owner decided typecheck and the tests run on every pull request, not required to merge (D-117). Until then they run after a merge, before the deploy (D-076).
 
 ---
 
@@ -191,7 +191,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Versioning | Only additive changes within v1. Breaking changes go to v2. |
 | Rate limits | Cloudflare rate-limit rules per user and per org; returns 429 with `Retry-After` |
 | Common columns | `id`, `org_id`, `created_at`, `updated_at`, `deleted_at` |
-| Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them it waited for one after another (calls sent together count once), and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). The budget for every endpoint is about 3 trips in sequence: sign-in, one read stage, one write. Cloudflare Smart Placement isn't used for now (D-102). |
+| Database calls | Every response carries `Server-Timing: db;dur=<ms>;trips=<n>;stages=<n>`: the D1 calls the request made (a statement is one, a batch is one), how many of them it waited for one after another (calls sent together count once), and the milliseconds they took. It is sent in every environment, so production can be measured, and tests hold an endpoint to a budget with it (D-099). The budget for every endpoint is about 3 trips in sequence: sign-in, one read stage, one write. Cloudflare Smart Placement isn't used for now (D-102). Measured on production on 2026-10-14, marking one student took 3 trips in sequence and a median of 227 ms at 8 requests at a time, 363 ms at 20. The owner accepted that speed (D-109). |
 | Reach and reads across modules | What a caller may see is worked out inside the statement that reads it, as a subquery, so a teacher, a parent or staff limited to some branches cost the same database calls as the owner. A module gets another module's rows by asking it for a query for ids, or by giving it one, and never reads its tables. Few ids (a parent's children, a teacher's classes) are gone to. Everything in some branches is not: the page is read in its own order and each row looked up (D-104). |
 | Rules under races | A service checks its rules on what it read, so two requests at once can both pass. Where that would leave the data wrong, the database holds the rule too: a partial unique index where one can (an enrolment is invoiced once for a period, D-094), else a trigger in a migration of its own (an invoice's payments stay within its total, D-120). |
 
@@ -208,18 +208,18 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
 | Families and students (D-051, D-053, D-060) | Full | Branch | Branch | Own classes, read | Own family, read | — |
-| Courses (D-041, D-042) | Full | Full, org-wide | Full, org-wide | Read | Read | Read |
+| Courses (D-041, D-110) | Full | Full, org-wide | Full, org-wide | Read, no default price | Read, no default price | Read |
 | Classes and timetable (D-048, D-060) | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Enrolments (D-058, D-059) | Full | Branch | Branch | Own classes, read | Own children, read | — |
 | Attendance and notes (D-073) | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
-| Fees and payments (price rules: D-083; invoices: D-088, D-096; payments: D-121) | Full | Branch | Branch | — | Own invoices and payments, read | Read + export |
+| Fees and payments (price rules: D-083, D-111; invoices: D-088, D-096; payments: D-121) | Full | Branch | Branch | — | Own invoices and payments, read | Read + export |
 | Messages | Full | Branch | Branch | Own classes | Own family | — |
 | Reports | Full | Branch | Limited | Own classes | — | Money only |
 | Audit log (D-030) | Full | — | — | — | — | — |
 
 Setup data (branches, rooms, grade levels, subjects, the calendar and tax rates) is read org-wide, so a branch manager sees every branch, not only theirs (D-033).
 
-Courses have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes courses for the whole org (D-041). Every role reads all courses, default prices included. That read rule is an assumption from the build, for the owner to confirm (D-042).
+Courses have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes courses for the whole org (D-041). Every role reads all courses. Teachers and parents get them without the default price; the owner, branch managers, front desk and accountants see it (D-110). Teachers get no enrolment's `priceOverride` either. Not built yet: today every role gets both, until TUI-100 changes it.
 
 Classes and sessions (D-048, D-060):
 
@@ -232,7 +232,7 @@ Classes and sessions (D-048, D-060):
 Families, guardians and students (D-051, D-053, D-060):
 
 - A family has a home branch, and its guardians and students go with it. A branch manager or front desk member reads and writes only the families whose home branch is one of their membership's branches. No branch list means every branch.
-- A child in a class at another branch shows on that class's roster by name: each enrolment and each attendance record carries the student's name (D-061, D-072). Only the home branch, the owner and staff with no branch limit change the family record.
+- A child in a class at another branch shows on that class's roster by name: each enrolment and each attendance record carries the student's name (D-061, D-072). The class's branch also sees the child's emergency contacts, read only (D-112, not built yet; see Attendance below). Only the home branch, the owner and staff with no branch limit change the family record.
 - A parent reads only the families where one of the guardians is linked to their membership (the guardian's `membershipId`), and changes nothing.
 - A teacher reads only the students who hold an active enrolment in a class they teach, and those students' families with all their guardians. A family's other children are left out of its `students` list and are 404 (D-060).
 - An accountant gets 403.
@@ -246,22 +246,23 @@ Enrolments (D-058, D-059):
 - A teacher reads only the enrolments in the classes they teach, and a parent only their own children's. Neither can enrol (403). An accountant gets 403.
 - Only an active enrolment gives a teacher or a parent their reach. Its dates don't matter: one that starts later already counts (D-060).
 
-Attendance (D-073, D-074):
+Attendance (D-073, D-074, D-112):
 
 - The attendance routes use `attendance:read` and `attendance:write`. A session's attendance is reached through the session, with the class reach above. A session outside the caller's reach is 404.
 - The owner reads and marks every session. A branch manager or front desk member reads and marks their branches' sessions.
 - A teacher reads and marks the sessions of the classes they teach. It is the only thing a teacher writes so far: classes and sessions stay read-only for them.
 - A parent reads only their own children's records on a session, never the rest of the roster, and marks nothing (403).
 - An accountant gets 403.
-- Branch-limited staff mark a child from another home branch by name, and still can't open that student or family. That is an assumption from the build, for the owner to confirm (D-074, §11).
+- Branch-limited staff mark a child from another home branch by name, and still can't open that student or family (D-074). They see that child's guardians marked as emergency contacts, with name, relationship and phone, read only; the rest of the family record stays with the home branch (D-112). Not built yet: today they get no contacts, until TUI-102 adds them.
 
-Price rules (D-083):
+Price rules (D-083, D-111):
 
-- The price-rule routes use `billing:read` and `billing:write`. The owner, branch managers and front desk read and write. An accountant reads only (403 on writes). A teacher gets 403.
+- The price-rule routes use `billing:read` and `billing:write`. The owner, branch managers, front desk and accountants read; who writes is below, and an accountant gets 403 on writes. A teacher gets 403.
 - A parent gets 403 too. Their `billing:read` is for their own invoices, and price rules belong to no family.
-- An org-wide rule and a course's rule have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes them for the whole org, as with courses (D-041).
-- A class's rule goes with its class's branch. Staff limited to some branches don't see other branches' class rules, and such a rule or class is 404 for them, as for the class itself (D-048).
-- So front desk and branch managers can change prices for the whole org. That is an assumption from the build, for the owner to confirm (§11).
+- An org-wide rule and a course's rule have no branch. Only the owner adds, changes and deletes them (D-111).
+- A class's rule goes with its class's branch. The owner writes every class's rule; branch managers and front desk only those of the classes in their branches (D-111). Staff limited to some branches don't see other branches' class rules, and such a rule or class is 404 for them, as for the class itself (D-048).
+- Only the owner sets or changes a course's `defaultPrice`, since it comes before the org-wide rule (D-082); branch managers and front desk still create and change courses (D-111).
+- Not built yet: today branch managers and front desk still write org-wide and course rules and set a course's default price for the whole org (D-083, D-041), until TUI-101 changes it.
 
 Invoices (D-088, D-096):
 
@@ -327,7 +328,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Enquiry and enrolment:** enquiry form (embeddable/link), online enrolment form with staff approval, enrol/transfer/withdraw with pro-rata, year-end promotion.
 - **Courses and pricing:** courses (curriculum and teaching medium as optional plain-text labels, D-043), class types, capacity, pricing models (per term, per lesson, monthly, packs, free trial) as price rules for a class, a course or the whole org (D-078, D-081), discounts (sibling, multi-class, early-bird, scholarship, manual), per-subject pricing, and bundles, which are built with the discounts (TUI-58, D-079). Invoices apply no discounts until then (D-090).
 - **Timetable:** recurring schedules with holidays skipped, including holidays added later (D-046); sessions generated to the end of the term, or 13 weeks ahead for a class with no term (D-044); calendar views (day/week/month by branch, room, teacher, student), clash detection, one-off changes with family notices.
-- **Attendance and make-ups:** one-tap attendance on phone, parent absence notices, make-up policy, automatic make-up credits, staff make-up booking.
+- **Attendance and make-ups:** one-tap attendance on phone, where the mark shows at once and the app then syncs with the roster the API returns (D-109), parent absence notices, make-up policy, automatic make-up credits, staff make-up booking.
 - **Learning:** lesson notes (typed).
 - **Fees:** automatic term/monthly invoices (a term run and a monthly run that staff start, D-089), pro-rata by lessons (D-086), tax on invoices, recording payments (partial, receipts), unique bank transfer references (one per family, D-097), overdue reminders **by email**.
 - **Communication:** announcements (all, branch, grade, subject, class, teacher's students, custom list), email and portal channels, automatic messages, message templates.
@@ -339,7 +340,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Import:** spreadsheet import with **manual** column mapping (kept in the MVP: centres won't retype 100 students, D-022). AI mapping is part of the AI add-on.
 
 ### Not in the MVP (v1.1 / Later / add-ons)
-- **v1.1:** term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing (moved from the MVP, D-022), roles and permissions UI (custom permission sets), custom fields, school-type templates (music, language/cultural, dance; academic tuition comes first, D-028), UI languages (English only in the MVP, D-015), one login across many orgs, document templates, curriculum/medium tags (managed tags and filtering; the MVP has plain-text labels, D-043), grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export, shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
+- **v1.1:** term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing (moved from the MVP, D-022), roles and permissions UI (custom permission sets), custom fields, school-type templates (music, language/cultural, dance; academic tuition comes first, D-028), UI languages (English only in the MVP, D-015), one login across many orgs, document templates, curriculum/medium tags (managed tags and filtering; the MVP has plain-text labels, D-043), grade-range classes, split billing, sensitive notes, staff availability and documents, lead pipeline, trial lessons, waitlists, placement tests, price history, syllabus, substitutes, calendar feeds, 1:1 booking slots, centre-cancelled bulk credits, absence follow-up, homework, assessments, progress reports, combined report card, report cards (PDF), credits and refunds, bank statement import, family statements, instalments, accounting export (a CSV download, D-116), shared inbox, teacher–parent messaging, parent make-up booking, parent progress view, parent profile updates, teacher hours, pay rules and pay export, events and RSVPs, enrolment/class-fill/attendance/lead reports, data region choice, offline attendance, calendar and video integrations, usage-based add-ons, help centre.
 - **Later:** public class listing, prerequisites, timetable builder, check-in kiosk, external exam tracking, skill maps, practice logs, newsletters, student login, teacher invoices, parent–teacher meetings, performer line-ups, volunteer rosters, galleries, resource library, custom reports, public API and webhooks, native mobile apps, referral programme, large-class attendance (custom only).
 - **Paid add-ons:** WhatsApp, SMS, all AI features (report comment drafts, voice notes, translation, make-up matching, "ask your data", at-risk alerts, timetable suggestions, bank-match assist, AI import mapping).
 - **Out of scope for now:** online payments from parents.
@@ -391,7 +392,7 @@ The owner reaches every family; branch managers and front desk the families whos
 - `POST /imports/{id}/commit` (job)
 
 ### Courses, classes and timetable
-Courses: every role reads (an assumption to confirm, D-042); the owner, branch managers and front desk write, for the whole org (D-041).
+Courses: every role reads, but teachers and parents without the default price (D-110; not built yet, today every role gets it, TUI-100); the owner, branch managers and front desk write, for the whole org (D-041), and only the owner sets `defaultPrice` (D-111, TUI-101).
 - `GET|POST /courses` (`GET` filters `?subjectId`, `?gradeLevelId`) · `PATCH|DELETE /courses/{courseId}`: subject + grade level + curriculum + teaching medium must be unique (409). `PATCH` can't change the subject or grade level. `defaultPrice` must be in the org's currency (400) and is for one billing period of a class: a term, or a month for a class with no term (D-077); `durationMinutes` is the usual lesson length, 5 to 600. A `subjectId` or `gradeLevelId` the org doesn't have is 404, in a filter too (D-041, D-043). `DELETE` is refused (422) while a class uses the course or a price rule prices it (D-050, D-085)
 
 Classes and sessions: the owner reaches all of them, branch managers and front desk their branches' (read and write), a teacher the classes they teach and a parent the classes their children hold an active enrolment in (both read only). Anything outside the caller's reach is 404 (D-048, D-060).
@@ -429,7 +430,7 @@ A session's attendance is reached through the session: the owner every session, 
 - `PUT /sessions/{id}/notes`
 
 ### Fees and payments
-Price rules: the owner, branch managers and front desk read and write; an accountant reads; a teacher or a parent gets 403. Org-wide and course rules are written for the whole org, by branch-limited staff too. A class's rule goes with its class's branch, and one outside the caller's branches is 404. Who writes them is an assumption to confirm (D-083).
+Price rules: the owner, branch managers, front desk and accountants read; a teacher or a parent gets 403. Only the owner writes org-wide and course rules. A class's rule goes with its class's branch: the owner writes any, branch managers and front desk those of their branches' classes, and one outside the caller's branches is 404 (D-083, D-111). Not built yet: today branch managers and front desk also write org-wide and course rules.
 
 Which price an enrolment gets, most specific first: its class's own rule, its course's rule, the course's `defaultPrice` (per term, or per month for a class with no term), then the org-wide rule. A rule on a basis that doesn't fit the class is skipped. An enrolment's `priceOverride` replaces the amount and keeps the basis, pack size, free trial and tax rate. Tax is the rule's rate, else the org's default rate, else none. With none of these the enrolment has no price. No endpoint returns the resolved price: an invoice run reads it, turns it into amounts and copies it onto each line (D-077, D-082, D-093).
 
@@ -524,15 +525,15 @@ While production is behind Cloudflare Access, these paths need an Access bypass,
 **Product and business**
 - [x] Is the ~65-feature MVP too big for the first launch? Consider cutting to a thinner first release. → Move term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing to v1.1; keep spreadsheet import and the rest (D-022)
 - [x] Annual billing discount? Which currency is shown in each country? → Annual at launch, two months free (Solo US$99/yr, Small US$249/yr); USD base with hand-set NZD, AUD and GBP prices, Paddle conversion elsewhere (D-027)
-- [ ] Add-on pricing: monthly packs or pay-as-you-go at cost plus margin (WhatsApp priced by region)?
+- [ ] Add-on pricing: monthly packs or pay-as-you-go at cost plus margin (WhatsApp priced by region)? Deferred by the owner on 2026-10-14 until the add-ons are built.
 - [x] Which school-type template gets polished first? → Academic tuition (D-028)
-- [ ] Accounting export format for v1.1: Xero, QuickBooks or CSV?
+- [x] Accounting export format for v1.1: Xero, QuickBooks or CSV? → CSV only, a download any accounting tool can import (D-116)
 - [x] Product name and domain. → EduStrux, edustrux.com; domain registration by the owner pending (D-023)
 - [x] Confirm the side-business and IP clauses in the employment agreement before building. → Confirmed by the owner (D-019)
-- [ ] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads.
-- [ ] Who writes price rules? Built so branch managers and front desk add, change and delete them like the owner, and so org-wide and course rules ignore a member's branch limit: they change prices for the whole org. They can already set a course's default price (D-041) and an enrolment's override (D-062). This is an assumption from the build, not an owner decision (D-083): confirm it or restrict writes.
+- [x] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads. → Every role reads courses; teachers and parents get them without the default price (D-110). Not built yet
+- [x] Who writes price rules? Built so branch managers and front desk add, change and delete them like the owner, and so org-wide and course rules ignore a member's branch limit: they change prices for the whole org. They can already set a course's default price (D-041) and an enrolment's override (D-062). This is an assumption from the build, not an owner decision (D-083): confirm it or restrict writes. → Only the owner writes org-wide and course rules; branch managers and front desk write rules for the classes in their branches (D-111). Not built yet
 - [x] Cross-branch enrolment: staff limited to one branch can't see a student whose family's home branch is another one, so they can't enrol that student in a class at their own branch (D-051). Enrolments (TUI-33) must decide how this works. → The caller must reach both the student and the class; cross-branch enrolments go through the owner or staff with no branch limit (D-058)
-- [ ] Cross-branch children on a roster: branch-limited staff of the class's branch see such a child's name but can't open the student or family record, so they have no guardian or emergency contacts for them (D-061). Attendance (TUI-34) was built keeping this: they mark the child by name and still get no contacts. This is an assumption from the build, not an owner decision (D-074): confirm it, or say which contacts the class's branch should get.
+- [x] Cross-branch children on a roster: branch-limited staff of the class's branch see such a child's name but can't open the student or family record, so they have no guardian or emergency contacts for them (D-061). Attendance (TUI-34) was built keeping this: they mark the child by name and still get no contacts. This is an assumption from the build, not an owner decision (D-074): confirm it, or say which contacts the class's branch should get. → The class's branch sees the child's guardians marked as emergency contacts, with name, relationship and phone, read only (D-112). Not built yet
 - [ ] Money a family pays beyond what its invoices owe, or before it is invoiced: built so a payment's allocations add up exactly to its amount, only to issued or part-paid invoices, with no credit on account (credits are v1.1). Staff record only what the invoices owe. This is an assumption from the build, not an owner decision (D-118): confirm it, or say where the extra money goes.
 
 **Technical**
@@ -541,9 +542,9 @@ While production is behind Cloudflare Access, these paths need an Access bypass,
 - [x] PDFs (invoices, receipts): render in the browser or server-side (Cloudflare Browser Rendering)? → Server-side with Browser Rendering (D-025)
 - [x] Data region: the launch region for the shared D1 database, and when per-region storage is needed. → Oceania (`oc`); per-region only when a customer requires data residency (D-024)
 - [x] Search: SQLite FTS5 or simple prefix search at first? → Prefix search on normalised names; FTS5 only if needed (D-026)
-- [ ] Testing: Vitest + `@cloudflare/vitest-pool-workers` with local D1. Which flows get end-to-end tests first? (Suggested: onboarding → class setup → enrolment → invoice generation → payment.)
+- [x] Testing: Vitest + `@cloudflare/vitest-pool-workers` with local D1. Which flows get end-to-end tests first? (Suggested: onboarding → class setup → enrolment → invoice generation → payment.) → Onboarding → class setup → enrolment → attendance → invoice generation, built now with what exists; payment joins the same test when it lands (D-114, TUI-41)
 - [x] API docs in production: production is the only deployed environment and D-002 turned the docs off there, which left Swagger and the spec available locally only (D-064). Turn them on in production until there is another deployed environment? → On until launch: public at `/api/docs` and `/api/openapi.json` on the production Worker, off again as part of launch hardening (D-068). Since 2026-10-12 production is behind Cloudflare Access, so the docs aren't public while it is on (D-069)
-- [ ] Cloudflare Workers plan: the account's plan couldn't be seen during the deploy, and nothing was changed. The cost model assumes Workers Paid at $5/month; on the Free plan the limits are lower and fail rather than bill. The owner needs to confirm which plan it is (D-066).
+- [x] Cloudflare Workers plan: the account's plan couldn't be seen during the deploy, and nothing was changed. The cost model assumes Workers Paid at $5/month; on the Free plan the limits are lower and fail rather than bill. The owner needs to confirm which plan it is (D-066). → Workers Free. Moving to Paid is the owner's call; nothing was changed (D-115, D-065)
 
 ---
 
@@ -566,8 +567,9 @@ While production is behind Cloudflare Access, these paths need an Access bypass,
 
 ## Appendix: rates used in the cost model (Oct 2026)
 - **Cloudflare:**
-  - Workers Paid: $5/month, includes 10M requests. Which plan the account is on isn't confirmed (D-066).
-  - D1: 5 GB storage, 25B reads and 50M writes per month included; 10 GB max per database.
+  - Workers Paid: $5/month, includes 10M requests.
+  - Workers Free, which the account is on (D-115): 100,000 requests a day, 10 ms of CPU per request; D1 5M rows read and 100,000 written a day, 5 GB stored in total. Past a limit, requests fail rather than bill.
+  - D1 on Workers Paid: 5 GB storage, 25B reads and 50M writes per month included; 10 GB max per database.
   - R2: $0.015/GB, no egress fees.
   - Browser Rendering (PDFs, D-025): some browser time included with Workers Paid each month, then billed per browser-hour.
 - **Clerk:** Free up to 50k monthly retained users; Pro $25/month ($20 billed annually) adds MFA; B2B add-on $100/month (avoid it).
