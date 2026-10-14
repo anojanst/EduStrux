@@ -1,4 +1,12 @@
-import { invoiceLines, invoices, now, priceRules, taxRates } from '@edustrux/db';
+import {
+  invoiceLines,
+  invoices,
+  now,
+  paymentAllocations,
+  payments,
+  priceRules,
+  taxRates,
+} from '@edustrux/db';
 import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
 import {
   asc,
@@ -69,9 +77,19 @@ export type InvoiceFilter = {
  */
 export type InvoiceReach = { familyIds?: Ids; issuedOnly?: boolean };
 
+export type PaymentRow = typeof payments.$inferSelect;
+export type NewPaymentRow = typeof payments.$inferInsert;
+export type AllocationRow = typeof paymentAllocations.$inferSelect;
+export type NewAllocationRow = typeof paymentAllocations.$inferInsert;
+export type PaymentFilter = { familyId?: string; invoiceId?: string };
+/** A payment goes with its family, as an invoice does: every one when empty, else `familyIds`'. */
+export type PaymentReach = { familyIds?: Ids };
+
 // D1 binds at most 100 values per statement. An invoice row has 21 columns and a line 30.
 const INVOICES_PER_INSERT = 4;
 const LINES_PER_INSERT = 3;
+// An allocation binds 7.
+const ALLOCATIONS_PER_INSERT = 12;
 
 function chunks<T>(rows: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -338,7 +356,7 @@ export async function softDeletePriceRule(ctx: OrgCtx, before: PriceRuleRow) {
 // ── Invoices ────────────────────────────────────────────────────────────────
 
 /** Whether the reach is a few families, which a statement goes to: a parent's, not a branch's. */
-const fewFamilies = (reach: InvoiceReach) =>
+const fewFamilies = (reach: InvoiceReach | PaymentReach) =>
   reach.familyIds !== undefined && (Array.isArray(reach.familyIds) || !reach.familyIds.wide);
 
 /**
@@ -459,6 +477,14 @@ export function findInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach) {
     .from(invoices)
     .where(inOrg(ctx, invoices, eq(invoices.id, id), ...withinInvoiceReach(reach)))
     .get();
+}
+
+/** The invoices with these ids that are within reach, for a payment to pay towards. */
+export function findInvoices(ctx: OrgCtx, ids: string[], reach: InvoiceReach) {
+  return ctx.db
+    .select()
+    .from(invoices)
+    .where(inOrg(ctx, invoices, inIds(invoices.id, ids), ...withinInvoiceReach(reach)));
 }
 
 /**
@@ -647,20 +673,271 @@ export async function voidInvoice(
   before: InvoiceRow,
 ): Promise<InvoiceRow | undefined> {
   const after = { status: 'void' as const, voidedAt: now() };
+  // Only a draft or an issued one: a payment recorded since the read leaves it as it is. Its
+  // lines are voided only if this statement voided it, so a paid invoice keeps its enrolments
+  // billed. Returns undefined when it changed nothing.
+  const voidedNow = idsFrom(
+    ctx,
+    invoices,
+    invoices.id,
+    eq(invoices.id, before.id),
+    eq(invoices.voidedAt, after.voidedAt),
+  );
   const [, voided] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(invoices)
         .set(after)
-        .where(inOrg(ctx, invoices, eq(invoices.id, before.id)))
+        .where(
+          inOrg(
+            ctx,
+            invoices,
+            eq(invoices.id, before.id),
+            inArray(invoices.status, ['draft', 'issued']),
+          ),
+        )
         .returning(),
       ctx.db
         .update(invoiceLines)
         .set({ voidedAt: after.voidedAt })
-        .where(inOrg(ctx, invoiceLines, eq(invoiceLines.invoiceId, before.id))),
+        .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, voidedNow))),
     ],
     { action: 'invoice.voided', entityType: 'invoice', entityId: before.id, before, after },
   );
   return (voided as InvoiceRow[])[0];
+}
+
+// ── Payments ────────────────────────────────────────────────────────────────
+
+/**
+ * The list's filters. A payment towards an invoice is found from the invoice's allocations, a
+ * handful of rows, so that filter comes first and the page goes to those payments. The family is
+ * the next way in. With a caller who reaches a few families, the page is read from those.
+ */
+const paymentFilter = (ctx: OrgCtx, filter: PaymentFilter) => [
+  filter.invoiceId
+    ? inIds(
+        payments.id,
+        idsFrom(
+          ctx,
+          paymentAllocations,
+          paymentAllocations.paymentId,
+          eq(paymentAllocations.invoiceId, filter.invoiceId),
+        ),
+      )
+    : undefined,
+  filter.familyId ? eq(payments.familyId, filter.familyId) : undefined,
+];
+
+/** Spread into `inOrg`: a parent's families are ids it goes to; a branch's are checked per row. */
+const withinPaymentReach = (reach: PaymentReach) =>
+  reach.familyIds ? inIds(payments.familyId, reach.familyIds) : undefined;
+
+const onPaymentPage = (
+  ctx: OrgCtx,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+  beforeId: string | undefined,
+): (SQL | undefined)[] => [
+  ...paymentFilter(ctx, filter),
+  withinPaymentReach(reach),
+  beforeId ? lt(payments.id, beforeId) : undefined,
+];
+
+/** Newest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listPayments(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+) {
+  return ctx.db
+    .select()
+    .from(payments)
+    .where(inOrg(ctx, payments, ...onPaymentPage(ctx, filter, reach, beforeId)))
+    .orderBy(desc(payments.id))
+    .limit(limit + 1);
+}
+
+/** A column of the `limit` payments a page shows, as a query, to read what it shows beside it. */
+const ofPaymentPage = (
+  ctx: OrgCtx,
+  column: SQLiteColumn,
+  limit: number,
+  beforeId: string | undefined,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+) =>
+  firstIds(
+    idsFrom(ctx, payments, column, ...onPaymentPage(ctx, filter, reach, beforeId)),
+    limit,
+    desc(payments.id),
+  );
+
+/** The payments one page of the list shows. */
+export function paymentsOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+): IdQuery {
+  return ofPaymentPage(ctx, payments.id, limit, beforeId, filter, reach);
+}
+
+/** The families of the payments one page of the list shows. */
+export function familiesOfPaymentPage(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+): IdQuery {
+  return ofPaymentPage(ctx, payments.familyId, limit, beforeId, filter, reach);
+}
+
+/** One page of payments and their allocations, read in one batch: one trip and one moment. */
+export async function listPaymentsWithAllocations(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: PaymentFilter,
+  reach: PaymentReach,
+) {
+  const [rows, allocations] = await ctx.db.batch([
+    listPayments(ctx, limit, beforeId, filter, reach),
+    listAllocations(ctx, paymentsOnPage(ctx, limit, beforeId, filter, reach)),
+  ]);
+  return { rows, allocations };
+}
+
+export function findPayment(ctx: OrgCtx, id: string, reach: PaymentReach) {
+  return ctx.db
+    .select()
+    .from(payments)
+    .where(inOrg(ctx, payments, eq(payments.id, id), withinPaymentReach(reach)))
+    .get();
+}
+
+/** One payment, if it is within reach, as a query: its allocations are read beside it. */
+export function paymentWithin(ctx: OrgCtx, id: string, reach: PaymentReach): IdQuery {
+  return idsFrom(ctx, payments, payments.id, eq(payments.id, id), withinPaymentReach(reach));
+}
+
+/** The allocations of the given payments, each payment's oldest invoice first. */
+export function listAllocations(ctx: OrgCtx, paymentIds: Ids) {
+  return ctx.db
+    .select()
+    .from(paymentAllocations)
+    .where(inOrg(ctx, paymentAllocations, inIds(paymentAllocations.paymentId, paymentIds)))
+    .orderBy(asc(paymentAllocations.paymentId), asc(paymentAllocations.invoiceId));
+}
+
+/**
+ * Sets each invoice's paid amount to the sum of its allocations that aren't deleted, and its
+ * status to match: nothing paid is `issued`, some is `part_paid`, all of it is `paid`. Worked
+ * out from the allocations in the same batch that changes them, so two payments at once leave
+ * it right.
+ */
+export function settleInvoices(ctx: OrgCtx, invoiceIds: string[]) {
+  const paid = sql`(select coalesce(sum(${paymentAllocations.amount}), 0) from ${paymentAllocations} where ${paymentAllocations.orgId} = ${invoices.orgId} and ${paymentAllocations.invoiceId} = ${invoices.id} and ${paymentAllocations.deletedAt} is null)`;
+  return ctx.db
+    .update(invoices)
+    .set({
+      paidAmount: paid,
+      status: sql`case when ${paid} = 0 then 'issued' when ${paid} < ${invoices.totalAmount} then 'part_paid' else 'paid' end`,
+    })
+    .where(inOrg(ctx, invoices, inIds(invoices.id, invoiceIds)));
+}
+
+/**
+ * Writes the payment, its allocations and the invoices they pay towards as one batch with one
+ * audit row. Returns the payment and the allocations as stored. The trigger of migration 0016
+ * fails the whole batch if an invoice has stopped taking the payment since it was read: see
+ * `allocationRejected`.
+ */
+export async function insertPayment(
+  ctx: OrgCtx,
+  payment: NewPaymentRow & { id: string },
+  allocations: (NewAllocationRow & { id: string })[],
+) {
+  const [, inserted, ...rest] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db.insert(payments).values(payment).returning(),
+      ...chunks(allocations, ALLOCATIONS_PER_INSERT).map((chunk) =>
+        ctx.db.insert(paymentAllocations).values(chunk).returning(),
+      ),
+      settleInvoices(
+        ctx,
+        allocations.map((a) => a.invoiceId),
+      ),
+    ],
+    {
+      action: 'payment.created',
+      entityType: 'payment',
+      entityId: payment.id,
+      after: {
+        ...payment,
+        allocations: allocations.map(({ invoiceId, amount }) => ({ invoiceId, amount })),
+      },
+    },
+  );
+  const row = (inserted as PaymentRow[])[0];
+  if (!row) throw new Error('Payment missing after insert');
+  // The allocation inserts come before the invoices' update, the last statement.
+  const stored = rest.slice(0, -1).flat() as AllocationRow[];
+  return { payment: row, allocations: stored };
+}
+
+/** Whether a write failed on the allocation trigger of migration 0016. */
+export function allocationRejected(error: unknown): boolean {
+  for (let e: unknown = error; e instanceof Error; e = e.cause) {
+    if (e.message.includes('payment_allocation_rejected')) return true;
+  }
+  return false;
+}
+
+/**
+ * Deletes the payment and its allocations, and settles the invoices they paid towards again,
+ * in one batch with one audit row.
+ */
+export async function softDeletePayment(
+  ctx: OrgCtx,
+  before: PaymentRow,
+  allocations: AllocationRow[],
+) {
+  const deletedAt = now();
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(payments)
+        .set({ deletedAt })
+        .where(inOrg(ctx, payments, eq(payments.id, before.id))),
+      ctx.db
+        .update(paymentAllocations)
+        .set({ deletedAt })
+        .where(inOrg(ctx, paymentAllocations, eq(paymentAllocations.paymentId, before.id))),
+      ...(allocations.length > 0
+        ? [
+            settleInvoices(
+              ctx,
+              allocations.map((a) => a.invoiceId),
+            ),
+          ]
+        : []),
+    ],
+    {
+      action: 'payment.deleted',
+      entityType: 'payment',
+      entityId: before.id,
+      before: {
+        ...before,
+        allocations: allocations.map(({ invoiceId, amount }) => ({ invoiceId, amount })),
+      },
+    },
+  );
 }

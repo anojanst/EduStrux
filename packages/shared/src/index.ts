@@ -13,6 +13,7 @@ export * from './schemas/curriculum';
 export * from './schemas/enrolment';
 export * from './schemas/invoices';
 export * from './schemas/orgs';
+export * from './schemas/payments';
 export * from './schemas/people';
 export * from './schemas/platform';
 export * from './schemas/pricing';

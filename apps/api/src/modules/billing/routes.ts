@@ -1,5 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  CreatePayment,
   CreatePriceRule,
   CreateTaxRate,
   GenerateInvoices,
@@ -9,6 +10,8 @@ import {
   InvoiceRunResult,
   JobStarted,
   PageQuery,
+  Payment,
+  PaymentQuery,
   PriceRule,
   PriceRuleQuery,
   TaxRate,
@@ -39,6 +42,10 @@ const TermParams = OrgParams.extend({
 
 const InvoiceParams = OrgParams.extend({
   invoiceId: z.string().openapi({ param: { name: 'invoiceId', in: 'path' } }),
+});
+
+const PaymentParams = OrgParams.extend({
+  paymentId: z.string().openapi({ param: { name: 'paymentId', in: 'path' } }),
 });
 
 /** A write that takes an `Idempotency-Key`: a retry with the same key replays the first answer. */
@@ -298,6 +305,61 @@ const voidInvoiceRoute = createRoute({
   },
 });
 
+const listPaymentsRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/payments',
+  tags: ['Billing'],
+  summary: 'List payments',
+  description:
+    'Newest first, each with the invoices it pays towards. Filters: `familyId` and `invoiceId`; ' +
+    'an unknown id is 404. Staff limited to some branches see the payments of the families ' +
+    'whose home branch is theirs. A parent sees their own family’s.',
+  middleware: orgAccess('billing:read'),
+  request: { params: OrgParams, query: PaymentQuery },
+  responses: {
+    200: json(page(Payment).openapi('PaymentPage'), 'A page of payments'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const createPaymentRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/payments',
+  tags: ['Billing'],
+  summary: 'Record a payment',
+  description:
+    'Money a family paid outside the app, by cash, bank transfer, cheque, card or another way. ' +
+    '`allocations` names the family’s issued or part-paid invoices it pays towards, each at ' +
+    'most once, and their amounts add up to `amount` (400). The amount is in the ' +
+    'organisation’s currency (400) and `receivedOn` isn’t after today (400). An invoice of ' +
+    'another family, a draft, a void or a paid one, or more than an invoice still owes, is 422 ' +
+    'with the reason on each allocation. Each invoice becomes `part_paid` or `paid`. An invoice ' +
+    'paid by another request at the same moment is 409: read it again. Takes an ' +
+    '`Idempotency-Key`.',
+  middleware: billingAction,
+  request: { params: OrgParams, body: jsonBody(CreatePayment) },
+  responses: {
+    201: json(Payment, 'The payment'),
+    ...errors(400, 401, 403, 404, 409, 422),
+  },
+});
+
+const deletePaymentRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/orgs/{orgId}/payments/{paymentId}',
+  tags: ['Billing'],
+  summary: 'Delete a payment',
+  description:
+    'Takes a payment recorded by mistake off. Each invoice it paid towards goes back to ' +
+    '`part_paid`, or `issued` when nothing else is paid on it.',
+  middleware: orgAccess('billing:write'),
+  request: { params: PaymentParams },
+  responses: {
+    204: { description: 'Deleted' },
+    ...errors(401, 403, 404),
+  },
+});
+
 const router = createRouter();
 // A run's result comes back on its job, so no route returns it. Registered so the docs show it.
 router.openAPIRegistry.register('InvoiceRunResult', InvoiceRunResult);
@@ -381,4 +443,15 @@ export const billingRoutes = router
   .openapi(voidInvoiceRoute, async (c) => {
     const { invoiceId } = c.req.valid('param');
     return c.json(await service.voidInvoice(orgCtx(c), access(c), invoiceId), 200);
+  })
+  .openapi(listPaymentsRoute, async (c) => {
+    const { limit, cursor, ...filter } = c.req.valid('query');
+    return c.json(await service.listPayments(orgCtx(c), access(c), limit, cursor, filter), 200);
+  })
+  .openapi(createPaymentRoute, async (c) => {
+    return c.json(await service.createPayment(orgCtx(c), access(c), c.req.valid('json')), 201);
+  })
+  .openapi(deletePaymentRoute, async (c) => {
+    await service.deletePayment(orgCtx(c), access(c), c.req.valid('param').paymentId);
+    return c.body(null, 204);
   });

@@ -1,11 +1,14 @@
 import {
   basisFitsClass,
+  localNow,
   newId,
+  type CreatePayment,
   type CreatePriceRule,
   type CreateTaxRate,
   type Invoice,
   type InvoiceLine,
   type InvoiceStatus,
+  type Payment,
   type PriceRule,
   type TaxRate,
   type UpdateInvoice,
@@ -27,7 +30,7 @@ import * as calendar from '../calendar/service';
 import * as classes from '../classes/service';
 import * as curriculum from '../curriculum/service';
 import * as orgs from '../orgs/service';
-import { familyWithinReach } from '../people/for-billing';
+import { familyLabelWithinReach, familyWithinReach } from '../people/for-billing';
 import * as people from '../people/service';
 import { priceResolver } from './pricing';
 import * as repo from './repository';
@@ -344,6 +347,8 @@ export function toInvoice(
     subtotal: money(row.subtotalAmount),
     tax: money(row.taxAmount),
     total: money(row.totalAmount),
+    paid: money(row.paidAmount),
+    balance: money(row.status === 'void' ? 0 : row.totalAmount - row.paidAmount),
     lines,
     issuedAt: row.issuedAt,
     voidedAt: row.voidedAt,
@@ -550,15 +555,197 @@ export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Pro
  */
 export async function voidInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
   const { row: before, as } = await readInvoice(ctx, access, id);
-  if (before.status === 'void') {
-    throw unprocessable('This invoice is already void.', { status: ['Already void'] });
+  const refused = cannotVoid(before);
+  if (refused) throw refused;
+  const voided = await repo.voidInvoice(ctx, before);
+  if (voided) return as(voided);
+  // It changed between the read and the write, and the write left it alone: a payment came in,
+  // or another request voided it. The answer is why, which takes a read.
+  const { row: now } = await readInvoice(ctx, access, id);
+  throw cannotVoid(now) ?? notFound('Invoice');
+}
+
+function cannotVoid(invoice: repo.InvoiceRow) {
+  if (invoice.status === 'void') {
+    return unprocessable('This invoice is already void.', { status: ['Already void'] });
   }
-  if (before.status !== 'draft' && before.status !== 'issued') {
-    throw unprocessable("An invoice with payments on it can't be voided.", {
+  if (invoice.status !== 'draft' && invoice.status !== 'issued') {
+    return unprocessable("An invoice with payments on it can't be voided.", {
       status: ['Has payments'],
     });
   }
-  const voided = await repo.voidInvoice(ctx, before);
-  if (!voided) throw notFound('Invoice');
-  return as(voided);
+  return undefined;
+}
+
+// ── Payments ────────────────────────────────────────────────────────────────
+
+export function toPayment(
+  row: repo.PaymentRow,
+  family: FamilyLabel,
+  allocations: repo.AllocationRow[],
+): Payment {
+  const money = (amount: number) => ({ amount, currency: row.currency });
+  return {
+    id: row.id,
+    familyId: row.familyId,
+    familyName: family.name,
+    branchId: family.branchId,
+    method: row.method,
+    amount: money(row.amount),
+    receivedOn: row.receivedOn,
+    reference: row.reference,
+    notes: row.notes,
+    // Oldest invoice first, as they are read: ids made in the same moment don't sort by it.
+    allocations: allocations
+      .toSorted((a, b) => (a.invoiceId < b.invoiceId ? -1 : 1))
+      .map((a) => ({ invoiceId: a.invoiceId, amount: money(a.amount) })),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * A payment goes with its family, as an invoice does (D-096): branch staff reach the payments of
+ * the families whose home branch is theirs, and a parent their own family's. No trip (D-104).
+ */
+function paymentReach(ctx: OrgCtx, access: Access): repo.PaymentReach {
+  const { familyIds } = invoiceReach(ctx, access);
+  return familyIds ? { familyIds } : {};
+}
+
+/**
+ * One stage: the page, its allocations and its families' names are read together, with the
+ * checks on the filters. A family or an invoice outside the caller's reach is 404.
+ */
+export async function listPayments(
+  ctx: OrgCtx,
+  access: Access,
+  limit: number,
+  cursor: string | undefined,
+  filter: repo.PaymentFilter,
+) {
+  const reach = paymentReach(ctx, access);
+  const page = [limit, decodeCursor(cursor), filter, reach] as const;
+
+  const [family, invoice, { rows, allocations }, beside] = await Promise.all([
+    filter.familyId ? familyWithinReach(ctx, access, filter.familyId) : true,
+    filter.invoiceId ? repo.findInvoice(ctx, filter.invoiceId, invoiceReach(ctx, access)) : true,
+    repo.listPaymentsWithAllocations(ctx, ...page),
+    people.familyLabels(ctx, repo.familiesOfPaymentPage(ctx, ...page)),
+  ]);
+  if (!family) throw notFound('Family');
+  if (!invoice) throw notFound('Invoice');
+
+  const { data, nextCursor } = toPage(rows, limit);
+  // The names are read for a query of the page, beside the page. A payment recorded in that
+  // moment moves what the query finds, so if a name is missing they are read by the ids.
+  const families = data.every((row) => beside.has(row.familyId))
+    ? beside
+    : await people.familyLabels(ctx, [...new Set(data.map((row) => row.familyId))]);
+  return {
+    data: data.map((row) =>
+      toPayment(
+        row,
+        families.get(row.familyId)!,
+        allocations.filter((a) => a.paymentId === row.id),
+      ),
+    ),
+    nextCursor,
+  };
+}
+
+/**
+ * Records money a family paid, towards one or more of its issued or part-paid invoices. Each
+ * invoice moves to `part_paid` or `paid` in the same write. One read stage, one write.
+ */
+export async function createPayment(
+  ctx: OrgCtx,
+  access: Access,
+  input: CreatePayment,
+): Promise<Payment> {
+  const [family, found] = await Promise.all([
+    familyLabelWithinReach(ctx, access, input.familyId),
+    repo.findInvoices(
+      ctx,
+      input.allocations.map((a) => a.invoiceId),
+      invoiceReach(ctx, access),
+    ),
+  ]);
+  if (!family) throw notFound('Family');
+  const invoices = new Map(found.map((row) => [row.id, row]));
+  if (input.allocations.some((a) => !invoices.has(a.invoiceId))) throw notFound('Invoice');
+
+  const org = await orgs.getOrg(ctx);
+  if (input.amount.currency !== org.currency) {
+    throw validationFailed({
+      'amount.currency': [`Must be the organisation's currency, ${org.currency}`],
+    });
+  }
+  const today = localNow(org.timezone).date;
+  const receivedOn = input.receivedOn ?? today;
+  if (receivedOn > today) throw validationFailed({ receivedOn: ['Can’t be after today'] });
+
+  // Every reason an invoice can't take its part, for every invoice at once.
+  const refused: Record<string, string[]> = {};
+  input.allocations.forEach((allocation, i) => {
+    const invoice = invoices.get(allocation.invoiceId)!;
+    const at = `allocations.${i}`;
+    if (invoice.familyId !== input.familyId) {
+      refused[`${at}.invoiceId`] = ['Another family’s invoice'];
+    } else if (invoice.status === 'draft') {
+      refused[`${at}.invoiceId`] = ['Not issued'];
+    } else if (invoice.status === 'void') {
+      refused[`${at}.invoiceId`] = ['Void'];
+    } else if (invoice.status === 'paid') {
+      refused[`${at}.invoiceId`] = ['Already paid'];
+    } else if (invoice.currency !== allocation.amount.currency) {
+      refused[`${at}.amount.currency`] = [`Must be the invoice's currency, ${invoice.currency}`];
+    } else if (allocation.amount.amount > invoice.totalAmount - invoice.paidAmount) {
+      refused[`${at}.amount`] = ['More than is owed'];
+    }
+  });
+  if (Object.keys(refused).length > 0) {
+    throw unprocessable('Some invoices can’t take this payment.', refused);
+  }
+
+  const paymentId = newId('payment');
+  try {
+    const { payment, allocations } = await repo.insertPayment(
+      ctx,
+      {
+        id: paymentId,
+        orgId: ctx.orgId,
+        familyId: input.familyId,
+        method: input.method,
+        amount: input.amount.amount,
+        currency: input.amount.currency,
+        receivedOn,
+        reference: input.reference ?? null,
+        notes: input.notes ?? null,
+      },
+      input.allocations.map((a) => ({
+        id: newId('paymentAllocation'),
+        orgId: ctx.orgId,
+        paymentId,
+        invoiceId: a.invoiceId,
+        amount: a.amount.amount,
+      })),
+    );
+    return toPayment(payment, family, allocations);
+  } catch (error) {
+    // An invoice was paid, or stopped taking payments, between the read and the write.
+    if (repo.allocationRejected(error)) throw staleData();
+    throw error;
+  }
+}
+
+/** Takes a payment off: its invoices go back to what the other payments leave them at. */
+export async function deletePayment(ctx: OrgCtx, access: Access, id: string): Promise<void> {
+  const reach = paymentReach(ctx, access);
+  const [before, allocations] = await Promise.all([
+    repo.findPayment(ctx, id, reach),
+    repo.listAllocations(ctx, repo.paymentWithin(ctx, id, reach)),
+  ]);
+  if (!before) throw notFound('Payment');
+  await repo.softDeletePayment(ctx, before, allocations);
 }

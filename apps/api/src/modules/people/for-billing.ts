@@ -14,11 +14,19 @@ import * as repo from './repository';
  * is treated here as a guardian, so one finds nothing.
  */
 export async function familyWithinReach(ctx: OrgCtx, access: Access, id: string) {
-  const reach: repo.Reach =
-    access.scope === 'own'
-      ? { guardianMembershipId: access.membershipId }
-      : access.scope === 'branch' && access.branchIds
-        ? { branchIds: access.branchIds }
-        : {};
-  return (await repo.findFamily(ctx, id, reach)) !== undefined;
+  return (await repo.findFamily(ctx, id, billingReach(access))) !== undefined;
+}
+
+/**
+ * What a payment shows of its family, if the org has the family and the caller may see it: the
+ * check `familyWithinReach` makes, in the same one statement.
+ */
+export async function familyLabelWithinReach(ctx: OrgCtx, access: Access, id: string) {
+  const row = await repo.findFamily(ctx, id, billingReach(access));
+  return row && { name: row.name, branchId: row.branchId };
+}
+
+function billingReach(access: Access): repo.Reach {
+  if (access.scope === 'own') return { guardianMembershipId: access.membershipId };
+  return access.scope === 'branch' && access.branchIds ? { branchIds: access.branchIds } : {};
 }

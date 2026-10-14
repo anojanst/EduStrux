@@ -28,6 +28,7 @@ export const ID_PREFIXES = {
   invoice: 'inv',
   invoiceLine: 'inl',
   payment: 'pay',
+  paymentAllocation: 'pal',
   job: 'job',
   audit: 'aud',
   idempotency: 'idem',

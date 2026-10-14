@@ -1,4 +1,4 @@
-import { INVOICE_STATUSES, PRICE_BASES, PRICE_SOURCES } from '@edustrux/shared';
+import { INVOICE_STATUSES, PAYMENT_METHODS, PRICE_BASES, PRICE_SOURCES } from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';
@@ -69,6 +69,9 @@ export const invoices = sqliteTable(
     subtotalAmount: integer('subtotal_amount').notNull(),
     taxAmount: integer('tax_amount').notNull(),
     totalAmount: integer('total_amount').notNull(),
+    // The sum of the payment allocations to it that aren't deleted, set in the batch that
+    // records or deletes a payment, with the status that follows from it.
+    paidAmount: integer('paid_amount').notNull().default(0),
     // Copied from the family when the invoice is generated.
     bankReference: text('bank_reference'),
     dueDate: text('due_date'),
@@ -138,5 +141,49 @@ export const invoiceLines = sqliteTable(
     uniqueIndex('invoice_lines_org_enrolment_period_uq')
       .on(t.orgId, t.enrolmentId, t.periodKey)
       .where(sql`${t.deletedAt} is null and ${t.voidedAt} is null`),
+  ],
+);
+
+// Money a family paid, recorded by staff: payments are made outside the app. A payment pays
+// towards one or more of the family's invoices, and its allocations add up to its amount.
+export const payments = sqliteTable(
+  'payments',
+  {
+    ...orgColumns(),
+    familyId: text('family_id').notNull(),
+    method: text('method', { enum: PAYMENT_METHODS }).notNull(),
+    // Minor units, in `currency`: the organisation's when it was recorded.
+    amount: integer('amount').notNull(),
+    currency: text('currency').notNull(),
+    // Local date: the day the money came in.
+    receivedOn: text('received_on').notNull(),
+    reference: text('reference'),
+    notes: text('notes'),
+  },
+  (t) => [
+    // GET /payments pages in id order, newest first, through the first index or the family's
+    // (D-101).
+    uniqueIndex('payments_org_id_uq').on(t.orgId, t.id),
+    index('payments_org_family_idx').on(t.orgId, t.familyId, t.id),
+  ],
+);
+
+// What one payment pays towards one invoice, in the payment's currency. Deleting the payment
+// deletes its allocations with it. A trigger (migration 0016) refuses one that would take an
+// invoice past its total, or that goes to an invoice that isn't issued or part paid.
+export const paymentAllocations = sqliteTable(
+  'payment_allocations',
+  {
+    ...orgColumns(),
+    paymentId: text('payment_id').notNull(),
+    invoiceId: text('invoice_id').notNull(),
+    amount: integer('amount').notNull(),
+  },
+  (t) => [
+    // A payment pays towards an invoice once. Also the index a payment's allocations are read by.
+    uniqueIndex('payment_allocations_org_payment_invoice_uq')
+      .on(t.orgId, t.paymentId, t.invoiceId)
+      .where(sql`${t.deletedAt} is null`),
+    index('payment_allocations_org_invoice_idx').on(t.orgId, t.invoiceId),
   ],
 );
