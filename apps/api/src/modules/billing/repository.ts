@@ -1,7 +1,6 @@
 import { invoiceLines, invoices, now, priceRules, taxRates } from '@edustrux/db';
 import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
 import {
-  and,
   asc,
   count,
   desc,
@@ -15,13 +14,17 @@ import {
   or,
   sql,
   sum,
+  type SQL,
 } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
+  firstIds,
+  idsFrom,
   inIds,
   inOrg,
   writeWithAudit,
   type AuditEntry,
+  type IdQuery,
   type Ids,
   type OrgCtx,
 } from '../../db/scope';
@@ -134,23 +137,40 @@ const clearDefault = (ctx: OrgCtx) =>
     .set({ isDefault: false })
     .where(inOrg(ctx, taxRates, eq(taxRates.isDefault, true)));
 
-export async function insertTaxRate(ctx: OrgCtx, rate: NewTaxRateRow & { id: string }) {
-  await writeWithAudit(
+/** Returns the tax rate as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertTaxRate(
+  ctx: OrgCtx,
+  rate: NewTaxRateRow & { id: string },
+): Promise<TaxRateRow> {
+  const results = await writeWithAudit(
     ctx,
-    [...(rate.isDefault ? [clearDefault(ctx)] : []), ctx.db.insert(taxRates).values(rate)],
+    [
+      ...(rate.isDefault ? [clearDefault(ctx)] : []),
+      ctx.db.insert(taxRates).values(rate).returning(),
+    ],
     { action: 'tax_rate.created', entityType: 'tax_rate', entityId: rate.id, after: rate },
   );
+  // The insert is the last statement of the batch.
+  const row = (results.at(-1) as TaxRateRow[])[0];
+  if (!row) throw new Error('Tax rate missing after insert');
+  return row;
 }
 
-export async function updateTaxRate(ctx: OrgCtx, before: TaxRateRow, changes: TaxRateChanges) {
-  await writeWithAudit(
+/** Returns the tax rate as updated, from the same batch. undefined if it was just deleted. */
+export async function updateTaxRate(
+  ctx: OrgCtx,
+  before: TaxRateRow,
+  changes: TaxRateChanges,
+): Promise<TaxRateRow | undefined> {
+  const results = await writeWithAudit(
     ctx,
     [
       ...(changes.isDefault && !before.isDefault ? [clearDefault(ctx)] : []),
       ctx.db
         .update(taxRates)
         .set(changes)
-        .where(inOrg(ctx, taxRates, eq(taxRates.id, before.id))),
+        .where(inOrg(ctx, taxRates, eq(taxRates.id, before.id)))
+        .returning(),
     ],
     {
       action: 'tax_rate.updated',
@@ -160,6 +180,8 @@ export async function updateTaxRate(ctx: OrgCtx, before: TaxRateRow, changes: Ta
       after: changes,
     },
   );
+  // The update is the last statement of the batch.
+  return (results.at(-1) as TaxRateRow[])[0];
 }
 
 export async function softDeleteTaxRate(ctx: OrgCtx, before: TaxRateRow) {
@@ -259,27 +281,35 @@ export async function priceRuleTaken(ctx: OrgCtx, target: PriceRuleTarget, basis
   return row !== undefined;
 }
 
-export async function insertPriceRule(ctx: OrgCtx, rule: NewPriceRuleRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(priceRules).values(rule)], {
-    action: 'price_rule.created',
-    entityType: 'price_rule',
-    entityId: rule.id,
-    after: rule,
-  });
+/** Returns the rule as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertPriceRule(
+  ctx: OrgCtx,
+  rule: NewPriceRuleRow & { id: string },
+): Promise<PriceRuleRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(priceRules).values(rule).returning()],
+    { action: 'price_rule.created', entityType: 'price_rule', entityId: rule.id, after: rule },
+  );
+  const row = (inserted as PriceRuleRow[])[0];
+  if (!row) throw new Error('Price rule missing after insert');
+  return row;
 }
 
+/** Returns the rule as updated, from the same batch. undefined if it was just deleted. */
 export async function updatePriceRule(
   ctx: OrgCtx,
   before: PriceRuleRow,
   changes: PriceRuleChanges,
-) {
-  await writeWithAudit(
+): Promise<PriceRuleRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(priceRules)
         .set(changes)
-        .where(inOrg(ctx, priceRules, eq(priceRules.id, before.id))),
+        .where(inOrg(ctx, priceRules, eq(priceRules.id, before.id)))
+        .returning(),
     ],
     {
       action: 'price_rule.updated',
@@ -289,6 +319,7 @@ export async function updatePriceRule(
       after: changes,
     },
   );
+  return (updated as PriceRuleRow[])[0];
 }
 
 export async function softDeletePriceRule(ctx: OrgCtx, before: PriceRuleRow) {
@@ -306,13 +337,26 @@ export async function softDeletePriceRule(ctx: OrgCtx, before: PriceRuleRow) {
 
 // ── Invoices ────────────────────────────────────────────────────────────────
 
-const invoiceFilter = (filter: InvoiceFilter) => [
-  filter.familyId ? eq(invoices.familyId, filter.familyId) : undefined,
-  filter.familyIds ? inIds(invoices.familyId, filter.familyIds) : undefined,
-  filter.termId ? eq(invoices.termId, filter.termId) : undefined,
-  filter.month ? eq(invoices.month, filter.month) : undefined,
-  filter.status ? eq(invoices.status, filter.status) : undefined,
-];
+/** Whether the reach is a few families, which a statement goes to: a parent's, not a branch's. */
+const fewFamilies = (reach: InvoiceReach) =>
+  reach.familyIds !== undefined && (Array.isArray(reach.familyIds) || !reach.familyIds.wide);
+
+/**
+ * The list's filters. The page of a caller who reaches a few families is read from those
+ * families, so there the term, month and status only narrow it: the `+` keeps SQLite from
+ * reading everything the org has in that term or with that status to find the page.
+ */
+const invoiceFilter = (filter: InvoiceFilter, reach: InvoiceReach) => {
+  const is = (column: SQLiteColumn, value: string) =>
+    fewFamilies(reach) ? sql`+${column} = ${value}` : eq(column, value);
+  return [
+    filter.familyId ? eq(invoices.familyId, filter.familyId) : undefined,
+    filter.familyIds ? inIds(invoices.familyId, filter.familyIds) : undefined,
+    filter.termId ? is(invoices.termId, filter.termId) : undefined,
+    filter.month ? is(invoices.month, filter.month) : undefined,
+    filter.status ? is(invoices.status, filter.status) : undefined,
+  ];
+};
 
 /**
  * Spread into `inOrg`, so a parent's families are ids the query goes straight to. The families
@@ -321,6 +365,17 @@ const invoiceFilter = (filter: InvoiceFilter) => [
 const withinInvoiceReach = (reach: InvoiceReach) => [
   reach.familyIds ? inIds(invoices.familyId, reach.familyIds) : undefined,
   reach.issuedOnly ? isNotNull(invoices.issuedAt) : undefined,
+];
+
+/** What finds one page of the list: the filters, the caller's reach and the cursor. */
+const onPage = (
+  filter: InvoiceFilter,
+  reach: InvoiceReach,
+  beforeId: string | undefined,
+): (SQL | undefined)[] => [
+  ...invoiceFilter(filter, reach),
+  ...withinInvoiceReach(reach),
+  beforeId ? lt(invoices.id, beforeId) : undefined,
 ];
 
 /** Newest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
@@ -334,17 +389,68 @@ export function listInvoices(
   return ctx.db
     .select()
     .from(invoices)
-    .where(
-      inOrg(
-        ctx,
-        invoices,
-        ...invoiceFilter(filter),
-        ...withinInvoiceReach(reach),
-        beforeId ? lt(invoices.id, beforeId) : undefined,
-      ),
-    )
+    .where(inOrg(ctx, invoices, ...onPage(filter, reach, beforeId)))
     .orderBy(desc(invoices.id))
     .limit(limit + 1);
+}
+
+/**
+ * A column of the `limit` invoices that page shows, as a query: what the page shows of other
+ * tables is read beside it, in the same stage (D-104).
+ */
+const ofPage = (
+  ctx: OrgCtx,
+  column: SQLiteColumn,
+  limit: number,
+  beforeId: string | undefined,
+  filter: InvoiceFilter,
+  reach: InvoiceReach,
+) =>
+  firstIds(
+    idsFrom(ctx, invoices, column, ...onPage(filter, reach, beforeId)),
+    limit,
+    desc(invoices.id),
+  );
+
+/** The invoices one page of the list shows. */
+export function invoicesOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: InvoiceFilter,
+  reach: InvoiceReach,
+): IdQuery {
+  return ofPage(ctx, invoices.id, limit, beforeId, filter, reach);
+}
+
+/** The families of the invoices one page of the list shows. */
+export function familiesOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: InvoiceFilter,
+  reach: InvoiceReach,
+): IdQuery {
+  return ofPage(ctx, invoices.familyId, limit, beforeId, filter, reach);
+}
+
+/**
+ * One page of the list and the lines of the invoices on it, read in one batch. A batch is one
+ * trip and one moment: an invoice added while the page is read can't push another off the page
+ * the lines are read for, which would show that one with no lines.
+ */
+export async function listInvoicesWithLines(
+  ctx: OrgCtx,
+  limit: number,
+  beforeId: string | undefined,
+  filter: InvoiceFilter,
+  reach: InvoiceReach,
+) {
+  const [rows, lines] = await ctx.db.batch([
+    listInvoices(ctx, limit, beforeId, filter, reach),
+    listLines(ctx, invoicesOnPage(ctx, limit, beforeId, filter, reach)),
+  ]);
+  return { rows, lines };
 }
 
 export function findInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach) {
@@ -355,6 +461,25 @@ export function findInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach) {
     .get();
 }
 
+/**
+ * One invoice, if it is within reach, as a query: its lines and what they show of other tables
+ * are read beside it, in the same stage (D-104), and find nothing when it is outside the reach.
+ */
+export function invoiceWithin(ctx: OrgCtx, id: string, reach: InvoiceReach): IdQuery {
+  return idsFrom(ctx, invoices, invoices.id, eq(invoices.id, id), ...withinInvoiceReach(reach));
+}
+
+/** The family of one invoice, if the invoice is within reach, as a query. */
+export function familyOfInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach): IdQuery {
+  return idsFrom(
+    ctx,
+    invoices,
+    invoices.familyId,
+    eq(invoices.id, id),
+    ...withinInvoiceReach(reach),
+  );
+}
+
 /** The lines of the given invoices, each invoice's oldest enrolment first. */
 export function listLines(ctx: OrgCtx, invoiceIds: Ids) {
   return ctx.db
@@ -362,6 +487,26 @@ export function listLines(ctx: OrgCtx, invoiceIds: Ids) {
     .from(invoiceLines)
     .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, invoiceIds)))
     .orderBy(asc(invoiceLines.enrolmentId), asc(invoiceLines.id));
+}
+
+/** The students on the lines of the given invoices, as a query, to read their names by. */
+export function studentsOnLines(ctx: OrgCtx, invoiceIds: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    invoiceLines,
+    invoiceLines.studentId,
+    inIds(invoiceLines.invoiceId, invoiceIds),
+  );
+}
+
+/** The classes on the lines of the given invoices, as a query, to read their labels by. */
+export function classesOnLines(ctx: OrgCtx, invoiceIds: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    invoiceLines,
+    invoiceLines.classId,
+    inIds(invoiceLines.invoiceId, invoiceIds),
+  );
 }
 
 /**
@@ -412,33 +557,51 @@ export async function insertInvoices(
   );
 }
 
+/** How many invoices a job generated, and what they come to. */
+export function invoicesGeneratedBy(ctx: OrgCtx, jobId: string) {
+  return ctx.db
+    .select({ n: count(), total: sum(invoices.totalAmount).mapWith(Number) })
+    .from(invoices)
+    .where(inOrg(ctx, invoices, eq(invoices.jobId, jobId)))
+    .get();
+}
+
+/**
+ * How many lines are on the invoices a job generated. The lines are reached through those
+ * invoices' ids, so it reads the job's own lines and not every line the org has.
+ */
+export function linesGeneratedBy(ctx: OrgCtx, jobId: string) {
+  const ofJob = idsFrom(ctx, invoices, invoices.id, eq(invoices.jobId, jobId));
+  return ctx.db
+    .select({ n: count() })
+    .from(invoiceLines)
+    .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, ofJob)))
+    .get();
+}
+
 /** What a job has generated, whatever became of the invoices since. */
 export async function generatedBy(ctx: OrgCtx, jobId: string) {
-  const ofJob = inOrg(ctx, invoices, eq(invoices.jobId, jobId));
   const [made, lines] = await Promise.all([
-    ctx.db
-      .select({ n: count(), total: sum(invoices.totalAmount).mapWith(Number) })
-      .from(invoices)
-      .where(ofJob)
-      .get(),
-    ctx.db
-      .select({ n: count() })
-      .from(invoiceLines)
-      .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
-      .where(and(inOrg(ctx, invoiceLines), ofJob))
-      .get(),
+    invoicesGeneratedBy(ctx, jobId),
+    linesGeneratedBy(ctx, jobId),
   ]);
   return { invoices: made?.n ?? 0, lines: lines?.n ?? 0, total: made?.total ?? 0 };
 }
 
-export async function updateInvoice(ctx: OrgCtx, before: InvoiceRow, changes: InvoiceChanges) {
-  await writeWithAudit(
+/** Returns the invoice as updated, from the same batch, so the caller doesn't read it back. */
+export async function updateInvoice(
+  ctx: OrgCtx,
+  before: InvoiceRow,
+  changes: InvoiceChanges,
+): Promise<InvoiceRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(invoices)
         .set(changes)
-        .where(inOrg(ctx, invoices, eq(invoices.id, before.id))),
+        .where(inOrg(ctx, invoices, eq(invoices.id, before.id)))
+        .returning(),
     ],
     {
       action: 'invoice.updated',
@@ -448,36 +611,50 @@ export async function updateInvoice(ctx: OrgCtx, before: InvoiceRow, changes: In
       after: changes,
     },
   );
+  return (updated as InvoiceRow[])[0];
 }
 
-/** Draft to issued. The status in the `where` keeps two requests at once from both issuing. */
-export async function issueInvoice(ctx: OrgCtx, before: InvoiceRow) {
+/**
+ * Draft to issued. The status in the `where` keeps two requests at once from both issuing.
+ * Returns the invoice as issued, from the same batch, or undefined when another request got
+ * there first and this one changed nothing.
+ */
+export async function issueInvoice(
+  ctx: OrgCtx,
+  before: InvoiceRow,
+): Promise<InvoiceRow | undefined> {
   const after = { status: 'issued' as const, issuedAt: now() };
-  await writeWithAudit(
+  const [, issued] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(invoices)
         .set(after)
-        .where(inOrg(ctx, invoices, eq(invoices.id, before.id), eq(invoices.status, 'draft'))),
+        .where(inOrg(ctx, invoices, eq(invoices.id, before.id), eq(invoices.status, 'draft')))
+        .returning(),
     ],
     { action: 'invoice.issued', entityType: 'invoice', entityId: before.id, before, after },
   );
+  return (issued as InvoiceRow[])[0];
 }
 
 /**
  * Voids the invoice and marks its lines, which frees their enrolments to be invoiced for the
- * period again.
+ * period again. Returns the invoice as voided, from the same batch.
  */
-export async function voidInvoice(ctx: OrgCtx, before: InvoiceRow) {
+export async function voidInvoice(
+  ctx: OrgCtx,
+  before: InvoiceRow,
+): Promise<InvoiceRow | undefined> {
   const after = { status: 'void' as const, voidedAt: now() };
-  await writeWithAudit(
+  const [, voided] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(invoices)
         .set(after)
-        .where(inOrg(ctx, invoices, eq(invoices.id, before.id))),
+        .where(inOrg(ctx, invoices, eq(invoices.id, before.id)))
+        .returning(),
       ctx.db
         .update(invoiceLines)
         .set({ voidedAt: after.voidedAt })
@@ -485,4 +662,5 @@ export async function voidInvoice(ctx: OrgCtx, before: InvoiceRow) {
     ],
     { action: 'invoice.voided', entityType: 'invoice', entityId: before.id, before, after },
   );
+  return (voided as InvoiceRow[])[0];
 }

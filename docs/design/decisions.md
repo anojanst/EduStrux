@@ -2544,6 +2544,95 @@ under "Not changed here" for a reach that is a subquery.
     with the follow-on work and get their own decision.
 - **Tasks:** TUI-89, TUI-90, TUI-94 to TUI-98.
 
+## D-103 · 2026-10-14 · Billing reads once and writes once, and an Idempotency-Key's two calls stay
+
+- **Context:** D-102 set the budget at about 3 database trips in sequence, and D-104 the rule
+  for reading across modules. TUI-97 brought the billing endpoints to them. Three things came
+  up that neither settles: what a write answers with, how a page of invoices stays whole when
+  its parts are read together, and the `Idempotency-Key`, which costs two calls of its own.
+- **Decision:**
+  - After sign-in, every billing endpoint waits for D1 once to read and, if it writes, once to
+    write. The checks a request needs are read together and judged in the order they always
+    ran in, so the same error is reported when several apply.
+  - An invoice's lines, and the family, students and classes named on it, are read beside it,
+    each by a query for the invoice (D-104). Each read carries the caller's reach, so for an
+    invoice outside it they find nothing.
+  - A page of invoices and the lines of the invoices on it are read in one D1 batch: one call
+    and one moment. As two statements sent together, an invoice added in between would move the
+    page the lines are read for, and an invoice could be shown with no lines.
+  - The names on a page belong to other modules, so they are read by statements of their own,
+    each by a query for the page. If a name is missing because the page moved in that moment,
+    the names are read again by the ids themselves.
+  - `PATCH /invoices/{invoiceId}`, issue and void answer with the invoice as their own write
+    stored it, with the lines and names read before the write. Adding or changing a price rule
+    or a tax rate answers with the row its write stored. None reads again.
+  - One case still reads again: two requests issue the same draft at once, and the one that
+    changed nothing answers 200 with the invoice as it now is, as it always did.
+  - `?familyId` on `GET /invoices` checks the family with one read of its own row. It loaded the
+    family with its guardians, students and grades. Who may filter by which family is unchanged
+    (D-096, D-098).
+  - `?branchId` on `GET /invoices` filters by a query for the branch's families. The ids were
+    read first, which D-104 had left to this task.
+  - The `Idempotency-Key` is unchanged. It costs one call before the handler, to claim the key,
+    and one after, to store the answer. A write with a key waits for 5 calls in sequence, where
+    the budget is 3. Neither call can go without weakening what the key promises:
+    - The claim has to be made after the caller is known to be a member with the permission,
+      and before anything is written. Sent with sign-in, anyone could hold a key in an org's
+      name. Sent with the handler's reads, every handler would have to wait for it before it
+      writes, and nothing would hold one to that.
+    - The answer isn't known until the write has returned, so it can't be stored in the
+      write's batch. Stored after the response has gone, a quick retry would get 409 in place
+      of the first answer, and a store that failed would leave the key held with nobody told.
+  - Two reads that covered a whole org no longer do:
+    - A caller who reaches a few families, a parent, has `?termId`, `?month` and `?status` only
+      narrow the page read from those families. SQLite entered by the filter, so a parent's
+      `GET /invoices?status=issued` read every issued invoice the org has.
+    - An invoice run's count of its lines goes to the run's invoices. It read every invoice
+      line the org has, as D-100 had listed.
+- **Consequences:**
+  - Counted in the test suite as trips / stages, each request on its heaviest path. The invoice
+    reads cost the same for the owner, a parent and staff limited to one branch:
+
+    | Request                                             | Before  | After |
+    | --------------------------------------------------- | ------- | ----- |
+    | `GET /invoices/{invoiceId}`                         | 6 / 4   | 6 / 2 |
+    | `GET /invoices`                                     | 6 / 4   | 5 / 2 |
+    | `GET /invoices?familyId&branchId&termId&status`     | 14 / 10 | 8 / 2 |
+    | `PATCH /invoices/{invoiceId}`, issue, void          | 8 / 6   | 7 / 3 |
+    | Issue, void, with an `Idempotency-Key`              | 10 / 8  | 9 / 5 |
+    | `POST /terms/{termId}/generate-invoices`            | 3 / 3   | 3 / 3 |
+    | The same, with an `Idempotency-Key`                 | 5 / 5   | 5 / 5 |
+    | `POST /invoices/generate-monthly`                   | 2 / 2   | 2 / 2 |
+    | `GET /price-rules`, `GET /tax-rates`                | 2 / 2   | 2 / 2 |
+    | `GET /price-rules?classId&courseId`                 | 5 / 5   | 5 / 3 |
+    | `POST /price-rules`, for a class, with a tax rate   | 7 / 7   | 6 / 4 |
+    | `POST /price-rules`, for a course                   | 5 / 5   | 4 / 3 |
+    | `PATCH /price-rules/{priceRuleId}`, with a tax rate | 5 / 5   | 4 / 3 |
+    | `DELETE /price-rules/{priceRuleId}`                 | 3 / 3   | 3 / 3 |
+    | `POST /tax-rates`                                   | 4 / 4   | 3 / 3 |
+    | `PATCH /tax-rates/{taxRateId}`, with a new name     | 5 / 5   | 4 / 3 |
+    | `DELETE /tax-rates/{taxRateId}`                     | 4 / 4   | 4 / 3 |
+
+  - Two requests are one stage over the budget: `GET /price-rules?classId` (3) and
+    `POST /price-rules` for a class (4). Checking a class reads the class and then its weekly
+    slots. TUI-96 reads those together, which brings both to the budget with no change here.
+  - Some requests make more calls than before, in the same 2 stages. An invoice that isn't
+    there, or is outside the caller's reach, costs 6 calls where it cost 2: what a found one
+    costs. So the count of calls no longer says whether an invoice exists, which D-099 had left
+    unchecked for invoices. A list with no invoices costs 5 where it cost 2.
+  - Nothing a client sees changes: the same responses, status codes, amounts and audit rows.
+    No schema change and no migration.
+  - `people` gained one function for billing, in a file of its own: whether a family exists
+    and the caller reaches it.
+  - `apps/api/test/billing-trips.test.ts` holds each endpoint to its stages and pins its trips.
+    `apps/api/test/query-plans.test.ts` takes the plan of each new lookup, and fails if a
+    parent's filtered list or a run's line count reads a whole org again.
+  - The names on a page being read again when the page moved isn't covered by a test: it takes
+    a write landing between two statements of one request.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers leaving the `Idempotency-Key` at two calls outside the budget.
+- **Tasks:** TUI-97 (and TUI-96 for the class check).
+
 ## D-104 · 2026-10-14 · Reach as subqueries, and reading across modules by a query for ids
 
 - **Context:** D-102 set the budget at about 3 database trips in sequence and left the rule for
@@ -2665,3 +2754,176 @@ under "Not changed here" for a reach that is a subquery.
     covers reading a branch's invoices in order, and reading across modules by a query for ids
     and not by a join.
 - **Tasks:** TUI-99 (and TUI-89, TUI-94 to TUI-97, which build on it).
+
+## D-105 · 2026-10-14 · A session's attendance is read in one stage, and a mark is answered without reading again
+
+- **Context:** TUI-89 is the ticket that started the round-trip work: marking one student made
+  11 D1 calls. TUI-90 took that to 8 (D-099), and they still came one after another: sign-in,
+  the session, who is expected with the marks, the write, then who is expected and the marks
+  again, then the names. That is 6 stages against a budget of 3 (D-102). Reading a session's
+  attendance was 4 stages, and 5 for a parent, whose children were read first (D-104).
+- **Decision:**
+  - Everything a session's attendance is built from is read in one stage, together with the
+    session: the session as the caller may see it, the marks at it, the active enrolments in
+    its class with the dates each covers, and the students' names.
+    - The marks, the enrolments and the names are found through the session's id. The class is
+      a query for the session's class (D-104), so nothing waits for the session's row.
+    - Who is expected stays enrolment's rule (D-063, D-072). Enrolment gives its answer as a
+      function of the lesson's date, and attendance calls it once the session is in hand.
+    - Names are asked for in two calls in that stage: the students actively enrolled in the
+      class, and the students marked at the session. A marked student who has since withdrawn
+      is only among the second.
+    - For a parent the names read are their own children's, and a student with no name read is
+      left off the roster. A parent sees the same roster as before, and their children are no
+      longer read first.
+  - Those reads go out before the session is known to be within the caller's reach, and they
+    know nothing of who is asking. So the session answers first. Outside the caller's reach it
+    is 404, as before, and nothing else that was read is used or decides the error.
+  - A `PUT` is answered from what it read and what its write returned. The write returns each
+    mark it set, so `markedAt` is the time that was stored. The roster isn't read again.
+  - Nothing else about the two routes changes: the roster and its order, the statuses, the
+    refusals and which of them wins, the audit row, and the upsert that keeps two people marking
+    at once from colliding (D-070 to D-075).
+- **Consequences:**
+  - Counted in the test suite, as calls / stages:
+
+    | Request                                    | Before | After |
+    | ------------------------------------------ | ------ | ----- |
+    | `GET`, as the owner or the class's teacher | 5 / 4  | 6 / 2 |
+    | `GET`, as a parent                         | 6 / 5  | 5 / 2 |
+    | `PUT`, one student or the whole class      | 8 / 6  | 7 / 3 |
+    | `PUT`, when the marks are already in place | –      | 6 / 2 |
+
+    The last row wasn't counted before.
+
+  - `GET` makes one call more than it did for everyone but a parent: the names are now two
+    calls. They are sent together, so they add no stage.
+  - Rows read go up with it. Measured on a local D1 with a throwaway test that isn't in the
+    repo, on a class of 30 with everyone marked, in a centre of 90 students: a `GET` read 153
+    rows and now reads 248, and the reads of a `PUT` that changes one mark took 214 rows and
+    now take 248. Both follow the class, not the centre. Nothing was measured on production.
+  - A `PUT`'s answer is the roster as that request read it, with its own marks as stored.
+    Before, the roster was read again after the write, so the answer also held a mark someone
+    else made in between. Such a mark now shows on the next read. What is stored is unchanged:
+    the last mark for a student wins (D-071).
+  - A session outside the caller's reach and one that doesn't exist make the same calls and get
+    the same 404, on both routes. `apps/api/test/attendance-trips.test.ts` holds that, and both
+    routes to the budget for the owner, the class's teacher and a parent. D-099 had this
+    checked by hand, for reads only.
+  - What attendance asks of enrolment and of classes is in a file of its own in each module
+    (`for-attendance.ts`), because both modules were being changed by other tasks at the same
+    time. They are to be folded into each module's service and repository.
+  - Two functions have no caller left: enrolment's "who is expected on a date", which read
+    them in a call of its own, and people's "a parent's children, read now" (D-104). Removing
+    them is for that fold-in.
+  - Not chosen:
+    - The names in one call. A query for ids is on one table, and "enrolled in the class, or
+      marked at the session" is two. A query for either of two would take `GET` to 5 calls and
+      `PUT` to 6.
+    - The names of everyone who ever held an enrolment in the class, to cover the marked. It
+      would rest on an enrolment never being deleted, which TUI-46 may change (D-075).
+    - Reading the names of the marked only when one is missing. Every past session of a class
+      with a withdrawn student would then wait for one more trip.
+    - Working out who is expected inside the statement, with the session's date as a subquery.
+      A date is not a query for ids, which is what crosses between modules (D-104).
+  - No schema change and no migration.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers answering a `PUT` without reading the roster again.
+- **Tasks:** TUI-89 (and TUI-94 to TUI-96, for the fold-in).
+
+## D-108 · 2026-10-14 · Classes and sessions are read in one stage, and a class write is answered without reading again
+
+- **Context:** TUI-96 is the round-trip task for classes and sessions. After TUI-90 and TUI-99,
+  a `PATCH` of a class's name, room, teacher and dates still made 13 D1 calls, each waiting for
+  the one before: sign-in, the class, the room, the teacher, the term, the name, the slots, the
+  term again, the holidays, the sessions, the write, then the class and its slots again. Adding
+  a class and setting a schedule made 10 each. The budget is 3 in sequence for a write and 2 for
+  a read (D-102).
+- **Decision:**
+  - Every class and session endpoint reads in one stage. Its reads go to D1 together, and the
+    checks run afterwards on what came back, in the order they have always run in. When several
+    checks fail, the one reported is the same as before.
+  - A read that needs something from the class's own row doesn't wait for that row:
+    - The class's term, its course's lesson length and the holidays of its branch are read by a
+      query for the class's term, course or branch (D-104).
+    - A rename is checked against the class's own course, term and branch inside one statement,
+      still by one lookup in the unique index on names (D-101).
+    - The weekly slots of a page of classes are read by a query for the ids on the page.
+  - Some reads are sent before it is known they are needed:
+    - A `PATCH` that gives a start or an end date reads the term, the holidays and the upcoming
+      sessions, whether or not the dates turn out to differ from the stored ones.
+    - The reads beside a class go out before the class is known to be within the caller's
+      reach, and know nothing of who is asking. The class answers first. Outside the caller's
+      reach it is 404, as before, and nothing else that was read is used or decides the error.
+  - The holidays for generating sessions are read from today on, with no last date. How far
+    ahead to generate comes from the term, which is read in the same stage. A holiday past the
+    range closes no date in it, so the sessions generated are the same.
+  - A write is answered from what the request read and what its write returned. Nothing is read
+    back:
+    - `POST /classes` and `PATCH /classes/{classId}` answer with the row the write returned.
+    - `PUT /classes/{classId}/schedule` answers with the class as read and the slots it saved.
+      It doesn't change the class's own row.
+  - A student's timetable (`GET /sessions?studentId`) is filtered inside the read of the
+    sessions. Before, the student's enrolments were read first and bound into it.
+    - Enrolment gives two queries for class ids: the classes the student is actively enrolled
+      in, and of those, the classes an enrolment covers on a date. The date is the session's
+      own date column, so the second is worked out for each session.
+    - The statement goes to the sessions of the first, and the second narrows them.
+    - This adds to D-104: a query for ids may read a column of the row it filters. Such a
+      query only narrows. A statement never goes to it, so it is given after ids the statement
+      can go to.
+  - What other modules read of a class is one stage each. `getClass` reads the class and its
+    slots together; the others were one call already.
+  - Nothing else changes: the responses, status codes, validation, audit rows and the sessions
+    generated.
+- **Consequences:**
+  - Counted in the test suite, as calls / stages, with the same request before and after. A
+    read costs a teacher and a parent what it costs the owner.
+
+    | Request                                                | Before  | After  |
+    | ------------------------------------------------------ | ------- | ------ |
+    | `POST /classes`, with a term, a room and a teacher     | 10 / 10 | 8 / 3  |
+    | `PUT /classes/{classId}/schedule`                      | 10 / 10 | 8 / 3  |
+    | `PATCH /classes/{classId}`: name, room, teacher, dates | 13 / 13 | 10 / 3 |
+    | `PATCH /classes/{classId}`: capacity only              | 5 / 5   | 4 / 3  |
+    | `DELETE /classes/{classId}`                            | 5 / 5   | 5 / 3  |
+    | `GET /classes`, with its five filters                  | 8 / 8   | 8 / 2  |
+    | `GET /classes`, no filter; `GET /classes/{classId}`    | 3 / 3   | 3 / 2  |
+    | `GET /sessions`, with five filters                     | 7 / 7   | 7 / 2  |
+    | `GET /sessions`, no filter; `GET /sessions/{id}`       | 2 / 2   | 2 / 2  |
+    | `GET /sessions?studentId`                              | 6 / 5   | 5 / 3  |
+
+  - One request is over the budget. A student's timetable is 3 stages, because it checks the
+    student with people's read of one student, which is two stages deep: the student, then
+    their grades. The sessions are read beside it, so the timetable is 2 stages once TUI-95
+    makes that read one.
+  - Calls fall less than stages. Each filter id and each check is still a call of its own, sent
+    with the others.
+  - A `POST` or `PATCH` answers with the class as its own write stored it. Before, the class
+    was read again after the write, so the answer also held a change someone else made in
+    between. Such a change now shows on the next read. The same goes for the schedule's answer.
+  - For the owner and branch staff, a student's timetable read every session of the org in the
+    date range and checked each against the student's enrolments. It now reads the sessions of
+    the student's classes in the range, for every caller. Not measured.
+  - A class or session outside the caller's reach and one that doesn't exist make the same
+    calls and get the same 404, on the five routes that name one in their path.
+    `apps/api/test/classes-trips.test.ts` holds that, and each endpoint to its heaviest row
+    above: the writes as the owner, the reads as the owner, a teacher and a parent. D-099 had
+    the first checked by hand, for reads only.
+  - What classes asks of the calendar, the curriculum and enrolment is in a file of its own in
+    each module (`for-classes.ts`), because those modules were being changed by other tasks at
+    the same time. They are to be folded into each module's service and repository.
+  - Enrolment's "the classes a student is enrolled in and the dates of each" has no caller
+    left. Removing it is for that fold-in.
+  - Not chosen:
+    - Reading the student's enrolments beside the student, then the sessions. That is a third
+      stage for a read, whatever people's read costs.
+    - Joining enrolments in the statement that reads the sessions. A repository names only its
+      own module's tables (D-104).
+    - Reading the sessions of the student's classes and dropping the uncovered dates
+      afterwards. A page could come back with fewer rows than its limit while more remain.
+  - No schema change and no migration.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers a query for ids that reads a column of the row it filters, and answering a class
+    write without reading the class again.
+- **Tasks:** TUI-96 (and TUI-95, which the timetable's third stage waits on).

@@ -1,7 +1,7 @@
 ---
 id: TUI-96
 title: 'Classes and sessions: cut the database round trips'
-status: todo
+status: done
 phase: P2
 module: classes
 priority: P1
@@ -12,8 +12,8 @@ endpoints:
   - PUT /classes/{id}/schedule
   - GET /sessions
   - GET /sessions/{id}
-branch:
-pr:
+branch: task/tui-89-94-95-96-97-round-trips
+pr: 39
 ---
 
 # TUI-96 Classes and sessions: cut the database round trips
@@ -53,4 +53,65 @@ Three causes are shared and have their own tasks: the two trips of sign-in and m
 every request (TUI-90), lookups by a list of ids that read the whole centre (TUI-91), and list
 pages that read and sort the whole centre (TUI-92). What is listed here is on top of those.
 
-Proposed target, for the owner to confirm: about 200 ms on production, which is roughly 5 trips.
+Target: the owner set the budget in D-102. Every endpoint gets about 3 trips in sequence: sign-in,
+one read stage, one write. Calls in flight together count once, which is the `stages` number
+every response reports (D-099). This replaced the proposal of about 200 ms, roughly 5 trips.
+
+## Result
+
+Every class and session endpoint is within the budget, 3 stages for a write and 2 for a read,
+except a student's timetable (`GET /sessions?studentId`), which is 3. It waits for people's read
+of one student, which is two stages deep, and drops to 2 when TUI-95 makes that read one.
+`apps/api/test/classes-trips.test.ts` calls each endpoint once on its heaviest path and holds it
+to these numbers, the reads as the owner, a teacher and a parent. How it is done, and the one
+thing an answer no longer shows, are in D-108.
+
+Counted on 2026-10-14 in the test suite, with the same request before and after. "Before" is the
+branch of TUI-99, so sign-in is already one trip and working out a caller's reach costs none.
+Before this task every call waited for the one before it, so trips and stages were the same
+number, except on the timetable.
+
+| Endpoint                                             | Before            | Trips after | Stages after |
+| ---------------------------------------------------- | ----------------- | ----------- | ------------ |
+| `POST /classes`, with a term, a room and a teacher   | 10                | 8           | 3            |
+| `PUT /classes/{id}/schedule`                         | 10                | 8           | 3            |
+| `PATCH /classes/{id}`: name, room, teacher and dates | 13                | 10          | 3            |
+| `PATCH /classes/{id}`: capacity only                 | 5                 | 4           | 3            |
+| `DELETE /classes/{id}`                               | 5                 | 5           | 3            |
+| `GET /classes`, with its five filters                | 8                 | 8           | 2            |
+| `GET /classes`, no filter                            | 3                 | 3           | 2            |
+| `GET /classes/{id}`                                  | 3                 | 3           | 2            |
+| `GET /sessions`, with five filters                   | 7                 | 7           | 2            |
+| `GET /sessions`, no filter                           | 2                 | 2           | 2            |
+| `GET /sessions/{id}`                                 | 2                 | 2           | 2            |
+| `GET /sessions?studentId`                            | 6 trips, 5 stages | 5           | 3            |
+
+What other modules read of a class or a session is one stage each. `getClass` was two (the
+class, then its slots) and is one, with both calls sent together. `getSession`, `classLabels`,
+`lessonDates`, `classDates`, `countClasses`, `classesBilledIn` and `sessionsClosedBy` were one
+call each and still are.
+
+How:
+
+- All of a request's reads go to D1 together. The checks run afterwards on what came back, in
+  the order they always ran in, so the same error is reported when several apply.
+- A read that needs something from the class's row gets it as a query written into its own
+  statement: the class's term, its course's lesson length, the holidays of its branch, the name
+  check of a rename, and the weekly slots of a page of classes.
+- A write answers with the row it returned, so the class isn't read again.
+- A student's timetable is filtered inside the read of the sessions, by a query on the student's
+  enrolments, where the enrolments were read first.
+
+Left for later:
+
+- What classes asks of the calendar, the curriculum and enrolment is in a `for-classes.ts` file
+  in each of those modules, because other tasks were changing them at the same time. Fold each
+  into its module's service and repository.
+- `enrolment.spansOf` has no caller left.
+- `classes.classDates` takes a class that was already read, so a caller that needs a class and
+  its dates still waits twice. `calendar/for-classes.ts` reads a class's term by a query, which
+  is what a one-stage version needs.
+
+Shipped in PR #39 together with the other four module tasks (TUI-89, TUI-94, TUI-95, TUI-96,
+TUI-97). On that combined code the paths above that waited on another task are within the budget,
+and the trip tests hold them to it.

@@ -778,6 +778,68 @@ describe('students', () => {
     expect(earlyStudent.gradeLevelId).toBe(earlyGrade.id);
   });
 
+  // The list works the current year out inside its statement, and a student's own
+  // `gradeLevelId` is worked out from the years once read. Both must pick the same year.
+  it.each<[string, [from: number, to: number, current?: true][]]>([
+    [
+      'the year today falls in',
+      [
+        [-500, -101],
+        [-100, 200, true],
+        [201, 500],
+      ],
+    ],
+    [
+      'a year that ends today',
+      [
+        [-100, 0, true],
+        [1, 300],
+      ],
+    ],
+    [
+      'between years, the last one to end',
+      [
+        [-900, -401],
+        [-400, -10, true],
+        [10, 400],
+        [401, 800],
+      ],
+    ],
+    [
+      'before any year starts, the first one',
+      [
+        [400, 700],
+        [10, 399, true],
+      ],
+    ],
+  ])('filters by grade level in the current year: %s', async (_which, years) => {
+    const { api, addFamily, addStudent, addGrade, addYear } = await setup();
+    const family = await addFamily();
+    let student = await addStudent(family.id);
+    // A different grade level for each year, so only the current year's finds the student.
+    const levels: string[] = [];
+    let current = '';
+    for (const [index, [from, to, isCurrent]] of years.entries()) {
+      const year = await addYear(`Year ${index}`, from, to);
+      const level = await addGrade(`Level ${index}`);
+      levels.push(level.id);
+      if (isCurrent) current = level.id;
+      const res = await api('PATCH', `/students/${student.id}`, {
+        updatedAt: student.updatedAt,
+        gradeLevelId: level.id,
+        academicYearId: year.id,
+      });
+      expect(res.status).toBe(200);
+      student = res.body;
+    }
+
+    expect(student.gradeLevelId).toBe(current);
+    for (const level of levels) {
+      const found = (await api('GET', `/students?gradeLevelId=${level}`)).body.data as Student[];
+      expect(found.map((s) => s.id)).toEqual(level === current ? [student.id] : []);
+    }
+  });
+
   it('needs an academic year before a student can have a grade level', async () => {
     const { api, addFamily, addStudent, addGrade } = await setup();
     const family = await addFamily();

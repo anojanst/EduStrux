@@ -2,16 +2,24 @@ import { enrolments } from '@edustrux/db';
 import { asc } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { firstIds, idsFrom, type OrgCtx } from '../src/db/scope';
+import type { OrgRow } from '../src/env';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
+import { currentAcademicYear } from '../src/modules/calendar/for-people';
+import { classOfSession } from '../src/modules/classes/for-attendance';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
+import { studentsExpectedIn } from '../src/modules/enrolment/for-attendance';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as enrolmentService from '../src/modules/enrolment/service';
+import { termDates } from '../src/modules/calendar/for-classes';
+import { lessonLengths } from '../src/modules/curriculum/for-classes';
+import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as people from '../src/modules/people/repository';
 import * as peopleService from '../src/modules/people/service';
+import { classDatesOf } from '../src/modules/classes/for-enrolment';
 import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
 
 // D1 counts and bills the rows a statement reads, and production has no table statistics to
@@ -243,6 +251,38 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
       [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
     ],
     [
+      'the sessions on a student’s timetable',
+      (ctx) =>
+        classes.listSessions(
+          ctx,
+          50,
+          undefined,
+          { ...WEEK, enrolled: timetableOf(ctx, 'stu_a') },
+          {},
+        ),
+      [
+        ['sessions', 'class_id'],
+        ['enrolments', 'student_id'],
+        ['classes', 'id'],
+      ],
+    ],
+    [
+      'a class’s term, read with the class',
+      (ctx) => termDates(ctx, classes.ofClass(ctx, 'cls_a', 'termId')),
+      [
+        ['terms', 'id'],
+        ['classes', 'id'],
+      ],
+    ],
+    [
+      'a class’s course, read with the class',
+      (ctx) => lessonLengths(ctx, classes.ofClass(ctx, 'cls_a', 'courseId')),
+      [
+        ['courses', 'id'],
+        ['classes', 'id'],
+      ],
+    ],
+    [
       'the invoices a parent reaches',
       (ctx) =>
         billing.listInvoices(
@@ -269,6 +309,226 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
     expect(plan).toMatch(searchBy('students', 'id'));
     expect(plan).toMatch(searchIn('enrolments', 'enrolments_org_id_uq'));
     expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('what families and students are shown with is read by a query for them (TUI-95)', () => {
+  const MEMBER = 'mem_a';
+  const everyone: people.Reach = {};
+  const staff: people.Reach = { branchIds: IDS };
+  const parent: people.Reach = { guardianMembershipId: MEMBER };
+  const teacher = (ctx: OrgCtx): people.Reach => ({
+    studentIds: enrolmentService.studentsTaughtBy(ctx, MEMBER),
+  });
+  const families = (ctx: OrgCtx, reach: people.Reach) =>
+    people.familiesOnPage(ctx, 50, undefined, {}, reach);
+  const students = (ctx: OrgCtx, reach: people.Reach) =>
+    people.studentsOnPage(ctx, 50, undefined, {}, reach);
+  const gradesOfFamilies = (ctx: OrgCtx, reach: people.Reach) =>
+    people.listGrades(ctx, people.studentIdsOfFamilies(ctx, families(ctx, reach), reach));
+
+  // A page of the whole org, or of some branches, is read along the index that holds its order.
+  // What is read, the call, the table and column it is reached by, and the page's table and index.
+  const inOrder: [string, Send, string, string, string, string][] = [
+    [
+      'guardians, of a page of families',
+      (ctx) => people.listGuardians(ctx, families(ctx, everyone)),
+      ...(['guardians', 'family_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'students, of a page of families',
+      (ctx) => people.studentsOfFamilies(ctx, families(ctx, everyone), everyone),
+      ...(['students', 'family_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of the students of a page of families',
+      (ctx) => gradesOfFamilies(ctx, everyone),
+      ...(['student_grades', 'student_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of the students of a page of families, for staff of some branches',
+      (ctx) => gradesOfFamilies(ctx, staff),
+      ...(['student_grades', 'student_id', 'families', 'families_org_name_idx'] as const),
+    ],
+    [
+      'grades, of a page of students',
+      (ctx) => people.listGrades(ctx, students(ctx, everyone)),
+      ...(['student_grades', 'student_id', 'students', 'students_org_name_idx'] as const),
+    ],
+    [
+      'grades, of a page of students, for staff of some branches',
+      (ctx) => people.listGrades(ctx, students(ctx, staff)),
+      ...(['student_grades', 'student_id', 'students', 'students_org_name_idx'] as const),
+    ],
+  ];
+
+  it.each(inOrder)('%s', async (_what, send, table, column, pageTable, pageIndex) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy(table, column));
+    expect(plan).toMatch(searchIn(pageTable, pageIndex));
+  });
+
+  // One family or student goes to its id, and a teacher's or a parent's page to their ids, at
+  // every level, as the read of the family, the student or the page itself does.
+  const fromIds: [string, Send, Reached][] = [
+    [
+      'guardians, of one family',
+      (ctx) => people.listGuardians(ctx, people.familyFound(ctx, 'fam_a', everyone)),
+      [
+        ['guardians', 'family_id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of the students of one family, for staff of some branches',
+      (ctx) =>
+        people.listGrades(
+          ctx,
+          people.studentIdsOfFamilies(ctx, people.familyFound(ctx, 'fam_a', staff), staff),
+        ),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'family_id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one student',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', everyone)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one student, for staff of some branches',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', staff)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'grades, of one of a parent’s children',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', parent)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['families', 'id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'grades, of one of a teacher’s students',
+      (ctx) => people.listGrades(ctx, people.studentFound(ctx, 'stu_a', teacher(ctx))),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
+    [
+      'grades, of a page of a teacher’s students',
+      (ctx) => people.listGrades(ctx, students(ctx, teacher(ctx))),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
+    [
+      'grades, of a page of a parent’s children',
+      (ctx) => people.listGrades(ctx, students(ctx, parent)),
+      [
+        ['student_grades', 'student_id'],
+        ['students', 'family_id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'guardians, of a page of a parent’s families',
+      (ctx) => people.listGuardians(ctx, families(ctx, parent)),
+      [
+        ['guardians', 'family_id'],
+        ['families', 'id'],
+        ['guardians', 'membership_id'],
+      ],
+    ],
+    [
+      'grades, of the students a teacher is shown in a page of their families',
+      (ctx) => gradesOfFamilies(ctx, teacher(ctx)),
+      [
+        ['student_grades', 'student_id'],
+        ['families', 'id'],
+        ['enrolments', 'class_id'],
+        ['classes', 'teacher_membership_id'],
+      ],
+    ],
+  ];
+
+  it.each(fromIds)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  it('works out the current academic year inside the page that filters by grade level', async () => {
+    // The org is on the context in a request, so finding today in its timezone reads nothing.
+    const org = { id: 'org_plans', timezone: 'Pacific/Auckland' } as OrgRow;
+    const plan = await planOf(async (ctx) => {
+      const academicYearId = await currentAcademicYear({ ...ctx, org });
+      const grade = { academicYearId, gradeLevelId: 'grd_a' };
+      return people.listStudents(ctx, 50, undefined, { grade }, {});
+    });
+    expect(plan).toMatch(searchIn('students', 'students_org_name_idx'));
+    expect(plan).toMatch(searchBy('student_grades', 'student_id'));
+    expect(plan).toMatch(searchBy('academic_years', 'org_id'));
+  });
+});
+
+describe('a session’s roster is read through the session’s id, in the stage that reads the session (TUI-89)', () => {
+  const SESSION = 'ses_a';
+  const itsClass = (ctx: OrgCtx) => classOfSession(ctx, SESSION);
+  const classesEnrolments: Reached = [
+    ['enrolments', 'class_id'],
+    ['sessions', 'id'],
+  ];
+
+  // What is read, the call that sends it, and every table in it with its column.
+  const reads: [string, Send, Reached][] = [
+    [
+      'the enrolments in the session’s class, with their dates',
+      (ctx) => studentsExpectedIn(ctx, itsClass(ctx)),
+      classesEnrolments,
+    ],
+    [
+      'the names of the students enrolled in the session’s class',
+      (ctx) => people.studentNames(ctx, enrolmentService.studentsEnrolledIn(ctx, itsClass(ctx))),
+      [['students', 'id'], ...classesEnrolments],
+    ],
+    [
+      'the names of the students marked at the session',
+      (ctx) => people.studentNames(ctx, attendance.studentsMarkedAt(ctx, SESSION)),
+      [
+        ['students', 'id'],
+        ['attendance', 'session_id'],
+      ],
+    ],
+    [
+      'the marks at the session',
+      (ctx) => attendance.listMarks(ctx, SESSION),
+      [['attendance', 'session_id']],
+    ],
+  ];
+
+  it.each(reads)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
   });
 });
 
@@ -521,6 +781,20 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
     expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
     expect(plan).toMatch(searchBy('classes', 'branch_id'));
   });
+
+  it('checks a rename the same way, finding the class’s own course and term', async () => {
+    const plan = await planOf((ctx) => classes.otherClassHasName(ctx, 'cls_a', 'Monday'));
+    expect(plan).toMatch(searchBy('self', 'id'));
+    expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
+    expect(plan).toMatch(searchBy('classes', 'branch_id'));
+  });
+
+  it('reads the weekly slots of a page of classes from the page, in one statement', async () => {
+    const page = (ctx: OrgCtx) => classes.classesOnPage(ctx, 50, 'id_a', {}, {});
+    const plan = await planOf((ctx) => classes.listSlots(ctx, page(ctx)));
+    expect(plan).toMatch(searchBy('class_schedules', 'class_id'));
+    expect(plan).toMatch(searchIn('classes', 'classes_org_id_uq'));
+  });
 });
 
 describe('price rules are read through their org (D-101)', () => {
@@ -548,5 +822,246 @@ describe('price rules are read through their org (D-101)', () => {
     expect(plan).toMatch(searchBy('price_rules', 'org_id'));
     expect(plan).not.toMatch(/^SCAN price_rules/m);
     expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('enrolments are read in one stage, by queries for what the stage finds (TUI-94)', () => {
+  const MEMBER = 'mem_a';
+  type Page = [
+    after: string | undefined,
+    enrolment.EnrolmentFilter,
+    (ctx: OrgCtx) => enrolment.Reach,
+  ];
+  const everyone = () => ({});
+  const staff = (ctx: OrgCtx) => ({
+    classIds: classesService.classesInBranches(ctx, IDS),
+    studentIds: peopleService.studentsInBranches(ctx, IDS),
+  });
+  /** The names of the students, or the labels of the classes, on a page: read by a query for it. */
+  const names =
+    ([after, filter, reach]: Page): Send =>
+    (ctx) =>
+      people.studentNames(ctx, enrolment.onPage(ctx, 'studentId', 50, after, filter, reach(ctx)));
+  const labels =
+    ([after, filter, reach]: Page): Send =>
+    (ctx) =>
+      classes.classLabels(ctx, enrolment.onPage(ctx, 'classId', 50, after, filter, reach(ctx)));
+
+  // What a page shows, the table it is in, the index the page is read along, and the call.
+  const shown: [string, string, string, Send][] = [
+    [
+      'the students on a page',
+      'students',
+      'enrolments_org_id_uq',
+      names([undefined, {}, everyone]),
+    ],
+    [
+      'the classes on a later page',
+      'classes',
+      'enrolments_org_id_uq',
+      labels(['id_a', {}, everyone]),
+    ],
+    [
+      'the students in one class',
+      'students',
+      'enrolments_org_class_idx',
+      names([undefined, { classId: 'cls_a' }, everyone]),
+    ],
+    [
+      'the classes of one student',
+      'classes',
+      'enrolments_org_student_idx',
+      labels(['id_a', { studentId: 'stu_a' }, everyone]),
+    ],
+    [
+      'the students on a page, for staff of some branches',
+      'students',
+      'enrolments_org_id_uq',
+      names([undefined, {}, staff]),
+    ],
+    [
+      'the classes of one student, for staff of some branches',
+      'classes',
+      'enrolments_org_student_idx',
+      labels([undefined, { studentId: 'stu_a' }, staff]),
+    ],
+  ];
+
+  it.each(shown)(
+    '%s are read by id, from the page in its own order',
+    async (_what, table, index, send) => {
+      const plan = await planOf(send);
+      expect(plan).toMatch(searchBy(table, 'id'));
+      expect(plan).toMatch(searchIn('enrolments', index));
+      expect(plan).not.toContain(SORT);
+    },
+  );
+
+  it('reads them from a teacher’s classes and a parent’s children, as it reads the page', async () => {
+    const taught = (ctx: OrgCtx) => ({ classIds: classesService.classesTaughtBy(ctx, MEMBER) });
+    const children = (ctx: OrgCtx) => ({
+      studentIds: peopleService.studentsOfGuardian(ctx, MEMBER),
+    });
+
+    const forTeacher = await planOf(names([undefined, {}, taught]));
+    expect(forTeacher).toMatch(searchBy('students', 'id'));
+    expect(forTeacher).toMatch(searchBy('enrolments', 'class_id'));
+    expect(forTeacher).not.toMatch(READS_AN_ORG);
+
+    const forParent = await planOf(labels([undefined, {}, children]));
+    expect(forParent).toMatch(searchBy('classes', 'id'));
+    expect(forParent).toMatch(searchBy('enrolments', 'student_id'));
+    expect(forParent).not.toMatch(READS_AN_ORG);
+  });
+
+  it('counts the places taken in a class from the class’s own enrolments', async () => {
+    const plan = await planOf((ctx) => enrolment.placesIn(ctx, 'cls_a', 'stu_a'));
+    expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+  });
+
+  it('finds a class’s term through the class’s id, before the class is read', async () => {
+    const plan = await planOf((ctx) => classDatesOf(ctx, 'cls_a'));
+    expect(plan).toMatch(searchBy('terms', 'id'));
+    expect(plan).toMatch(searchBy('classes', 'id'));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+});
+
+describe('an invoice is read with its lines and names by a query for it (TUI-97)', () => {
+  const MEMBER = 'mem_a';
+  const everyone: billing.InvoiceReach = {};
+  const staff = (ctx: OrgCtx): billing.InvoiceReach => ({
+    familyIds: peopleService.familiesInBranches(ctx, IDS),
+  });
+  const parent = (ctx: OrgCtx): billing.InvoiceReach => ({
+    familyIds: peopleService.familiesOfGuardian(ctx, MEMBER),
+    issuedOnly: true,
+  });
+  const one = (ctx: OrgCtx, reach = everyone) => billing.invoiceWithin(ctx, 'inv_a', reach);
+  const parentsFamilies: Reached = [
+    ['families', 'id'],
+    ['guardians', 'membership_id'],
+  ];
+
+  // What is looked up, the call that sends it, and every table in it with its column.
+  const lookups: [string, Send, Reached][] = [
+    [
+      'the lines of one invoice',
+      (ctx) => billing.listLines(ctx, one(ctx)),
+      [
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the lines of one invoice, for a parent',
+      (ctx) => billing.listLines(ctx, one(ctx, parent(ctx))),
+      [['invoice_lines', 'invoice_id'], ['invoices', 'id'], ...parentsFamilies],
+    ],
+    [
+      'the family of one invoice',
+      (ctx) => people.familyLabels(ctx, billing.familyOfInvoice(ctx, 'inv_a', everyone)),
+      [
+        ['families', 'id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the students on one invoice',
+      (ctx) => people.studentNames(ctx, billing.studentsOnLines(ctx, one(ctx))),
+      [
+        ['students', 'id'],
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the classes on one invoice',
+      (ctx) => classes.classLabels(ctx, billing.classesOnLines(ctx, one(ctx))),
+      [
+        ['classes', 'id'],
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the lines on the invoices a run made',
+      (ctx) => billing.linesGeneratedBy(ctx, 'job_a'),
+      [
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'job_id'],
+      ],
+    ],
+    // A parent's page is read from their families. A filter only narrows it: with a status it
+    // read every invoice the org has with that status.
+    [
+      'GET /invoices?status, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { status: 'issued' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+    [
+      'GET /invoices?termId, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, 'id_a', { termId: 'trm_a' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+    [
+      'GET /invoices?month, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { month: '2026-11' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+  ];
+
+  it.each(lookups)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  // What a page shows of other tables is read from the page: the first rows along the page's
+  // own index, for staff of some branches too. The table, its column, and the call.
+  const page = (ctx: OrgCtx, reach: billing.InvoiceReach) =>
+    billing.invoicesOnPage(ctx, 50, undefined, {}, reach);
+  const onAPage: [string, string, string, Send][] = [
+    [
+      'the lines on a page',
+      'invoice_lines',
+      'invoice_id',
+      (ctx) => billing.listLines(ctx, page(ctx, everyone)),
+    ],
+    [
+      'the lines on a page, for staff of some branches',
+      'invoice_lines',
+      'invoice_id',
+      (ctx) => billing.listLines(ctx, page(ctx, staff(ctx))),
+    ],
+    [
+      'the families on a page, for staff of some branches',
+      'families',
+      'id',
+      (ctx) => people.familyLabels(ctx, billing.familiesOnPage(ctx, 50, undefined, {}, staff(ctx))),
+    ],
+    [
+      'the students on a page, for staff of some branches',
+      'students',
+      'id',
+      (ctx) => people.studentNames(ctx, billing.studentsOnLines(ctx, page(ctx, staff(ctx)))),
+    ],
+    [
+      'the classes on a page',
+      'classes',
+      'id',
+      (ctx) => classes.classLabels(ctx, billing.classesOnLines(ctx, page(ctx, everyone))),
+    ],
+  ];
+
+  it.each(onAPage)('%s', async (_what, table, column, send) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy(table, column));
+    expect(plan).toMatch(searchIn('invoices', 'invoices_org_id_uq'));
+    expect(plan).not.toMatch(
+      /^SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\? AND branch_id=\?/m,
+    );
+    // The lines are sorted by enrolment for the answer. Nothing else is: the page is in order.
+    if (table !== 'invoice_lines') expect(plan).not.toContain(SORT);
   });
 });

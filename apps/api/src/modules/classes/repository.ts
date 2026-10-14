@@ -1,7 +1,9 @@
 import { classSchedules, classes, now, sessions } from '@edustrux/db';
 import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
+import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
+  firstIds,
   idsFrom,
   inIds,
   inOrg,
@@ -32,9 +34,6 @@ export type NewSessionRow = typeof sessions.$inferInsert;
  */
 export type Reach = { branchIds?: string[]; teacherMembershipId?: string; classIds?: Ids };
 
-/** A class a student is enrolled in, and the dates (both included) the enrolment covers. */
-export type EnrolledSpan = { classId: string; startDate: string; endDate: string | null };
-
 export type ClassFilter = {
   branchId?: string;
   termId?: string;
@@ -51,8 +50,11 @@ export type SessionFilter = {
   teacherId?: string;
   gradeLevelId?: string;
   classId?: string;
-  /** Only the sessions inside one of these: a student's timetable. */
-  spans?: EnrolledSpan[];
+  /**
+   * A student's timetable: only the sessions of the classes they are enrolled in, on the dates an
+   * enrolment covers. `coveredOn` is given the session's date column and worked out row by row.
+   */
+  enrolled?: { classes: Ids; coveredOn: (date: SQLiteColumn) => Ids };
 };
 type SessionCursor = { date: string; time: string; id: string };
 
@@ -95,9 +97,15 @@ const fewClasses = (reach: Reach) =>
 const sessionReach = (ctx: OrgCtx, reach: Reach) =>
   fewClasses(reach) ? inIds(sessions.classId, classesWithin(ctx, reach)) : undefined;
 
-/** The spans are bound as one JSON value, so a student in many classes stays under D1's limit. */
-const inSpans = (spans: EnrolledSpan[]) =>
-  sql`exists (select 1 from json_each(${JSON.stringify(spans)}) as span where json_extract(span.value, '$.classId') = ${sessions.classId} and ${sessions.date} >= json_extract(span.value, '$.startDate') and (json_extract(span.value, '$.endDate') is null or ${sessions.date} <= json_extract(span.value, '$.endDate')))`;
+/**
+ * A student's timetable as conditions on sessions. The first is ids `inOrg` can go to: the
+ * student's classes. The second reads each row's own date, so it can only narrow what the first
+ * finds, and must stay after it.
+ */
+const enrolledIn = (enrolled: NonNullable<SessionFilter['enrolled']>) => [
+  inIds(sessions.classId, enrolled.classes),
+  inIds(sessions.classId, enrolled.coveredOn(sessions.date)),
+];
 
 const classFilter = (filter: ClassFilter) => [
   filter.branchId ? eq(classes.branchId, filter.branchId) : undefined,
@@ -117,6 +125,13 @@ const upcoming = (moment: LocalMoment) =>
 
 // ── Classes ─────────────────────────────────────────────────────────────────
 
+/** What one page of the list is read by: the filter, the reach, and where the page starts. */
+const pageConditions = (afterId: string | undefined, filter: ClassFilter, reach: Reach) => [
+  ...classFilter(filter),
+  ...reachConditions(reach),
+  afterId ? gt(classes.id, afterId) : undefined,
+];
+
 /**
  * Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. A
  * caller limited to some branches or classes gets their page from those, not from every class in
@@ -132,17 +147,27 @@ export function listClasses(
   return ctx.db
     .select()
     .from(classes)
-    .where(
-      inOrg(
-        ctx,
-        classes,
-        ...classFilter(filter),
-        ...reachConditions(reach),
-        afterId ? gt(classes.id, afterId) : undefined,
-      ),
-    )
+    .where(inOrg(ctx, classes, ...pageConditions(afterId, filter, reach)))
     .orderBy(asc(classes.id))
     .limit(limit + 1);
+}
+
+/**
+ * The classes on that page, as ids: the first `limit` of the same conditions in the same order.
+ * It lets the page's weekly slots be read in the same stage as the page.
+ */
+export function classesOnPage(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  filter: ClassFilter,
+  reach: Reach,
+): IdQuery {
+  return firstIds(
+    idsFrom(ctx, classes, classes.id, ...pageConditions(afterId, filter, reach)),
+    limit,
+    asc(classes.id),
+  );
 }
 
 export function findClass(ctx: OrgCtx, id: string, reach: Reach) {
@@ -151,6 +176,18 @@ export function findClass(ctx: OrgCtx, id: string, reach: Reach) {
     .from(classes)
     .where(inOrg(ctx, classes, eq(classes.id, id), within(reach)))
     .get();
+}
+
+/**
+ * The term, course or branch of one class, as ids: what another module reads of it in the same
+ * stage as the class, before the class's row is in hand. A class with no term gives no term.
+ */
+export function ofClass(
+  ctx: OrgCtx,
+  id: string,
+  column: 'termId' | 'courseId' | 'branchId',
+): IdQuery {
+  return idsFrom(ctx, classes, classes[column], eq(classes.id, id));
 }
 
 /**
@@ -212,6 +249,10 @@ export async function countClasses(ctx: OrgCtx, filter: ClassFilter) {
   return row?.n ?? 0;
 }
 
+/** A class's term as the unique index on names holds it: "no term" is ''. */
+const termKey = (table: { termId: SQLiteColumn }) =>
+  sql`(case when ${table.termId} is null then '' else ${table.termId} end)`;
+
 /** Case-insensitive, among the course's classes in the same term and branch that aren't deleted. */
 export async function classNameTaken(
   ctx: OrgCtx,
@@ -226,8 +267,8 @@ export async function classNameTaken(
         ctx,
         classes,
         eq(classes.courseId, key.courseId),
-        // The term as the unique index holds it ("no term" is ''), so this is one lookup in it.
-        sql`(case when ${classes.termId} is null then '' else ${classes.termId} end) = ${key.termId ?? ''}`,
+        // The term as the unique index holds it, so this is one lookup in it.
+        sql`${termKey(classes)} = ${key.termId ?? ''}`,
         eq(classes.branchId, key.branchId),
         sql`lower(${classes.name}) = lower(${key.name})`,
         exceptId ? ne(classes.id, exceptId) : undefined,
@@ -237,19 +278,54 @@ export async function classNameTaken(
   return row !== undefined;
 }
 
-export async function insertClass(ctx: OrgCtx, row: NewClassRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(classes).values(row)], {
+/**
+ * Whether another class of this class's course, term and branch has the name. Those three come
+ * from the class's own row inside the statement, so this can be sent together with the read of
+ * the class. The other class is still found by one lookup in the unique index.
+ */
+export async function otherClassHasName(ctx: OrgCtx, id: string, name: string) {
+  const self = alias(classes, 'self');
+  const row = await ctx.db
+    .select({ id: classes.id })
+    .from(self)
+    .innerJoin(
+      classes,
+      inOrg(
+        ctx,
+        classes,
+        eq(classes.courseId, self.courseId),
+        sql`${termKey(classes)} = ${termKey(self)}`,
+        eq(classes.branchId, self.branchId),
+        sql`lower(${classes.name}) = lower(${name})`,
+        ne(classes.id, self.id),
+      ),
+    )
+    .where(inOrg(ctx, self, eq(self.id, id)))
+    .get();
+  return row !== undefined;
+}
+
+/** Returns the class as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertClass(
+  ctx: OrgCtx,
+  row: NewClassRow & { id: string },
+): Promise<ClassRow> {
+  const [, inserted] = await writeWithAudit(ctx, [ctx.db.insert(classes).values(row).returning()], {
     action: 'class.created',
     entityType: 'class',
     entityId: row.id,
     after: row,
   });
+  const stored = (inserted as ClassRow[])[0];
+  if (!stored) throw new Error('Class missing after insert');
+  return stored;
 }
 
 /**
  * Updates the class and, in the same batch, its upcoming sessions: `restaff` gives those still
  * scheduled the class's new room and teacher, and `plan` adds and removes sessions after a
- * change of dates.
+ * change of dates. Returns the class as updated, from that batch: undefined if it was deleted in
+ * the meantime.
  */
 export async function updateClass(
   ctx: OrgCtx,
@@ -260,15 +336,16 @@ export async function updateClass(
     restaff?: Pick<ClassRow, 'roomId' | 'teacherMembershipId'>;
     plan?: SessionPlan;
   },
-) {
+): Promise<ClassRow | undefined> {
   const { from, restaff, plan } = sessionChanges ?? {};
-  await writeWithAudit(
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(classes)
         .set(changes)
-        .where(inOrg(ctx, classes, eq(classes.id, before.id))),
+        .where(inOrg(ctx, classes, eq(classes.id, before.id)))
+        .returning(),
       ...(from && restaff
         ? [
             ctx.db
@@ -297,6 +374,7 @@ export async function updateClass(
         : changes,
     },
   );
+  return (updated as ClassRow[])[0];
 }
 
 /** Soft-deletes the class with its weekly slots and every one of its sessions. */
@@ -470,7 +548,7 @@ export function listSessions(
           filter.roomId ? eq(sessions.roomId, filter.roomId) : undefined,
           filter.teacherId ? eq(sessions.teacherMembershipId, filter.teacherId) : undefined,
           filter.classId ? eq(sessions.classId, filter.classId) : undefined,
-          filter.spans ? inSpans(filter.spans) : undefined,
+          ...(filter.enrolled ? enrolledIn(filter.enrolled) : []),
           sessionReach(ctx, reach),
           after,
         ),

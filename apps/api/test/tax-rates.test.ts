@@ -225,6 +225,32 @@ describe('tax rates', () => {
     expect(stale.status).toBe(409);
     expect(stale.body.error.code).toBe('stale_data');
   });
+
+  it('reports the same error as before when several apply', async () => {
+    // The checks are read together now (TUI-97) and judged in the order they always ran in.
+    const { api, addRate } = await setup();
+    const gst = await addRate('GST', 1500);
+    const vat = await addRate('VAT', 2000);
+    const error = async (method: string, path: string, body?: unknown) => {
+      const res = await api(method, path, body);
+      return [res.status, res.body.error.code];
+    };
+    await api('PATCH', `/tax-rates/${vat.id}`, { updatedAt: vat.updatedAt, rateBps: 1000 });
+
+    // A rate that isn't there, before the name it would take.
+    expect(
+      await error('PATCH', '/tax-rates/txr_nope', { updatedAt: vat.updatedAt, name: 'GST' }),
+    ).toEqual([404, 'not_found']);
+    // A stale updatedAt, before the name it would take.
+    expect(
+      await error('PATCH', `/tax-rates/${vat.id}`, { updatedAt: vat.updatedAt, name: 'GST' }),
+    ).toEqual([409, 'stale_data']);
+    expect(await error('DELETE', '/tax-rates/txr_nope')).toEqual([404, 'not_found']);
+    expect((await api('GET', '/tax-rates')).body.data.map((r: TaxRate) => r.name)).toEqual([
+      gst.name,
+      vat.name,
+    ]);
+  });
 });
 
 describe('org isolation', () => {

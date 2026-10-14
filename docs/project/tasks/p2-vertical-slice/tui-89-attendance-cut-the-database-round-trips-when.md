@@ -1,23 +1,24 @@
 ---
 id: TUI-89
 title: 'Attendance: cut the database round trips when marking'
-status: todo
+status: done
 phase: P2
 module: attendance
 priority: P1
 size: M
 endpoints:
   - GET|PUT /sessions/{id}/attendance
-branch:
-pr:
+branch: task/tui-89-94-95-96-97-round-trips
+pr: 39
 ---
 
 # TUI-89 Attendance: cut the database round trips when marking
 
-Marking one student takes about half a second on production. The goal is to bring a
-single-student mark to roughly 200 ms at the median (a proposed target, for the owner to confirm).
+Marking one student took about half a second on production. The goal was to bring a
+single-student mark to roughly 200 ms at the median. The owner replaced that target with a
+budget: about 3 database trips in sequence for every endpoint (D-102).
 
-Measured on 2026-10-13 with one-off scripts that are not in the repo:
+Measured on 2026-10-13, before any of the fixes, with one-off scripts that are not in the repo:
 
 - Production (Cloudflare, Auckland edge, D1 in Oceania): 1,000 single-student `PUT`s, 8 at a
   time, took 72 s. 13.9 requests a second; 546 ms median, 682 ms p95, 777 ms p99, 363 ms fastest.
@@ -45,14 +46,52 @@ enrolments; 3,750 rows read in a centre of 1,150 students.
 With table statistics (`ANALYZE`) both use the right index and the same write reads 71 rows, but
 production has none.
 
-Ideas, none decided:
+What was built, over four tasks:
 
-- Load the org once, and build the response from what is already loaded instead of reading the
-  roster and marks again after the write.
-- Send the reads that don't depend on each other as one D1 batch.
-- Make the two lookups above use the class index and the primary key.
-- Cloudflare Smart Placement, which runs the Worker next to D1. This is a config change and a
-  design decision for the owner, separate from the code.
+- TUI-90 (D-099): the user, the membership and the org come in one call, and the org isn't read
+  again. 11 calls became 8.
+- TUI-91 (D-100): the two lookups above go to the class's index and to the primary key. Who is
+  expected at a lesson went from 601 rows read to 31 in a local centre of 300 students.
+- TUI-99 (D-104): what a caller may see is worked out inside the read, with no trip of its own.
+- This task (D-105): the session, the marks, the class's enrolments and the names are read in
+  one stage, sent together and not as a D1 batch. A mark is answered from what was read and what
+  the write returned, so the roster and the marks aren't read again after the write.
+- Cloudflare Smart Placement: the owner decided against it for now (D-102).
+
+Counted in the test suite, as calls / stages (`apps/api/test/attendance-trips.test.ts` holds
+them). "Before" is this task's starting point, after TUI-90, TUI-91 and TUI-99:
+
+| Request                                    | Before | Now   |
+| ------------------------------------------ | ------ | ----- |
+| `GET`, as the owner or the class's teacher | 5 / 4  | 6 / 2 |
+| `GET`, as a parent                         | 6 / 5  | 5 / 2 |
+| `PUT`, one student or the whole class      | 8 / 6  | 7 / 3 |
+
+A single-student `PUT` now makes 7 calls and waits for 3 of them in a row:
+
+1. Sign-in: the user, the membership and the org.
+2. Sent together: the session with its class, the marks, the class's active enrolments with
+   their dates, the names of the students enrolled in the class, and the names of the students
+   marked.
+3. The write batch, which returns the marks it set.
+
+What it costs: the names are two calls where they were one, so a `GET` makes one call more than
+before for everyone but a parent, and more rows are read. On a local D1, for a class of 30 with
+everyone marked: 248 rows for a `GET` (153 before) and 248 for the reads of a `PUT` (214
+before). They follow the class, not the centre.
+
+Not measured on production after the change. Every response says what it cost in its
+`Server-Timing` header, so a deployed `PUT` can be checked with `curl -i`.
+
+Left for later:
+
+- `apps/api/src/modules/enrolment/for-attendance.ts` and
+  `apps/api/src/modules/classes/for-attendance.ts` hold what attendance asks of those modules.
+  They are to be folded into each module's service and repository once TUI-94 and TUI-96 have
+  merged. `enrolment.studentIdsExpected` and `people.studentIdsOfGuardian` have no caller any
+  more and can go with it.
+- The names in one call, which would take `GET` to 5 calls and `PUT` to 6. It needs a query for
+  ids from either of two tables, which the id helper doesn't have (D-105).
 
 Left in production by the test: the org "Load test 2026-10-13 09:05 (safe to delete)",
 `org_01m4t84ydweta7j49mvxm0zyzk`, with 12 students, 6 classes, 84 sessions and 1,000 marks.
