@@ -2,10 +2,36 @@ import { localNow, newId, type CreateEnrolment, type Enrolment } from '@edustrux
 import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
 import { conflict, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
+import { classDatesOf } from '../classes/for-enrolment';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
 import * as repo from './repository';
+
+// Both endpoints read in one stage (D-102): everything they need goes to D1 together, and the
+// checks run afterwards on what came back, in the order they have always run in.
+// - What a read needs of another read's answer it gets as a query written into its own
+//   statement: the names of the students on the page, the term of the class (D-104).
+// - A read of another module that answers 404 by throwing is sent with `hold`, and `take`
+//   reports it later. So the same error still wins when several apply.
+// - The write answers with the row its own statement returned, so nothing is read back.
+
+type Held<T> = { value: T } | { error: unknown };
+
+/** Sends a read now and keeps its answer, or the error it threw, for `take`. */
+async function hold<T>(read: T): Promise<Held<Awaited<T>>> {
+  try {
+    return { value: await read };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/** The answer of a read sent with `hold`. Throws the error if that is what it got. */
+function take<T>(held: Held<T>): T {
+  if ('error' in held) throw held.error;
+  return held.value;
+}
 
 type StudentName = { firstName: string; lastName: string };
 type ClassLabel = { name: string; courseId: string; branchId: string };
@@ -58,19 +84,47 @@ function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
   }
 }
 
-/** Enrolments as the API returns them. A page costs two extra queries, not one per row. */
-async function loadEnrolments(ctx: OrgCtx, rows: repo.EnrolmentRow[]): Promise<Enrolment[]> {
-  if (rows.length === 0) return [];
-  // A student or a class can't be deleted while it has enrolments, so both are always found.
-  const [students, labels] = await Promise.all([
-    people.studentNames(ctx, [...new Set(rows.map((r) => r.studentId))]),
-    classes.classLabels(ctx, [...new Set(rows.map((r) => r.classId))]),
-  ]);
-  return rows.map((row) =>
-    toEnrolment(row, students.get(row.studentId)!, labels.get(row.classId)!),
+/**
+ * Enrolments as the API returns them. The names and labels were read in the same stage as the
+ * rows, by a query for the page and not by the rows' own ids. An enrolment made between those
+ * statements can be on the page with a student or a class they missed. Those are read now, by
+ * id: one more stage, only when that happens.
+ */
+async function withNames(
+  ctx: OrgCtx,
+  rows: repo.EnrolmentRow[],
+  names: Map<string, StudentName>,
+  labels: Map<string, ClassLabel>,
+): Promise<Enrolment[]> {
+  const missed = (ids: string[], found: Map<string, unknown>) => [
+    ...new Set(ids.filter((id) => !found.has(id))),
+  ];
+  const students = missed(
+    rows.map((row) => row.studentId),
+    names,
   );
+  const klasses = missed(
+    rows.map((row) => row.classId),
+    labels,
+  );
+  if (students.length > 0 || klasses.length > 0) {
+    const [moreNames, moreLabels] = await Promise.all([
+      students.length > 0 ? people.studentNames(ctx, students) : undefined,
+      klasses.length > 0 ? classes.classLabels(ctx, klasses) : undefined,
+    ]);
+    names = new Map([...names, ...(moreNames ?? [])]);
+    labels = new Map([...labels, ...(moreLabels ?? [])]);
+  }
+  // A student or a class can't be deleted while it has enrolments, so both are always found.
+  return rows.map((row) => toEnrolment(row, names.get(row.studentId)!, labels.get(row.classId)!));
 }
 
+/**
+ * One stage: the student and the class asked for are checked while the page is read, and the
+ * names of whoever is on the page are read by a query for the page. Asked for one student, every
+ * row shows that student, so their name comes from the check and isn't read again. The same goes
+ * for one class.
+ */
 export async function listEnrolments(
   ctx: OrgCtx,
   access: Access,
@@ -78,31 +132,53 @@ export async function listEnrolments(
   cursor: string | undefined,
   filter: repo.EnrolmentFilter,
 ) {
-  if (filter.studentId) await people.getStudent(ctx, access, filter.studentId);
-  if (filter.classId) await classes.getClass(ctx, access, filter.classId);
+  const reach = reachOf(ctx, access);
+  const afterId = decodeCursor(cursor);
+  const onPage = (column: 'studentId' | 'classId') =>
+    repo.onPage(ctx, column, limit, afterId, filter, reach);
 
-  const rows = await repo.listEnrolments(
-    ctx,
-    limit,
-    decodeCursor(cursor),
-    filter,
-    reachOf(ctx, access),
-  );
+  const [student, klass, rows, names, labels] = await Promise.all([
+    hold(filter.studentId ? people.getStudent(ctx, access, filter.studentId) : undefined),
+    hold(filter.classId ? classes.getClass(ctx, access, filter.classId) : undefined),
+    repo.listEnrolments(ctx, limit, afterId, filter, reach),
+    filter.studentId ? undefined : people.studentNames(ctx, onPage('studentId')),
+    filter.classId ? undefined : classes.classLabels(ctx, onPage('classId')),
+  ]);
+  const ofStudent = take(student);
+  const inClass = take(klass);
+
   const { data, nextCursor } = toPage(rows, limit);
-  return { data: await loadEnrolments(ctx, data), nextCursor };
+  return {
+    data: await withNames(
+      ctx,
+      data,
+      ofStudent ? new Map([[ofStudent.id, ofStudent]]) : (names ?? new Map()),
+      inClass ? new Map([[inClass.id, inClass]]) : (labels ?? new Map()),
+    ),
+    nextCursor,
+  };
 }
 
 /**
  * Enrols a student in a class. The caller must reach both: staff limited to some branches can't
  * enrol a student whose home branch is another one, or into another branch's class.
+ *
+ * One read stage, then the write. Everything read is found from the two ids in the request: the
+ * student, the class, the class's dates, and the places taken in the class.
  */
 export async function createEnrolment(
   ctx: OrgCtx,
   access: Access,
   input: CreateEnrolment,
 ): Promise<Enrolment> {
-  const student = await people.getStudent(ctx, access, input.studentId);
-  const klass = await classes.getClass(ctx, access, input.classId);
+  const [studentRead, classRead, datesOf, places] = await Promise.all([
+    hold(people.getStudent(ctx, access, input.studentId)),
+    hold(classes.getClass(ctx, access, input.classId)),
+    classDatesOf(ctx, input.classId),
+    repo.placesIn(ctx, input.classId, input.studentId),
+  ]);
+  const student = take(studentRead);
+  const klass = take(classRead);
   const org = await orgs.getOrg(ctx);
 
   const price = input.priceOverride ?? null;
@@ -112,7 +188,7 @@ export async function createEnrolment(
     });
   }
 
-  const runs = await classes.classDates(ctx, klass);
+  const runs = datesOf(klass);
   const today = localNow(org.timezone).date;
   const startDate =
     input.startDate ?? (runs.startDate !== null && runs.startDate > today ? runs.startDate : today);
@@ -133,23 +209,19 @@ export async function createEnrolment(
     throw unprocessable(`An enrolment's dates must fall inside the class's: ${span}.`, fields);
   }
 
-  if (await repo.alreadyEnrolled(ctx, student.id, klass.id)) {
+  if (places.alreadyEnrolled) {
     throw conflict('This student is already enrolled in this class.', {
       _: ['Already enrolled'],
     });
   }
-  if (
-    klass.capacity !== null &&
-    (await repo.countPlacesTaken(ctx, klass.id, startDate)) >= klass.capacity
-  ) {
+  if (klass.capacity !== null && places.takenOn(startDate) >= klass.capacity) {
     throw unprocessable(`This class is full: all ${klass.capacity} place(s) are taken.`, {
       classId: ['Full'],
     });
   }
 
-  const id = newId('enrolment');
-  await repo.insertEnrolment(ctx, {
-    id,
+  const stored = await repo.insertEnrolment(ctx, {
+    id: newId('enrolment'),
     orgId: ctx.orgId,
     studentId: student.id,
     classId: klass.id,
@@ -159,7 +231,7 @@ export async function createEnrolment(
     priceOverrideCurrency: price?.currency ?? null,
     status: 'active',
   });
-  return toEnrolment((await repo.findEnrolment(ctx, id))!, student, klass);
+  return toEnrolment(stored, student, klass);
 }
 
 // ── What other modules ask about enrolments ─────────────────────────────────

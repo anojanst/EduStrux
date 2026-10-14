@@ -1,6 +1,7 @@
 import { enrolments } from '@edustrux/db';
-import { asc, count, eq, gt, gte, isNull, lte, or, type SQL } from 'drizzle-orm';
+import { asc, count, eq, gt, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import {
+  firstIds,
   idsFrom,
   inIds,
   inOrg,
@@ -34,6 +35,14 @@ function within(reach: Reach): SQL | undefined {
 
 const active = eq(enrolments.status, 'active');
 
+/** What one page of the list is read by: the filter, the reach, and where the page starts. */
+const pageConditions = (afterId: string | undefined, filter: EnrolmentFilter, reach: Reach) => [
+  filter.studentId ? eq(enrolments.studentId, filter.studentId) : undefined,
+  filter.classId ? eq(enrolments.classId, filter.classId) : undefined,
+  within(reach),
+  afterId ? gt(enrolments.id, afterId) : undefined,
+];
+
 /** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
 export function listEnrolments(
   ctx: OrgCtx,
@@ -45,65 +54,57 @@ export function listEnrolments(
   return ctx.db
     .select()
     .from(enrolments)
-    .where(
-      inOrg(
-        ctx,
-        enrolments,
-        filter.studentId ? eq(enrolments.studentId, filter.studentId) : undefined,
-        filter.classId ? eq(enrolments.classId, filter.classId) : undefined,
-        within(reach),
-        afterId ? gt(enrolments.id, afterId) : undefined,
-      ),
-    )
+    .where(inOrg(ctx, enrolments, ...pageConditions(afterId, filter, reach)))
     .orderBy(asc(enrolments.id))
     .limit(limit + 1);
 }
 
-export function findEnrolment(ctx: OrgCtx, id: string) {
-  return ctx.db
-    .select()
-    .from(enrolments)
-    .where(inOrg(ctx, enrolments, eq(enrolments.id, id)))
-    .get();
-}
-
-/** Whether the student already holds an active enrolment in the class. */
-export async function alreadyEnrolled(ctx: OrgCtx, studentId: string, classId: string) {
-  const row = await ctx.db
-    .select({ id: enrolments.id })
-    .from(enrolments)
-    .where(
-      inOrg(
-        ctx,
-        enrolments,
-        eq(enrolments.studentId, studentId),
-        eq(enrolments.classId, classId),
-        active,
-      ),
-    )
-    .get();
-  return row !== undefined;
+/**
+ * The students, or the classes, of the enrolments on that page, as ids: the first `limit` of the
+ * same conditions in the same order. It lets the names a page shows be read in the same stage as
+ * the page (D-104).
+ */
+export function onPage(
+  ctx: OrgCtx,
+  column: 'studentId' | 'classId',
+  limit: number,
+  afterId: string | undefined,
+  filter: EnrolmentFilter,
+  reach: Reach,
+): IdQuery {
+  return firstIds(
+    idsFrom(ctx, enrolments, enrolments[column], ...pageConditions(afterId, filter, reach)),
+    limit,
+    asc(enrolments.id),
+  );
 }
 
 /**
- * The places taken in a class for someone starting on `date`: its active enrolments that haven't
- * ended by then. One that starts later still holds its place.
+ * What enrolling a student needs to know of the class's active enrolments, in one statement:
+ * whether the student already holds one, and how many places are taken.
+ *
+ * The places taken for someone starting on a date are the enrolments that haven't ended by
+ * then. One that starts later still holds its place. That date isn't known until the class is
+ * read, and this is sent together with that read, so the enrolments come back counted by their
+ * last day and `takenOn` adds up the ones that count.
  */
-export async function countPlacesTaken(ctx: OrgCtx, classId: string, date: string) {
-  const row = await ctx.db
-    .select({ n: count() })
+export async function placesIn(ctx: OrgCtx, classId: string, studentId: string) {
+  const rows = await ctx.db
+    .select({
+      endDate: enrolments.endDate,
+      n: count(),
+      theirs: sql<number>`max(${enrolments.studentId} = ${studentId})`,
+    })
     .from(enrolments)
-    .where(
-      inOrg(
-        ctx,
-        enrolments,
-        eq(enrolments.classId, classId),
-        active,
-        or(isNull(enrolments.endDate), gte(enrolments.endDate, date)),
-      ),
-    )
-    .get();
-  return row?.n ?? 0;
+    .where(inOrg(ctx, enrolments, eq(enrolments.classId, classId), active))
+    .groupBy(enrolments.endDate);
+  return {
+    alreadyEnrolled: rows.some((row) => row.theirs === 1),
+    takenOn: (date: string) =>
+      rows
+        .filter((row) => row.endDate === null || row.endDate >= date)
+        .reduce((taken, row) => taken + row.n, 0),
+  };
 }
 
 /** How many enrolments a class or a student has, whatever their status. */
@@ -123,13 +124,21 @@ export async function countEnrolments(ctx: OrgCtx, filter: EnrolmentFilter) {
   return row?.n ?? 0;
 }
 
-export async function insertEnrolment(ctx: OrgCtx, row: NewEnrolmentRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(enrolments).values(row)], {
+/** Returns the enrolment as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertEnrolment(
+  ctx: OrgCtx,
+  row: NewEnrolmentRow & { id: string },
+): Promise<EnrolmentRow> {
+  const insert = ctx.db.insert(enrolments).values(row).returning();
+  const [, inserted] = await writeWithAudit(ctx, [insert], {
     action: 'enrolment.created',
     entityType: 'enrolment',
     entityId: row.id,
     after: row,
   });
+  const stored = (inserted as EnrolmentRow[])[0];
+  if (!stored) throw new Error('Enrolment missing after insert');
+  return stored;
 }
 
 /** The classes any of these students holds an active enrolment in, as ids to filter by. */
