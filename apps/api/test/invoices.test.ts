@@ -973,6 +973,22 @@ describe('listing invoices', () => {
     ]);
     expect(results.map((r) => r.status)).toEqual([404, 404, 404, 400, 400, 400]);
   });
+
+  it('names the first unknown filter, in the order family, term, branch', async () => {
+    // The filters are checked together now (TUI-97). The one reported is still the first.
+    const { api } = await setup();
+    const messages: string[] = [];
+    for (const query of [
+      'familyId=fam_nope&termId=trm_nope&branchId=brn_nope',
+      'termId=trm_nope&branchId=brn_nope',
+      'branchId=brn_nope',
+    ]) {
+      const res = await api('GET', `/invoices?${query}`);
+      expect(res.status).toBe(404);
+      messages.push(res.body.error.message);
+    }
+    expect(messages).toEqual(['Family not found', 'Term not found', 'Branch not found']);
+  });
 });
 
 describe('org isolation', () => {
