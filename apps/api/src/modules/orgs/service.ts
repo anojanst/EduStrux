@@ -91,18 +91,19 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
 
   const { updatedAt: _ignored, ...changes } = input;
   if (Object.keys(changes).length === 0) return toOrg(before);
-  if (changes.singleTutorMode && !before.singleTutorMode) {
-    if ((await branches.countBranches(ctx)) > 1) {
-      throw unprocessable('Single-tutor mode allows one branch. Delete the other branches first.', {
-        singleTutorMode: ['More than one branch'],
-      });
-    }
+  // Neither check needs the other's answer, so they go to D1 together.
+  const [branchCount, slugTaken] = await Promise.all([
+    changes.singleTutorMode && !before.singleTutorMode ? branches.countBranches(ctx) : 0,
+    changes.slug && changes.slug !== before.slug
+      ? repo.slugTaken(ctx.db, changes.slug, ctx.orgId)
+      : false,
+  ]);
+  if (branchCount > 1) {
+    throw unprocessable('Single-tutor mode allows one branch. Delete the other branches first.', {
+      singleTutorMode: ['More than one branch'],
+    });
   }
-  if (changes.slug && changes.slug !== before.slug) {
-    if (await repo.slugTaken(ctx.db, changes.slug, ctx.orgId)) {
-      throw conflict('That slug is taken', { slug: ['Taken'] });
-    }
-  }
+  if (slugTaken) throw conflict('That slug is taken', { slug: ['Taken'] });
 
   // `ctx.org` is now out of date, so the answer is the row the write returned.
   return toOrg(await repo.updateOrg(ctx, before, changes));

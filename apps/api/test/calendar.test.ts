@@ -154,6 +154,28 @@ describe('academic years', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('checks a new start date on its own against the stored end date', async () => {
+    const { api, addYear, addTerm } = await setup();
+    await addYear('2026', '2026-01-01', '2026-12-31');
+    const y27 = await addYear('2027', '2027-01-01', '2027-12-31');
+    await addTerm(y27.id, 'Term 1', '2027-02-01', '2027-04-16');
+    const patch = (body: Record<string, unknown>) =>
+      api('PATCH', `/academic-years/${y27.id}`, { updatedAt: y27.updatedAt, ...body });
+
+    const overlap = await patch({ startDate: '2026-12-31' });
+    expect(overlap.status).toBe(422);
+    expect(overlap.body.error.message).toContain('"2026"');
+    // The overlap is reported before a name that is taken.
+    expect((await patch({ startDate: '2026-12-31', name: '2026' })).status).toBe(422);
+    expect((await patch({ name: '2026' })).status).toBe(409);
+
+    const shrink = await patch({ startDate: '2027-02-02' });
+    expect(shrink.status).toBe(422);
+    expect(shrink.body.error.message).toContain('"Term 1"');
+
+    expect((await patch({ startDate: '2027-02-01' })).status).toBe(200);
+  });
+
   it('rejects a new end date before the stored start date with 400', async () => {
     const { api, addYear } = await setup();
     const y = await addYear('2027', '2027-01-25', '2027-12-17');
@@ -313,6 +335,43 @@ describe('terms', () => {
     expect(dup.status).toBe(409);
     expect(dup.body.error.fields).toEqual({ name: ['Taken'] });
     expect((await addTerm(y28.id, 'Term 1', '2028-02-01', '2028-04-14')).name).toBe('Term 1');
+  });
+
+  it('checks a changed term against its own year and that year’s other terms', async () => {
+    const { api, addYear, addTerm } = await setup();
+    const y27 = await addYear('2027', '2027-01-01', '2027-12-31');
+    const y28 = await addYear('2028', '2028-01-01', '2028-12-31');
+    await addTerm(y27.id, 'Term 1', '2027-02-01', '2027-04-16');
+    const t2 = await addTerm(y27.id, 'Term 2', '2027-05-03', '2027-07-09');
+    await addTerm(y28.id, 'Summer', '2028-02-01', '2028-04-14');
+    const patch = (body: Record<string, unknown>, updatedAt = t2.updatedAt) =>
+      api('PATCH', `/terms/${t2.id}`, { updatedAt, ...body });
+
+    const taken = await patch({ name: 'TERM 1' });
+    expect(taken.status).toBe(409);
+    expect(taken.body.error.fields).toEqual({ name: ['Taken'] });
+
+    // Only a new start date: the stored end date still counts, so Term 1 is in the way.
+    const early = await patch({ startDate: '2027-04-16' });
+    expect(early.status).toBe(422);
+    expect(early.body.error.message).toContain('"Term 1"');
+    // The overlap is reported before a name that is taken.
+    expect((await patch({ startDate: '2027-04-16', name: 'Term 1' })).status).toBe(422);
+    // Only a new end date, past the end of its year.
+    const late = await patch({ endDate: '2028-01-15' });
+    expect(late.status).toBe(422);
+    expect(late.body.error.message).toContain('"2027"');
+
+    // Its own name in another case, and a name only another year uses, are both free.
+    const recased = await patch({ name: 'TERM 2' });
+    expect(recased.status).toBe(200);
+    const moved = await patch({ name: 'Summer', startDate: '2027-04-17' }, recased.body.updatedAt);
+    expect(moved.status).toBe(200);
+    expect(moved.body).toMatchObject({
+      name: 'Summer',
+      startDate: '2027-04-17',
+      endDate: '2027-07-09',
+    });
   });
 
   it('keeps a term in its academic year', async () => {
