@@ -667,3 +667,132 @@ describe('permissions', () => {
     expect(results.map((r) => r.status)).toEqual([404, 404]);
   });
 });
+
+// A mark is answered from what the request read and what its write stored. The roster isn't
+// read again (TUI-89), so these hold each answer to what the next read gives.
+describe('what a mark answers with', () => {
+  /** Marks, checks the answer is the roster the next read gives, and returns it as `seen` does. */
+  const markAndRead = async (as: As, sessionId: string, records: Mark[]) => {
+    const marked = await mark(as, sessionId, records);
+    expect(marked.status).toBe(200);
+    expect(marked.body).toEqual((await as('GET', path(sessionId))).body);
+    return (marked.body.records as AttendanceRecord[]).map(
+      (r) => `${r.studentFirstName}: ${r.status ?? '-'}`,
+    );
+  };
+
+  it('the roster as the next read gives it, as marks are set, changed, cleared and left alone', async () => {
+    const { api, session, aroha, ben } = await classOfTwo();
+
+    expect(
+      await markAndRead(api, session, [
+        { studentId: ben.id, status: 'present' },
+        { studentId: aroha.id, status: 'late' },
+      ]),
+    ).toEqual(['Ben: present', 'Aroha: late']);
+    expect(await markAndRead(api, session, [{ studentId: ben.id, status: 'excused' }])).toEqual([
+      'Ben: excused',
+      'Aroha: late',
+    ]);
+    // One cleared and one changed in the same request. Ben is still expected, so he stays.
+    expect(
+      await markAndRead(api, session, [
+        { studentId: ben.id, status: null },
+        { studentId: aroha.id, status: 'absent' },
+      ]),
+    ).toEqual(['Ben: -', 'Aroha: absent']);
+    expect(await markAndRead(api, session, [{ studentId: aroha.id, status: 'absent' }])).toEqual([
+      'Ben: -',
+      'Aroha: absent',
+    ]);
+  });
+
+  it('every mark of a class too big for one insert statement', async () => {
+    const { api, addClass, addSession, newStudent, enrol, rowsOf } = await setup();
+    const klass = await addClass();
+    const session = await addSession(klass.id);
+    // An insert holds 12 marks, so 13 students need two.
+    const students: Student[] = [];
+    for (let n = 1; n <= 13; n++) {
+      const student = await newStudent(`Kid ${String(n).padStart(2, '0')}`, 'Perera');
+      await enrol(student.id, klass.id);
+      students.push(student);
+    }
+    const all = (status: Status): Mark[] => students.map(({ id }) => ({ studentId: id, status }));
+    const names = students.map((student) => student.firstName);
+
+    expect(await markAndRead(api, session, all('present'))).toEqual(
+      names.map((name) => `${name}: present`),
+    );
+    // Every one of them again: each keeps its row.
+    expect(await markAndRead(api, session, all('late'))).toEqual(
+      names.map((name) => `${name}: late`),
+    );
+    expect(await rowsOf(session)).toHaveLength(13);
+    // The first one cleared, with the other twelve changed.
+    expect(
+      await markAndRead(api, session, [
+        { studentId: students[0]!.id, status: null },
+        ...all('absent').slice(1),
+      ]),
+    ).toEqual(names.map((name, index) => `${name}: ${index === 0 ? '-' : 'absent'}`));
+  });
+
+  it('a student who was marked and has since withdrawn, by name, until their mark is cleared', async () => {
+    const { api, org, klass, session, aroha } = await classOfTwo();
+    await mark(api, session, [{ studentId: aroha.id, status: 'absent' }]);
+    // What a withdrawal will do: the enrolment is no longer active.
+    await db()
+      .update(enrolments)
+      .set({ status: 'withdrawn' })
+      .where(
+        and(
+          eq(enrolments.orgId, org.id),
+          eq(enrolments.studentId, aroha.id),
+          eq(enrolments.classId, klass.id),
+        ),
+      );
+
+    expect(await seen(api, session)).toEqual(['Ben: -', 'Aroha: absent']);
+    expect(await markAndRead(api, session, [{ studentId: aroha.id, status: 'excused' }])).toEqual([
+      'Ben: -',
+      'Aroha: excused',
+    ]);
+    // Cleared, she is off the roster in the answer itself, and can't be marked again.
+    expect(await markAndRead(api, session, [{ studentId: aroha.id, status: null }])).toEqual([
+      'Ben: -',
+    ]);
+    expect((await mark(api, session, [{ studentId: aroha.id, status: 'present' }])).status).toBe(
+      422,
+    );
+  });
+
+  it('two people marking the same session at once, each with the marks they made', async () => {
+    const { api, member, session, aroha, ben, rowsOf } = await classOfTwo();
+    const { as } = await member('front_desk');
+
+    const [first, second] = await Promise.all([
+      mark(api, session, [
+        { studentId: aroha.id, status: 'present' },
+        { studentId: ben.id, status: 'present' },
+      ]),
+      mark(as, session, [{ studentId: aroha.id, status: 'late' }]),
+    ]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    const statusOf = (body: { records: AttendanceRecord[] }, studentId: string) =>
+      body.records.find((record) => record.studentId === studentId)!.status;
+    expect(statusOf(first.body, aroha.id)).toBe('present');
+    expect(statusOf(first.body, ben.id)).toBe('present');
+    expect(statusOf(second.body, aroha.id)).toBe('late');
+
+    // One mark each, whichever of the two landed last.
+    const rows = await rowsOf(session);
+    expect(
+      rows
+        .filter((row) => row.deletedAt === null)
+        .map((row) => row.studentId)
+        .sort(),
+    ).toEqual([aroha.id, ben.id].sort());
+    expect(rows).toHaveLength(2);
+  });
+});

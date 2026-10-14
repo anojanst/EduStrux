@@ -2666,6 +2666,82 @@ under "Not changed here" for a reach that is a subquery.
     and not by a join.
 - **Tasks:** TUI-99 (and TUI-89, TUI-94 to TUI-97, which build on it).
 
+## D-105 · 2026-10-14 · A session's attendance is read in one stage, and a mark is answered without reading again
+
+- **Context:** TUI-89 is the ticket that started the round-trip work: marking one student made
+  11 D1 calls. TUI-90 took that to 8 (D-099), and they still came one after another: sign-in,
+  the session, who is expected with the marks, the write, then who is expected and the marks
+  again, then the names. That is 6 stages against a budget of 3 (D-102). Reading a session's
+  attendance was 4 stages, and 5 for a parent, whose children were read first (D-104).
+- **Decision:**
+  - Everything a session's attendance is built from is read in one stage, together with the
+    session: the session as the caller may see it, the marks at it, the active enrolments in
+    its class with the dates each covers, and the students' names.
+    - The marks, the enrolments and the names are found through the session's id. The class is
+      a query for the session's class (D-104), so nothing waits for the session's row.
+    - Who is expected stays enrolment's rule (D-063, D-072). Enrolment gives its answer as a
+      function of the lesson's date, and attendance calls it once the session is in hand.
+    - Names are asked for in two calls in that stage: the students actively enrolled in the
+      class, and the students marked at the session. A marked student who has since withdrawn
+      is only among the second.
+    - For a parent the names read are their own children's, and a student with no name read is
+      left off the roster. A parent sees the same roster as before, and their children are no
+      longer read first.
+  - Those reads go out before the session is known to be within the caller's reach, and they
+    know nothing of who is asking. So the session answers first. Outside the caller's reach it
+    is 404, as before, and nothing else that was read is used or decides the error.
+  - A `PUT` is answered from what it read and what its write returned. The write returns each
+    mark it set, so `markedAt` is the time that was stored. The roster isn't read again.
+  - Nothing else about the two routes changes: the roster and its order, the statuses, the
+    refusals and which of them wins, the audit row, and the upsert that keeps two people marking
+    at once from colliding (D-070 to D-075).
+- **Consequences:**
+  - Counted in the test suite, as calls / stages:
+
+    | Request                                    | Before | After |
+    | ------------------------------------------ | ------ | ----- |
+    | `GET`, as the owner or the class's teacher | 5 / 4  | 6 / 2 |
+    | `GET`, as a parent                         | 6 / 5  | 5 / 2 |
+    | `PUT`, one student or the whole class      | 8 / 6  | 7 / 3 |
+    | `PUT`, when the marks are already in place | –      | 6 / 2 |
+
+    The last row wasn't counted before.
+
+  - `GET` makes one call more than it did for everyone but a parent: the names are now two
+    calls. They are sent together, so they add no stage.
+  - Rows read go up with it. Measured on a local D1 with a throwaway test that isn't in the
+    repo, on a class of 30 with everyone marked, in a centre of 90 students: a `GET` read 153
+    rows and now reads 248, and the reads of a `PUT` that changes one mark took 214 rows and
+    now take 248. Both follow the class, not the centre. Nothing was measured on production.
+  - A `PUT`'s answer is the roster as that request read it, with its own marks as stored.
+    Before, the roster was read again after the write, so the answer also held a mark someone
+    else made in between. Such a mark now shows on the next read. What is stored is unchanged:
+    the last mark for a student wins (D-071).
+  - A session outside the caller's reach and one that doesn't exist make the same calls and get
+    the same 404, on both routes. `apps/api/test/attendance-trips.test.ts` holds that, and both
+    routes to the budget for the owner, the class's teacher and a parent. D-099 had this
+    checked by hand, for reads only.
+  - What attendance asks of enrolment and of classes is in a file of its own in each module
+    (`for-attendance.ts`), because both modules were being changed by other tasks at the same
+    time. They are to be folded into each module's service and repository.
+  - Two functions have no caller left: enrolment's "who is expected on a date", which read
+    them in a call of its own, and people's "a parent's children, read now" (D-104). Removing
+    them is for that fold-in.
+  - Not chosen:
+    - The names in one call. A query for ids is on one table, and "enrolled in the class, or
+      marked at the session" is two. A query for either of two would take `GET` to 5 calls and
+      `PUT` to 6.
+    - The names of everyone who ever held an enrolment in the class, to cover the marked. It
+      would rest on an enrolment never being deleted, which TUI-46 may change (D-075).
+    - Reading the names of the marked only when one is missing. Every past session of a class
+      with a withdrawn student would then wait for one more trip.
+    - Working out who is expected inside the statement, with the session's date as a subquery.
+      A date is not a query for ids, which is what crosses between modules (D-104).
+  - No schema change and no migration.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules. That
+    covers answering a `PUT` without reading the roster again.
+- **Tasks:** TUI-89 (and TUI-94 to TUI-96, for the fold-in).
+
 ## D-108 · 2026-10-14 · Classes and sessions are read in one stage, and a class write is answered without reading again
 
 - **Context:** TUI-96 is the round-trip task for classes and sessions. After TUI-90 and TUI-99,

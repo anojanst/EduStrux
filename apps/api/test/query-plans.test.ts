@@ -7,9 +7,11 @@ import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
 import { currentAcademicYear } from '../src/modules/calendar/for-people';
+import { classOfSession } from '../src/modules/classes/for-attendance';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
+import { studentsExpectedIn } from '../src/modules/enrolment/for-attendance';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as enrolmentService from '../src/modules/enrolment/service';
 import { termDates } from '../src/modules/calendar/for-classes';
@@ -485,6 +487,48 @@ describe('what families and students are shown with is read by a query for them 
     expect(plan).toMatch(searchIn('students', 'students_org_name_idx'));
     expect(plan).toMatch(searchBy('student_grades', 'student_id'));
     expect(plan).toMatch(searchBy('academic_years', 'org_id'));
+  });
+});
+
+describe('a session’s roster is read through the session’s id, in the stage that reads the session (TUI-89)', () => {
+  const SESSION = 'ses_a';
+  const itsClass = (ctx: OrgCtx) => classOfSession(ctx, SESSION);
+  const classesEnrolments: Reached = [
+    ['enrolments', 'class_id'],
+    ['sessions', 'id'],
+  ];
+
+  // What is read, the call that sends it, and every table in it with its column.
+  const reads: [string, Send, Reached][] = [
+    [
+      'the enrolments in the session’s class, with their dates',
+      (ctx) => studentsExpectedIn(ctx, itsClass(ctx)),
+      classesEnrolments,
+    ],
+    [
+      'the names of the students enrolled in the session’s class',
+      (ctx) => people.studentNames(ctx, enrolmentService.studentsEnrolledIn(ctx, itsClass(ctx))),
+      [['students', 'id'], ...classesEnrolments],
+    ],
+    [
+      'the names of the students marked at the session',
+      (ctx) => people.studentNames(ctx, attendance.studentsMarkedAt(ctx, SESSION)),
+      [
+        ['students', 'id'],
+        ['attendance', 'session_id'],
+      ],
+    ],
+    [
+      'the marks at the session',
+      (ctx) => attendance.listMarks(ctx, SESSION),
+      [['attendance', 'session_id']],
+    ],
+  ];
+
+  it.each(reads)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
   });
 });
 
