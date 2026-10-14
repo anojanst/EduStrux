@@ -3190,3 +3190,198 @@ under "Not changed here" for a reach that is a subquery.
   - Assumption (Claude's): the checks run with no secrets, so a pull request from a fork reaches
     no token. D-076 gave the deploy workflow no pull-request trigger for that reason.
 - **Tasks:** TUI-104 (and TUI-24).
+
+## D-118 · 2026-10-14 · A payment: its methods, and allocations that add up to it
+
+- **Context:** The handoff listed `GET|POST /payments` and `DELETE /payments/{id}`, the methods
+  cash, transfer and cheque, and "recording payments (partial, receipts)", with no rules. TUI-38
+  settled them.
+- **Decision:**
+  - A payment is money a family paid outside the app, recorded by staff. It has a `method`, an
+    `amount` (Money), `receivedOn` (a local date), an optional `reference` (at most 100
+    characters, trimmed: a transfer's reference, a cheque number) and optional `notes` (at most
+    2000).
+  - `method` is `cash`, `bank_transfer`, `cheque`, `card` (a card terminal at the centre) or
+    `other`. `card` and `other` were added to the handoff's list.
+  - `amount` is more than 0 and in the org's currency (400 on `amount.currency`).
+  - `receivedOn` defaults to today in the org's timezone. A day after today is 400.
+  - A payment pays towards one or more of its family's invoices: `allocations`, 1 to 50
+    `{ invoiceId, amount }`, each invoice at most once, each in the payment's currency. Their
+    amounts add up exactly to the payment's amount (400 on `allocations`).
+  - An allocation goes only to an issued or part-paid invoice of the same family, for no more
+    than is still owed on it (422, D-122).
+  - No money is left unallocated. A payment can't be more than its invoices still owe, and a
+    family has no credit on account. Credits and refunds stay in v1.1 (handoff §8).
+  - No `PATCH`. To correct a payment, delete it and record it again.
+- **Consequences:**
+  - Every payment is tied to at least one invoice. Invoices bill enrolments, so a family with
+    payments can't be deleted (D-098).
+  - A family that pays more than it owes, or pays before it is invoiced, can't be recorded as
+    paid. Staff record what the invoices owe. The rule was made strict because allowing
+    unallocated money later is an additive change, and tightening it later wouldn't be.
+  - A payment's `reference` is free text. It isn't checked against the family's bank reference
+    (D-097); staff match a transfer to a family themselves.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules, including
+    that a payment must be allocated in full.
+- **Tasks:** TUI-38.
+
+## D-119 · 2026-10-14 · An invoice's paid amount, balance and status follow its payments
+
+- **Context:** D-095 left `part_paid` and `paid` to payments, and its rule that an invoice with
+  payments can't be voided couldn't happen yet. TUI-38 built both.
+- **Decision:**
+  - `invoices` gained `paid_amount`: the sum of the allocations to it that aren't deleted.
+  - Recording or deleting a payment sets each of its invoices' paid amount and status in the
+    same batch, worked out in SQL from the allocations: nothing paid is `issued`, some is
+    `part_paid`, all of it is `paid`. Each batch works from what is stored when it runs, so two
+    payments at once leave the invoice right.
+  - Deleting a payment takes its invoices back to `part_paid` or `issued`.
+  - The Invoice gained `paid` (Money: what payments have paid towards it) and `balance` (Money:
+    `total` less `paid`, and 0 for a void invoice). This adds fields to the Invoice built in
+    TUI-37 (D-098).
+  - Voiding is checked again at the write. The update matches only a draft or an issued invoice,
+    and the lines are voided only if that update voided the invoice, matched by the `voidedAt`
+    it set. If a payment landed between void's read and its write, void reads the invoice again
+    and answers 422 `Has payments` (or `Already void`, if another request voided it).
+- **Consequences:**
+  - D-095's "has payments" rule can now happen, and is tested.
+  - A void that loses that race waits for one more read. Every other void costs what it did
+    (D-103).
+  - The invoices' changes have no audit rows of their own. The payment's row lists the invoices
+    it pays towards (D-122).
+  - The parent portal (TUI-39) can show an invoice's balance from `balance`.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-38 (and TUI-39).
+
+## D-120 · 2026-10-14 · A database trigger keeps an invoice's payments within its total
+
+- **Context:** The service checks each allocation against the invoice as it read it (D-122). Two
+  payments for the same invoice recorded at once could both pass that check and together pay
+  more than its total. A unique index can't hold a rule about a sum.
+- **Decision:**
+  - A trigger, `payment_allocations_guard`, runs before each insert into `payment_allocations`.
+    It raises `payment_allocation_rejected` unless the invoice is in the same org and not
+    deleted, its status is `issued` or `part_paid`, the amount is more than 0, and the invoice's
+    allocations that aren't deleted, with this one, don't exceed its total.
+  - It is the first trigger in the codebase. It is in a custom SQL migration of its own (0016),
+    after the generated one that adds the tables (0015).
+  - When it fires, the whole batch fails: the payment, its allocations, the invoices' update and
+    the audit row. The API answers 409 `stale_data`: an invoice was paid or changed between the
+    read and the write.
+  - The service still checks everything first, so a client gets the specific 400, 404 or 422
+    whenever two requests didn't race.
+- **Consequences:**
+  - Drizzle's schema doesn't know the trigger. A comment on the table points to it. A later
+    migration that rebuilds `payment_allocations` (as Drizzle does in SQLite for some column
+    changes) drops the trigger with the old table, and must create it again.
+  - Tested two ways: two payments at once for what one invoice owes (one is 201, the other 409
+    or 422, depending on when it read), and allocations inserted straight into the table past
+    the total.
+  - Applied with `wrangler d1 migrations apply --local`, the command the deploy runs against
+    production (D-076). Not yet run against production.
+  - A rule two requests can break at once is held by the database too: a partial unique index
+    where one can (D-094), a trigger where none can. README Conventions has it.
+  - Assumption: recorded from the implementation; the owner hasn't stated this.
+- **Tasks:** TUI-38.
+
+## D-121 · 2026-10-14 · Who reaches payments
+
+- **Context:** Handoff §6's "Fees and payments" row gives each role a reach over billing, and
+  D-096 settled it for invoices. TUI-38 applied it to payments.
+- **Decision:**
+  - No new permission. `GET /payments` needs `billing:read`. `POST` and `DELETE` need
+    `billing:write`.
+  - A payment goes with its family's home branch, as an invoice does (D-088). The branch isn't
+    stored on the payment: its `branchId` is the family's home branch, read live.
+  - Owner: every payment, read and write.
+  - Branch manager and front desk: read and write, by the family's home branch. No branch list
+    means every branch. To record a payment, the caller must reach the family and every invoice
+    it pays towards.
+  - Accountant: reads every payment, and gets 403 on every write.
+  - Teacher: 403 on every route.
+  - Parent: reads their own family's payments, and gets 403 on every write.
+  - A payment, family or invoice outside the caller's reach is 404, as if it didn't exist.
+- **Consequences:**
+  - A payment pays only towards its own family's issued or part-paid invoices (D-118), so every
+    invoice a parent's payments name is one they can already read (D-096).
+  - Assumption: recorded from the implementation. The roles follow the handoff §6 row and
+    D-096, which covered only invoices. The owner hasn't stated the rest, including that a
+    parent reads their family's payments.
+- **Tasks:** TUI-38 (and TUI-39).
+
+## D-122 · 2026-10-14 · Payment routes, tables, list, refusals, audit rows and database trips
+
+- **Context:** More rules the TUI-38 implementation settled that the handoff didn't cover.
+- **Decision:**
+  - The routes, all under the Billing tag:
+    - `GET /payments`: cursor-paged, newest first by id, like invoices (D-098). Filters
+      `?familyId` and `?invoiceId` (the payments with an allocation to that invoice). A filter
+      id the org doesn't have, or that is outside the caller's reach, is 404.
+    - `POST /payments`: 201 and the payment. Takes an `Idempotency-Key`.
+    - `DELETE /payments/{paymentId}`: soft-deletes the payment and its allocations and settles
+      its invoices again (D-119). 204; a second delete is 404. It takes no `Idempotency-Key`:
+      only `POST` does.
+  - The path parameter is `{paymentId}` (the handoff and the task file wrote `{id}`), as in
+    D-085 and D-098.
+  - No `GET /payments/{paymentId}` and no date-range filter.
+  - The Payment carries `id`, `familyId`, `familyName`, `branchId` (the family's home branch,
+    read live as on invoices), `method`, `amount`, `receivedOn`, `reference`, `notes`,
+    `allocations` (`[{ invoiceId, amount }]`, oldest invoice first, by id), `createdAt` and
+    `updatedAt`.
+  - What `POST` refuses, in the order it is checked:
+    - 400 from the body: `amount` not more than 0, a `method` not in the list, `allocations`
+      empty, over 50 or not adding up to the amount (on `allocations`), an invoice twice
+      (`allocations.N.invoiceId`), an allocation in another currency than the payment's
+      (`allocations.N.amount.currency`).
+    - 404: a family the org doesn't have or the caller doesn't reach (`Family`), then any such
+      invoice (`Invoice`).
+    - 400 that need the org: `amount.currency` not the org's currency, `receivedOn` after today.
+    - 422 `unprocessable`, naming every refused allocation at once in `fields`, one reason each,
+      the first that applies: `allocations.N.invoiceId` with `Another family’s invoice`,
+      `Not issued` (a draft), `Void` or `Already paid`; `allocations.N.amount.currency` when the
+      invoice is in another currency (the org's currency changed since); `allocations.N.amount`
+      with `More than is owed` (more than its total less what is paid).
+    - 409 `stale_data` when the trigger refuses the write (D-120).
+  - A new `payments` table holds `family_id`, `method`, `amount`, `currency`, `received_on` (a
+    local date), `reference` and `notes`, plus the common columns. A unique index on
+    `(org_id, id)` and an index on `(org_id, family_id, id)` read a page in order (D-101).
+  - A new `payment_allocations` table holds `payment_id`, `invoice_id` and `amount` (minor
+    units, in the payment's currency), plus the common columns. A partial unique index on org,
+    payment and invoice, over rows that aren't deleted, and an index on `(org_id, invoice_id)`.
+  - `invoices` gained `paid_amount` (D-119).
+  - A payment allocation has the new id prefix `pal_`. `pay_` already existed.
+  - Migrations: 0015 (generated) and 0016 (the trigger, D-120).
+  - Audit rows, one per write, with entity type `payment`: `payment.created`, with the payment
+    and its allocations (`[{ invoiceId, amount }]`) as `after`, and `payment.deleted`, with them
+    as `before`.
+  - Database trips (D-102, D-103):
+    - A page of payments and its allocations are read in one D1 batch, so a payment is never
+      shown without its allocations.
+    - The family names are read beside the page, by a query for it. If the page moved in that
+      moment, they are read again by the ids, as invoices do (D-103).
+    - `POST` answers with the rows its write returned, without reading again.
+    - `people` gained one function for billing: the name and home branch of a family the caller
+      reaches, in one statement.
+- **Consequences:**
+  - Counted in the test suite as trips / stages, each request on its heaviest path:
+
+    | Request                                                        | Trips / stages |
+    | -------------------------------------------------------------- | -------------- |
+    | `POST /payments`                                               | 4 / 3          |
+    | The same, with an `Idempotency-Key`                            | 6 / 5          |
+    | `GET /payments`, as the owner, a parent or staff of one branch | 3 / 2          |
+    | `GET /payments?familyId&invoiceId`                             | 5 / 2          |
+    | `DELETE /payments/{paymentId}`                                 | 4 / 3          |
+
+    Recording a payment with a key is 2 stages over the budget, as every write with a key is
+    (D-103).
+
+  - `apps/api/test/query-plans.test.ts` pins the new reads: the list along its indexes without
+    sorting, a wide branch reach checked per row, a parent's page read from their families,
+    `?invoiceId` through the allocations by invoice, and settling invoices by summing their
+    allocations by invoice.
+  - Not built here: reading one payment, and its receipt (TUI-59 will need the first); credits,
+    overpayments and refunds (v1.1); a date-range filter for reconciliation (TUI-63). The
+    end-to-end test (TUI-41) can now include recording a payment.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-38 (and TUI-41, TUI-59, TUI-63).

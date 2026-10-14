@@ -242,6 +242,7 @@ describe('invoices (TUI-97)', () => {
     expect(voided.body).toEqual({
       ...changed.body,
       status: 'void',
+      balance: nzd(0), // a void invoice is owed nothing
       voidedAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -279,6 +280,56 @@ describe('invoices (TUI-97)', () => {
     const monthRun = await c.api('POST', '/invoices/generate-monthly', { month });
     expectCost('POST /invoices/generate-monthly', monthRun, 202, 2, 2);
     await c.finished(monthRun.body.jobId as string);
+  });
+});
+
+describe('payments (TUI-38)', () => {
+  it('records, lists and deletes a payment within the budget, as the owner, a parent and staff of one branch', async () => {
+    const c = await centre();
+    const drafts = await c.invoiced();
+    for (const draft of [drafts.main, drafts.albany]) {
+      expect((await c.api('POST', `/invoices/${draft.id}/issue`)).status).toBe(200);
+    }
+    const paying = (where: typeof c.inMain, invoice: Row, amount: number) => ({
+      familyId: where.family.id,
+      method: 'bank_transfer',
+      amount: nzd(amount),
+      allocations: [{ invoiceId: invoice.id, amount: nzd(amount) }],
+    });
+
+    // The family and the invoices are read together, then the payment, its allocations and the
+    // invoices' new status are written in one batch.
+    const recorded = await c.api('POST', '/payments', paying(c.inMain, drafts.main, 10000));
+    expectCost('POST /payments', recorded, 201, WRITE, 4);
+    const byStaff = await c.staff.as(
+      'POST',
+      '/payments',
+      paying(c.inAlbany, drafts.albany, 10000),
+      key(),
+    );
+    expectCost('POST /payments with a key, staff', byStaff, 201, WRITE + KEY, 4 + KEY);
+
+    // Who asks, where their family is, their own payment and the invoice it pays.
+    const callers: [string, As, typeof c.inMain, Row, Row][] = [
+      ['the owner', c.api, c.inMain, recorded.body, drafts.main],
+      ['a parent', c.parent.as, c.inMain, recorded.body, drafts.main],
+      ['staff of one branch', c.staff.as, c.inAlbany, byStaff.body, drafts.albany],
+    ];
+    for (const [who, as, where, payment, invoice] of callers) {
+      const all = await as('GET', '/payments');
+      expectCost(`GET /payments, ${who}`, all, 200, READ, 3);
+      expect(all.body.data, who).toContainEqual(payment);
+
+      const filtered = await as(
+        'GET',
+        `/payments?familyId=${where.family.id}&invoiceId=${invoice.id}`,
+      );
+      expectCost(`GET /payments?familyId&invoiceId, ${who}`, filtered, 200, READ, 5);
+      expect(filtered.body.data, who).toEqual([payment]);
+    }
+
+    const deleted = await c.staff.as('DELETE', `/payments/${byStaff.body.id}`);
+    expectCost('DELETE /payments/{id}, staff', deleted, 204, WRITE, 4);
   });
 });
 

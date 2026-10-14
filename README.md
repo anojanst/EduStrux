@@ -64,6 +64,14 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   permission's scope is `branch` or `own`, pass `access(c)` to the service, which narrows its
   queries to the caller's branches or own records and returns 404 outside them (D-048).
 - **Writes** go through `writeWithAudit`, which batches them with an audit-log row.
+- **Rules two requests can break at once.** A service checks its rules on what it read, so two
+  requests at once can both pass. Where that would leave the data wrong, the database holds the
+  rule too: a partial unique index where one can (D-094), else a trigger in a custom SQL
+  migration (`drizzle-kit generate --custom`) that raises a named error. The repository
+  recognises the error and the service answers 409 `stale_data`; the service still checks first,
+  so a client gets the specific error when nothing raced. Drizzle's schema doesn't know a
+  trigger: say so in a comment on the table, and a migration that rebuilds the table must create
+  the trigger again (D-120).
 - **D1 limit:** at most 100 bound values per SQL statement. Insert many rows in chunks, and pass
   a long id list with `inIds(column, ids)`, which binds it as one JSON value.
 - **Who can see what.** A service's `reachOf(ctx, access)` turns the caller's role into a filter

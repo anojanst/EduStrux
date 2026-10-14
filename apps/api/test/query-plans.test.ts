@@ -578,6 +578,13 @@ describe('ids marked wide are checked row by row, and the page keeps its order (
       ['families'],
     ],
     [
+      'GET /payments, for staff of some branches',
+      'payments',
+      'payments_org_id_uq',
+      (ctx) => billing.listPayments(ctx, 50, undefined, {}, { familyIds: familiesInBranches(ctx) }),
+      ['families'],
+    ],
+    [
       'GET /invoices?status, for staff of some branches',
       'invoices',
       'invoices_org_status_idx',
@@ -759,6 +766,24 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
       'rooms',
       'rooms_org_branch_idx',
       (ctx) => branches.listRooms(ctx, 'brn_a', 50, 'id_a'),
+    ],
+    [
+      'GET /payments',
+      'payments',
+      'payments_org_id_uq',
+      (ctx) => billing.listPayments(ctx, 50, undefined, {}, {}),
+    ],
+    [
+      'GET /payments, a later page',
+      'payments',
+      'payments_org_id_uq',
+      (ctx) => billing.listPayments(ctx, 50, 'id_a', {}, {}),
+    ],
+    [
+      'GET /payments?familyId',
+      'payments',
+      'payments_org_family_idx',
+      (ctx) => billing.listPayments(ctx, 50, undefined, { familyId: 'fam_a' }, {}),
     ],
     ['GET /tax-rates', 'tax_rates', 'tax_rates_org_id_uq', (ctx) => billing.listTaxRates(ctx, 50)],
     [
@@ -1063,5 +1088,113 @@ describe('an invoice is read with its lines and names by a query for it (TUI-97)
     );
     // The lines are sorted by enrolment for the answer. Nothing else is: the page is in order.
     if (table !== 'invoice_lines') expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('a payment is read with its allocations by a query for it (TUI-38)', () => {
+  const MEMBER = 'mem_a';
+  const everyone: billing.PaymentReach = {};
+  const staff = (ctx: OrgCtx): billing.PaymentReach => ({
+    familyIds: peopleService.familiesInBranches(ctx, IDS),
+  });
+  const parent = (ctx: OrgCtx): billing.PaymentReach => ({
+    familyIds: peopleService.familiesOfGuardian(ctx, MEMBER),
+  });
+  const parentsFamilies: Reached = [
+    ['families', 'id'],
+    ['guardians', 'membership_id'],
+  ];
+
+  // What is looked up, the call that sends it, and every table in it with its column.
+  const lookups: [string, Send, Reached][] = [
+    [
+      'the allocations of one payment',
+      (ctx) => billing.listAllocations(ctx, billing.paymentWithin(ctx, 'pay_a', everyone)),
+      [
+        ['payment_allocations', 'payment_id'],
+        ['payments', 'id'],
+      ],
+    ],
+    [
+      'the allocations of one payment, for a parent',
+      (ctx) => billing.listAllocations(ctx, billing.paymentWithin(ctx, 'pay_a', parent(ctx))),
+      [['payment_allocations', 'payment_id'], ['payments', 'id'], ...parentsFamilies],
+    ],
+    [
+      'one payment, for staff of some branches',
+      (ctx) => billing.findPayment(ctx, 'pay_a', staff(ctx)),
+      [
+        ['payments', 'id'],
+        ['families', 'id'],
+      ],
+    ],
+    [
+      'the invoices a payment pays towards',
+      (ctx) => billing.findInvoices(ctx, IDS, {}),
+      [['invoices', 'id']],
+    ],
+    [
+      'GET /payments?invoiceId',
+      (ctx) => billing.listPayments(ctx, 50, undefined, { invoiceId: 'inv_a' }, everyone),
+      [
+        ['payments', 'id'],
+        ['payment_allocations', 'invoice_id'],
+      ],
+    ],
+    [
+      'GET /payments, for a parent',
+      (ctx) => billing.listPayments(ctx, 50, undefined, {}, parent(ctx)),
+      [['payments', 'family_id'], ...parentsFamilies],
+    ],
+    [
+      'what the invoices a payment pays towards have been paid',
+      (ctx) => billing.settleInvoices(ctx, IDS),
+      [
+        ['invoices', 'id'],
+        ['payment_allocations', 'invoice_id'],
+      ],
+    ],
+  ];
+
+  it.each(lookups)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  // What a page shows of other tables is read from the page, along the page's own index.
+  const onAPage: [string, string, string, Send][] = [
+    [
+      'the allocations on a page',
+      'payment_allocations',
+      'payment_id',
+      (ctx) =>
+        billing.listAllocations(ctx, billing.paymentsOnPage(ctx, 50, undefined, {}, everyone)),
+    ],
+    [
+      'the allocations on a page, for staff of some branches',
+      'payment_allocations',
+      'payment_id',
+      (ctx) =>
+        billing.listAllocations(ctx, billing.paymentsOnPage(ctx, 50, undefined, {}, staff(ctx))),
+    ],
+    [
+      'the families on a page, for staff of some branches',
+      'families',
+      'id',
+      (ctx) =>
+        people.familyLabels(ctx, billing.familiesOfPaymentPage(ctx, 50, undefined, {}, staff(ctx))),
+    ],
+  ];
+
+  it.each(onAPage)('%s', async (_what, table, column, send) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy(table, column));
+    expect(plan).toMatch(searchIn('payments', 'payments_org_id_uq'));
+    expect(plan).not.toMatch(
+      /^SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\? AND branch_id=\?/m,
+    );
+    // The allocations are sorted by payment for the answer. Nothing else is: the page is in order.
+    if (table !== 'payment_allocations') expect(plan).not.toContain(SORT);
   });
 });

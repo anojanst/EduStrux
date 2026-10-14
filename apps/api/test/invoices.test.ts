@@ -311,6 +311,8 @@ describe('generating a term’s invoices', () => {
       subtotal: nzd(78260),
       tax: nzd(11740),
       total: nzd(90000),
+      paid: nzd(0),
+      balance: nzd(90000),
       lines: [
         { ...line, enrolmentId: first.id, studentId: aroha.id, studentFirstName: 'Aroha' },
         { ...line, enrolmentId: second.id, studentId: kai.id, studentFirstName: 'Kai' },

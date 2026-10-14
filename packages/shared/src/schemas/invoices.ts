@@ -2,7 +2,10 @@ import { z } from '../zod';
 import { LocalDate, Money, PageQuery, Timestamp } from './common';
 import { PRICE_BASES, PRICE_SOURCES } from './pricing';
 
-/** `part_paid` and `paid` arrive with payments; only `draft`, `issued` and `void` are written so far. */
+/**
+ * A run makes a `draft`. Issuing it makes it `issued`, and payments towards it make it `part_paid`
+ * or `paid`. A draft or an issued invoice can be voided; one with payments can't.
+ */
 export const INVOICE_STATUSES = ['draft', 'issued', 'part_paid', 'paid', 'void'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
@@ -115,6 +118,10 @@ export const Invoice = z
     subtotal: Money.openapi({ description: 'The lines’ charges before tax.' }),
     tax: Money,
     total: Money.openapi({ description: '`subtotal` plus `tax`: what the family owes.' }),
+    paid: Money.openapi({ description: 'What payments have paid towards it so far.' }),
+    balance: Money.openapi({
+      description: 'What is still to pay: `total` less `paid`. 0 for a void invoice.',
+    }),
     lines: z.array(InvoiceLine),
     issuedAt: Timestamp.nullable(),
     voidedAt: Timestamp.nullable(),
