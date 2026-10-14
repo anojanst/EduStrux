@@ -222,9 +222,8 @@ describe('class and session endpoints stay within the database budget', () => {
     }
   });
 
-  // One stage over the budget, and not this module's: `people.getStudent` reads the student and
-  // then their grades, two stages. The sessions are read beside it, so this drops to 2 when
-  // TUI-95 makes that read one stage.
+  // The sessions are read beside `people.getStudent`, which reads the student and their grades
+  // together (TUI-95), so the timetable is within the budget for a read.
   it('a student’s timetable waits only for the read of the student', async () => {
     const c = await centre();
     const callers: [string, As][] = [
@@ -235,7 +234,7 @@ describe('class and session endpoints stay within the database budget', () => {
 
     for (const [role, as] of callers) {
       const timetable = await as('GET', `/sessions?${c.range}&studentId=${c.mia.id}`);
-      within(timetable, `GET /sessions?studentId, ${role}`, 200, { stages: 3, trips: 5 });
+      within(timetable, `GET /sessions?studentId, ${role}`, 200, { stages: 2, trips: 5 });
       expect(timetable.body.data, role).toHaveLength(9);
     }
   });

@@ -191,12 +191,12 @@ describe('GET /enrolments', () => {
       // Sign-in, then one read stage.
       expect(all.db.stages).toBeLessThanOrEqual(2);
       expect(all.db.trips).toBeLessThanOrEqual(4);
-      // The read stage is as deep as the check it sends, and no deeper. That is 3 stages in all
-      // until `people.getStudent` (TUI-95) and `classes.getClass` (TUI-96) are one stage each.
+      // The read stage is as deep as the check it sends, and no deeper. `people.getStudent`
+      // (TUI-95) and `classes.getClass` (TUI-96) are one stage each, so that is 2 stages in all.
       expect(ofStudent.db.stages).toBe(1 + deep.student);
       expect(inClass.db.stages).toBe(1 + deep.klass);
       expect(both.db.stages).toBe(1 + Math.max(deep.student, deep.klass));
-      for (const res of [ofStudent, inClass, both]) expect(res.db.stages).toBeLessThanOrEqual(3);
+      for (const res of [ofStudent, inClass, both]) expect(res.db.stages).toBeLessThanOrEqual(2);
       expect(ofStudent.db.trips).toBeLessThanOrEqual(6);
       expect(inClass.db.trips).toBeLessThanOrEqual(5);
       expect(both.db.trips).toBeLessThanOrEqual(7);
@@ -295,9 +295,9 @@ describe('POST /enrolments', () => {
 
     for (const res of [byOwner, byStaff]) {
       // Sign-in, one read stage, one write. The read stage is as deep as the deeper of the
-      // student and the class, and no deeper: 4 stages in all until TUI-95 and TUI-96 are in.
+      // student and the class, and no deeper: 3 stages in all.
       expect(res.db.stages).toBe(1 + Math.max(deep.student, deep.klass) + 1);
-      expect(res.db.stages).toBeLessThanOrEqual(4);
+      expect(res.db.stages).toBeLessThanOrEqual(3);
       expect(res.db.trips).toBeLessThanOrEqual(9);
     }
   });

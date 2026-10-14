@@ -26,9 +26,9 @@ type As = (
 const READ = 2; // sign-in, then one read stage
 const WRITE = 3; // sign-in, one read stage, then the write
 const KEY = 2; // claiming the Idempotency-Key before the handler, storing the answer after
-// `classes.getClass` reads the class and then its weekly slots, so a request that checks a class
-// waits one stage more. TUI-96 reads the two together: then this is 0.
-const CLASS = 1;
+// What a request that checks a class waits beyond its budget: nothing, now that
+// `classes.getClass` reads the class and its weekly slots together (TUI-96).
+const CLASS = 0;
 
 /** What a request may cost: its status, the stages it may wait for, and the trips measured. */
 function expectCost(what: string, res: Res, status: number, stages: number, trips: number) {
