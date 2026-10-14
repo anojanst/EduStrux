@@ -431,11 +431,32 @@ describe('guardians', () => {
       preferredChannel: 'sms',
       emergencyContact: false,
     });
-    expect((await lastAudit())[0]).toMatchObject({
-      action: 'guardian.updated',
-      before: { firstName: 'Mere', email: 'mere@example.com' },
-      after: { firstName: 'Mereana', firstNameNorm: 'mereana', email: null },
-    });
+    // Only what changed, old and new (D-113). The family can't change, so it isn't there.
+    expect((await lastAudit())[0]).toEqual(
+      expect.objectContaining({
+        action: 'guardian.updated',
+        before: {
+          firstName: 'Mere',
+          firstNameNorm: 'mere',
+          relationship: 'Mother',
+          email: 'mere@example.com',
+          phone: '021 555 0100',
+          language: 'en',
+          preferredChannel: 'email',
+          emergencyContact: true,
+        },
+        after: {
+          firstName: 'Mereana',
+          firstNameNorm: 'mereana',
+          relationship: null,
+          email: null,
+          phone: null,
+          language: null,
+          preferredChannel: 'sms',
+          emergencyContact: false,
+        },
+      }),
+    );
 
     const same = await api('PATCH', `/guardians/${guardian.id}`, {
       updatedAt: updated.body.updatedAt,
@@ -699,11 +720,13 @@ describe('students', () => {
     expect(current.res.body.gradeLevelId).toBe(y9.id);
     // Only the grade changed, and updatedAt still moved.
     expect(current.res.body.updatedAt).not.toBe(current.before.updatedAt);
-    expect((await lastAudit())[0]).toMatchObject({
-      action: 'student.updated',
-      before: { grade: { academicYearId: thisYear.id, gradeLevelId: null } },
-      after: { grade: { academicYearId: thisYear.id, gradeLevelId: y9.id } },
-    });
+    expect((await lastAudit())[0]).toEqual(
+      expect.objectContaining({
+        action: 'student.updated',
+        before: { grade: { academicYearId: thisYear.id, gradeLevelId: null } },
+        after: { grade: { academicYearId: thisYear.id, gradeLevelId: y9.id } },
+      }),
+    );
 
     await patch({ gradeLevelId: y9.id, academicYearId: last.id });
     // A second grade for the same year replaces the first.

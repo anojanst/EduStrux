@@ -86,7 +86,7 @@ A Cloudflare Worker can only bind to D1 databases declared in its config ahead o
 So the plan is:
 - One shared D1 database. Every table except `users` has `org_id`, and every index starts with `org_id`.
 - `org_id` scoping is enforced in **one place**: org middleware plus a repository layer that is the only code allowed to touch D1. Every repository function takes `orgId`.
-- **Capacity:** at roughly 8 MB per centre per year, the 10 GB D1 limit holds about 1,000 centres for a year. That's far beyond the ~30-centre target, at no extra cost. A local test of 1,000 centres over a year came to 10.2 GB, 4.6 GB of it audit log; updates storing only the fields that changed is decided to cut that (D-113). The Workers Paid plan includes 5 GB storage, 25B row reads and 50M row writes per month. The account is on Workers Free today: 5 GB stored in total, 5M rows read and 100,000 written a day, and past a limit queries fail rather than bill (D-115).
+- **Capacity:** at roughly 8 MB per centre per year, the 10 GB D1 limit holds about 1,000 centres for a year. That's far beyond the ~30-centre target, at no extra cost. A local test of 1,000 centres over a year came to 10.2 GB, 4.6 GB of it audit log; updates now store only the fields that changed, to cut that (D-113, D-125). The Workers Paid plan includes 5 GB storage, 25B row reads and 50M row writes per month. The account is on Workers Free today: 5 GB stored in total, 5M rows read and 100,000 written a day, and past a limit queries fail rather than bill (D-115).
 - **Growth path:** if needed later (near 5–10 GB, write contention, or per-region data), move to **Durable Objects with SQLite per org** or to Postgres. Keeping all data access behind the org-scoped repository layer keeps that migration contained.
 - **Region:** one shared D1 database lives in one region. The launch region is **Oceania** (`oc` location hint), near the first NZ/AU centres. Writes from other regions are slower, which is acceptable for admin work; D1 read replicas can serve reads closer to users later. A per-region database is needed only when a customer requires data residency (the v1.1 "choose data region" feature) (D-024).
 
@@ -138,7 +138,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 4. **Permission check:** each route declares one permission (e.g. `billing:write`). The membership's role and branch scope decide.
 5. **Validation:** shared Zod schemas parse the body and query.
 6. **Module service** applies the business rules (pricing, make-up policy, clashes).
-7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045). Marking a session's attendance gets one row for the request, listing the students whose status changed, not one per student (D-075). An invoice run gets one row for the run, with the counts and the total, not one per invoice (D-094). An update's row is to store only the fields that changed, in `before` and `after`; decided, not built yet, so today it stores the whole row (D-113).
+7. **Repository layer** is the only D1 access. It always adds `org_id = ?`. Writes run as one D1 batch together with an audit-log row. A write that adds or removes many sessions gets one audit row with the counts, not one per session (D-045). Marking a session's attendance gets one row for the request, listing the students whose status changed, not one per student (D-075). An invoice run gets one row for the run, with the counts and the total, not one per invoice (D-094). An update's row stores only the fields that changed, the old values in `before` and the new in `after`; an update that changes nothing still writes its row, with `{}` in both. Issuing and voiding an invoice store only its status fields. Creates and deletes keep the whole row (D-113, D-125).
 8. Slow side effects (emails, bulk invoices, PDF batches) go to a Queue, and the API returns immediately. A single PDF (e.g. `GET /invoices/{id}/pdf`) takes a second or two and is rendered in the request (D-025).
 
 ### Environments and deploy
@@ -489,7 +489,7 @@ Parents sign in through Clerk like staff and hold a `parent` membership (D-021).
 
 ### Platform
 - `GET /jobs/{id}`: only the person who started the job and the owner can see it; anyone else gets 404 (D-018). A finished invoice run's `result` is an `InvoiceRunResult` (D-094)
-- `GET /audit-log`: owner only; every other role gets 403 (D-030)
+- `GET /audit-log`: owner only; every other role gets 403 (D-030). An update's `before` and `after` hold only the fields it changed (D-125)
 - `POST /exports` · `GET /exports/{id}`
 - `POST /files/upload-url` · `GET /files/{id}`
 - `GET /billing/subscription`

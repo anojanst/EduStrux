@@ -2,6 +2,7 @@ import { families, guardians, now, studentGrades, students } from '@edustrux/db'
 import { and, asc, count, eq, gt, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
+  changedFields,
   firstIds,
   idsFrom,
   inIds,
@@ -254,7 +255,12 @@ export async function updateFamily(
         .where(inOrg(ctx, families, eq(families.id, before.id)))
         .returning(),
     ],
-    { action: 'family.updated', entityType: 'family', entityId: before.id, before, after: changes },
+    {
+      action: 'family.updated',
+      entityType: 'family',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
   );
   return (updated as FamilyRow[])[0];
 }
@@ -354,8 +360,7 @@ export async function updateGuardian(
       action: 'guardian.updated',
       entityType: 'guardian',
       entityId: before.id,
-      before,
-      after: changes,
+      ...changedFields(before, changes),
     },
   );
   return (updated as GuardianRow[])[0];
@@ -651,8 +656,10 @@ export async function updateStudent(
       action: 'student.updated',
       entityType: 'student',
       entityId: before.id,
-      before: grade ? { ...before, grade: pair(grade.existing?.gradeLevelId ?? null) } : before,
-      after: grade ? { ...changes, grade: pair(grade.gradeLevelId) } : changes,
+      ...changedFields(
+        grade ? { ...before, grade: pair(grade.existing?.gradeLevelId ?? null) } : before,
+        grade ? { ...changes, grade: pair(grade.gradeLevelId) } : changes,
+      ),
     },
   );
   return (updated as StudentRow[])[0];

@@ -2,7 +2,7 @@ import { academicYears, holidays, now, terms } from '@edustrux/db';
 import { and, asc, count, eq, gt, gte, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
-import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type AcademicYearRow = typeof academicYears.$inferSelect;
 export type NewAcademicYearRow = typeof academicYears.$inferInsert;
@@ -162,8 +162,7 @@ export async function updateAcademicYear(
       action: 'academic_year.updated',
       entityType: 'academic_year',
       entityId: before.id,
-      before,
-      after: changes,
+      ...changedFields(before, changes),
     },
   );
   return (updated as AcademicYearRow[])[0];
@@ -326,7 +325,12 @@ export async function updateTerm(
         .where(inOrg(ctx, terms, eq(terms.id, before.id)))
         .returning(),
     ],
-    { action: 'term.updated', entityType: 'term', entityId: before.id, before, after: changes },
+    {
+      action: 'term.updated',
+      entityType: 'term',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
   );
   return (updated as TermRow[])[0];
 }

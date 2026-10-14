@@ -3,6 +3,7 @@ import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from
 import type { BatchItem } from 'drizzle-orm/batch';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
+  changedFields,
   firstIds,
   idsFrom,
   inIds,
@@ -338,6 +339,7 @@ export async function updateClass(
   },
 ): Promise<ClassRow | undefined> {
   const { from, restaff, plan } = sessionChanges ?? {};
+  const changed = changedFields(before, changes);
   const [, updated] = await writeWithAudit(
     ctx,
     [
@@ -368,10 +370,14 @@ export async function updateClass(
       action: 'class.updated',
       entityType: 'class',
       entityId: before.id,
-      before,
+      before: changed.before,
       after: plan
-        ? { ...changes, sessionsAdded: plan.add.length, sessionsRemoved: plan.removeIds.length }
-        : changes,
+        ? {
+            ...changed.after,
+            sessionsAdded: plan.add.length,
+            sessionsRemoved: plan.removeIds.length,
+          }
+        : changed.after,
     },
   );
   return (updated as ClassRow[])[0];

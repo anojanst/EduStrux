@@ -1007,10 +1007,13 @@ describe('class changes and their sessions', () => {
     // Neither was generated with a room, and neither gets the new one.
     expect(after.find((s) => s.id === started)).toMatchObject({ roomId: null, teacherId: null });
     expect(after.find((s) => s.id === cancelled)).toMatchObject({ roomId: null, teacherId: null });
-    expect((await lastAudit())[0]).toMatchObject({
-      action: 'class.updated',
-      after: { roomId: room2.id, teacherMembershipId: second.id },
-    });
+    expect((await lastAudit())[0]).toEqual(
+      expect.objectContaining({
+        action: 'class.updated',
+        before: { roomId: room.id, teacherMembershipId: first.id },
+        after: { roomId: room2.id, teacherMembershipId: second.id },
+      }),
+    );
   });
 
   it('adds and removes upcoming sessions when the class’s dates change', async () => {

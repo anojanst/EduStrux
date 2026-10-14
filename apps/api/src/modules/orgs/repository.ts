@@ -2,7 +2,7 @@ import { memberships, orgs, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
-import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 import type { OrgRow } from '../../env';
 
 export type { OrgRow };
@@ -88,8 +88,7 @@ export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges
     action: 'org.updated',
     entityType: 'org',
     entityId: ctx.orgId,
-    before,
-    after: changes,
+    ...changedFields(before, changes),
   });
   const row = (updated as OrgRow[])[0];
   if (!row) throw new Error('Org missing after update');

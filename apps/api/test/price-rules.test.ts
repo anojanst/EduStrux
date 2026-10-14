@@ -171,12 +171,9 @@ describe('price rules', () => {
       ['price_rule.updated', res.body.id, owner.userId],
       ['price_rule.created', res.body.id, owner.userId],
     ]);
-    expect(audit[1]!.before).toMatchObject({ priceAmount: 4000, freeTrialLessons: 0 });
-    expect(audit[1]!.after).toEqual({
-      priceAmount: 4500,
-      priceCurrency: 'NZD',
-      freeTrialLessons: 2,
-    });
+    // Only what changed: the currency was sent as it was (D-113).
+    expect(audit[1]!.before).toEqual({ priceAmount: 4000, freeTrialLessons: 0 });
+    expect(audit[1]!.after).toEqual({ priceAmount: 4500, freeTrialLessons: 2 });
     expect(audit[2]!.after).toMatchObject({ basis: 'per_lesson', priceAmount: 4000 });
   });
 

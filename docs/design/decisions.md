@@ -3453,3 +3453,44 @@ under "Not changed here" for a reach that is a subquery.
   - Assumption: recorded from the implementation; the owner hasn't stated the three choices
     above.
 - **Tasks:** TUI-104.
+
+## D-125 · 2026-10-14 · How an update's audit row keeps only the changed fields
+
+- **Context:** The owner decided an update's audit row stores only the fields that changed
+  (D-113). TUI-103 builds it, and settled the details the owner didn't state.
+- **Decision:**
+  - Until now an update stored the whole previous row in `before` and the fields it sent in
+    `after`. Now both hold only the fields whose value changes: the old value in `before`, the
+    new one in `after`.
+  - A field sent with the value it already has is left out. Values are compared by their JSON. A
+    field the row doesn't have counts as `null`.
+  - It applies to all 15 `*.updated` actions, and to `invoice.issued` and `invoice.voided`. Those
+    two are status updates to the invoice, so they store `{ status, issuedAt }` and
+    `{ status, voidedAt }` before and after.
+  - A student's grade for the year is kept in its own table and shows as a `grade` field
+    (`{ academicYearId, gradeLevelId }`) on `student.updated`, as before. It is left out when it
+    doesn't change.
+  - Unchanged:
+    - `class.schedule_set`, `grade_level.reordered` and `attendance.marked` already stored only
+      what they change (D-075).
+    - `class.updated` still adds `sessionsAdded` and `sessionsRemoved` to `after`.
+    - Creates and deletes keep the whole row (D-113).
+  - Chosen by Claude while building it, not stated by the owner:
+    - An update whose fields all equal the stored values still writes the row (`updatedAt`
+      moves) and its audit row, with `{}` in both `before` and `after`. Every write keeps its
+      audit row, and the API answers as before. An empty patch was already skipped by each
+      service and writes nothing.
+    - Money is two columns, compared separately. A price whose amount changes but whose currency
+      doesn't stores only the amount. The currency is still on the row and in the create's audit
+      row.
+- **Consequences:**
+  - An update's row no longer holds the rest of the record. Its create row and the update rows
+    after it give the full history.
+  - Rows written before this change keep the whole previous row in `before`. Nothing rewrites
+    them.
+  - A JSON column whose keys only change order counts as changed, and is stored.
+  - No migration: `audit_log.before` and `after` stay JSON.
+  - How much of the 4.6 GB it saves still isn't measured. Archiving old rows to R2 stays deferred
+    (D-113, TUI-79).
+  - Assumption: recorded from the implementation; the owner hasn't stated the two choices above.
+- **Tasks:** TUI-103 (and TUI-79).

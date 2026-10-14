@@ -26,6 +26,7 @@ import {
 } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
+  changedFields,
   firstIds,
   idsFrom,
   inIds,
@@ -194,8 +195,7 @@ export async function updateTaxRate(
       action: 'tax_rate.updated',
       entityType: 'tax_rate',
       entityId: before.id,
-      before,
-      after: changes,
+      ...changedFields(before, changes),
     },
   );
   // The update is the last statement of the batch.
@@ -333,8 +333,7 @@ export async function updatePriceRule(
       action: 'price_rule.updated',
       entityType: 'price_rule',
       entityId: before.id,
-      before,
-      after: changes,
+      ...changedFields(before, changes),
     },
   );
   return (updated as PriceRuleRow[])[0];
@@ -633,8 +632,7 @@ export async function updateInvoice(
       action: 'invoice.updated',
       entityType: 'invoice',
       entityId: before.id,
-      before,
-      after: changes,
+      ...changedFields(before, changes),
     },
   );
   return (updated as InvoiceRow[])[0];
@@ -659,7 +657,12 @@ export async function issueInvoice(
         .where(inOrg(ctx, invoices, eq(invoices.id, before.id), eq(invoices.status, 'draft')))
         .returning(),
     ],
-    { action: 'invoice.issued', entityType: 'invoice', entityId: before.id, before, after },
+    {
+      action: 'invoice.issued',
+      entityType: 'invoice',
+      entityId: before.id,
+      ...changedFields(before, after),
+    },
   );
   return (issued as InvoiceRow[])[0];
 }
@@ -703,7 +706,12 @@ export async function voidInvoice(
         .set({ voidedAt: after.voidedAt })
         .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, voidedNow))),
     ],
-    { action: 'invoice.voided', entityType: 'invoice', entityId: before.id, before, after },
+    {
+      action: 'invoice.voided',
+      entityType: 'invoice',
+      entityId: before.id,
+      ...changedFields(before, after),
+    },
   );
   return (voided as InvoiceRow[])[0];
 }
