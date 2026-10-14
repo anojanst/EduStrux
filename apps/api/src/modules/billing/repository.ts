@@ -1,7 +1,6 @@
 import { invoiceLines, invoices, now, priceRules, taxRates } from '@edustrux/db';
 import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
 import {
-  and,
   asc,
   count,
   desc,
@@ -138,23 +137,40 @@ const clearDefault = (ctx: OrgCtx) =>
     .set({ isDefault: false })
     .where(inOrg(ctx, taxRates, eq(taxRates.isDefault, true)));
 
-export async function insertTaxRate(ctx: OrgCtx, rate: NewTaxRateRow & { id: string }) {
-  await writeWithAudit(
+/** Returns the tax rate as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertTaxRate(
+  ctx: OrgCtx,
+  rate: NewTaxRateRow & { id: string },
+): Promise<TaxRateRow> {
+  const results = await writeWithAudit(
     ctx,
-    [...(rate.isDefault ? [clearDefault(ctx)] : []), ctx.db.insert(taxRates).values(rate)],
+    [
+      ...(rate.isDefault ? [clearDefault(ctx)] : []),
+      ctx.db.insert(taxRates).values(rate).returning(),
+    ],
     { action: 'tax_rate.created', entityType: 'tax_rate', entityId: rate.id, after: rate },
   );
+  // The insert is the last statement of the batch.
+  const row = (results.at(-1) as TaxRateRow[])[0];
+  if (!row) throw new Error('Tax rate missing after insert');
+  return row;
 }
 
-export async function updateTaxRate(ctx: OrgCtx, before: TaxRateRow, changes: TaxRateChanges) {
-  await writeWithAudit(
+/** Returns the tax rate as updated, from the same batch. undefined if it was just deleted. */
+export async function updateTaxRate(
+  ctx: OrgCtx,
+  before: TaxRateRow,
+  changes: TaxRateChanges,
+): Promise<TaxRateRow | undefined> {
+  const results = await writeWithAudit(
     ctx,
     [
       ...(changes.isDefault && !before.isDefault ? [clearDefault(ctx)] : []),
       ctx.db
         .update(taxRates)
         .set(changes)
-        .where(inOrg(ctx, taxRates, eq(taxRates.id, before.id))),
+        .where(inOrg(ctx, taxRates, eq(taxRates.id, before.id)))
+        .returning(),
     ],
     {
       action: 'tax_rate.updated',
@@ -164,6 +180,8 @@ export async function updateTaxRate(ctx: OrgCtx, before: TaxRateRow, changes: Ta
       after: changes,
     },
   );
+  // The update is the last statement of the batch.
+  return (results.at(-1) as TaxRateRow[])[0];
 }
 
 export async function softDeleteTaxRate(ctx: OrgCtx, before: TaxRateRow) {
@@ -263,27 +281,35 @@ export async function priceRuleTaken(ctx: OrgCtx, target: PriceRuleTarget, basis
   return row !== undefined;
 }
 
-export async function insertPriceRule(ctx: OrgCtx, rule: NewPriceRuleRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(priceRules).values(rule)], {
-    action: 'price_rule.created',
-    entityType: 'price_rule',
-    entityId: rule.id,
-    after: rule,
-  });
+/** Returns the rule as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertPriceRule(
+  ctx: OrgCtx,
+  rule: NewPriceRuleRow & { id: string },
+): Promise<PriceRuleRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(priceRules).values(rule).returning()],
+    { action: 'price_rule.created', entityType: 'price_rule', entityId: rule.id, after: rule },
+  );
+  const row = (inserted as PriceRuleRow[])[0];
+  if (!row) throw new Error('Price rule missing after insert');
+  return row;
 }
 
+/** Returns the rule as updated, from the same batch. undefined if it was just deleted. */
 export async function updatePriceRule(
   ctx: OrgCtx,
   before: PriceRuleRow,
   changes: PriceRuleChanges,
-) {
-  await writeWithAudit(
+): Promise<PriceRuleRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(priceRules)
         .set(changes)
-        .where(inOrg(ctx, priceRules, eq(priceRules.id, before.id))),
+        .where(inOrg(ctx, priceRules, eq(priceRules.id, before.id)))
+        .returning(),
     ],
     {
       action: 'price_rule.updated',
@@ -293,6 +319,7 @@ export async function updatePriceRule(
       after: changes,
     },
   );
+  return (updated as PriceRuleRow[])[0];
 }
 
 export async function softDeletePriceRule(ctx: OrgCtx, before: PriceRuleRow) {
@@ -530,21 +557,33 @@ export async function insertInvoices(
   );
 }
 
+/** How many invoices a job generated, and what they come to. */
+export function invoicesGeneratedBy(ctx: OrgCtx, jobId: string) {
+  return ctx.db
+    .select({ n: count(), total: sum(invoices.totalAmount).mapWith(Number) })
+    .from(invoices)
+    .where(inOrg(ctx, invoices, eq(invoices.jobId, jobId)))
+    .get();
+}
+
+/**
+ * How many lines are on the invoices a job generated. The lines are reached through those
+ * invoices' ids, so it reads the job's own lines and not every line the org has.
+ */
+export function linesGeneratedBy(ctx: OrgCtx, jobId: string) {
+  const ofJob = idsFrom(ctx, invoices, invoices.id, eq(invoices.jobId, jobId));
+  return ctx.db
+    .select({ n: count() })
+    .from(invoiceLines)
+    .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, ofJob)))
+    .get();
+}
+
 /** What a job has generated, whatever became of the invoices since. */
 export async function generatedBy(ctx: OrgCtx, jobId: string) {
-  const ofJob = inOrg(ctx, invoices, eq(invoices.jobId, jobId));
   const [made, lines] = await Promise.all([
-    ctx.db
-      .select({ n: count(), total: sum(invoices.totalAmount).mapWith(Number) })
-      .from(invoices)
-      .where(ofJob)
-      .get(),
-    ctx.db
-      .select({ n: count() })
-      .from(invoiceLines)
-      .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
-      .where(and(inOrg(ctx, invoiceLines), ofJob))
-      .get(),
+    invoicesGeneratedBy(ctx, jobId),
+    linesGeneratedBy(ctx, jobId),
   ]);
   return { invoices: made?.n ?? 0, lines: lines?.n ?? 0, total: made?.total ?? 0 };
 }

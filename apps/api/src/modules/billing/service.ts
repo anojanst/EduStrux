@@ -70,29 +70,18 @@ export async function listTaxRates(ctx: OrgCtx, limit: number, cursor?: string) 
   return { data: data.map(toTaxRate), nextCursor };
 }
 
-async function findTaxRateOr404(ctx: OrgCtx, id: string) {
-  const row = await repo.findTaxRate(ctx, id);
-  if (!row) throw notFound('Tax rate');
-  return row;
-}
-
-async function getTaxRate(ctx: OrgCtx, id: string): Promise<TaxRate> {
-  return toTaxRate(await findTaxRateOr404(ctx, id));
-}
-
 export async function createTaxRate(ctx: OrgCtx, input: CreateTaxRate): Promise<TaxRate> {
   if (await repo.taxRateNameTaken(ctx, input.name)) throw nameTaken();
 
-  const id = newId('taxRate');
-  await repo.insertTaxRate(ctx, {
-    id,
+  const row = await repo.insertTaxRate(ctx, {
+    id: newId('taxRate'),
     orgId: ctx.orgId,
     name: input.name,
     rateBps: input.rateBps,
     inclusive: input.inclusive,
     isDefault: input.isDefault,
   });
-  return getTaxRate(ctx, id);
+  return toTaxRate(row);
 }
 
 export async function updateTaxRate(
@@ -100,23 +89,29 @@ export async function updateTaxRate(
   id: string,
   input: UpdateTaxRate,
 ): Promise<TaxRate> {
-  const before = await findTaxRateOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt, ...changes } = input;
+  // The name check needs nothing from the rate's row, so both reads go to D1 together.
+  const [before, taken] = await Promise.all([
+    repo.findTaxRate(ctx, id),
+    changes.name !== undefined ? repo.taxRateNameTaken(ctx, changes.name, id) : false,
+  ]);
+  if (!before) throw notFound('Tax rate');
+  if (before.updatedAt !== updatedAt) throw staleData();
   if (Object.keys(changes).length === 0) return toTaxRate(before);
+  if (taken) throw nameTaken();
 
-  if (changes.name !== undefined && (await repo.taxRateNameTaken(ctx, changes.name, id))) {
-    throw nameTaken();
-  }
-
-  await repo.updateTaxRate(ctx, before, changes);
-  return getTaxRate(ctx, id);
+  const updated = await repo.updateTaxRate(ctx, before, changes);
+  if (!updated) throw notFound('Tax rate');
+  return toTaxRate(updated);
 }
 
 /** Refused while a price rule names this rate. Deleting the default leaves the org with none. */
 export async function deleteTaxRate(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findTaxRateOr404(ctx, id);
-  const ruleCount = await repo.countPriceRules(ctx, { taxRateId: id });
+  const [before, ruleCount] = await Promise.all([
+    repo.findTaxRate(ctx, id),
+    repo.countPriceRules(ctx, { taxRateId: id }),
+  ]);
+  if (!before) throw notFound('Tax rate');
   if (ruleCount > 0) {
     throw unprocessable(`${ruleCount} price rule(s) use this tax rate. Change them first.`);
   }
@@ -146,6 +141,7 @@ function reachOf(access: Access): repo.PriceRuleReach {
   return access.scope === 'branch' && access.branchIds ? { branchIds: access.branchIds } : {};
 }
 
+/** One stage: the course and the class a filter names are checked beside the page. */
 export async function listPriceRules(
   ctx: OrgCtx,
   access: Access,
@@ -154,17 +150,15 @@ export async function listPriceRules(
   filter: Pick<repo.PriceRuleFilter, 'classId' | 'courseId'>,
 ) {
   const reach = reachOf(access);
-  if (filter.courseId) await curriculum.getCourse(ctx, filter.courseId);
-  if (filter.classId) await classes.getClass(ctx, access, filter.classId);
-  const rows = await repo.listPriceRules(ctx, limit, decodeCursor(cursor), filter, reach);
+  const [course, klass, rows] = await Promise.all([
+    filter.courseId ? held(curriculum.getCourse(ctx, filter.courseId)) : undefined,
+    filter.classId ? held(classes.getClass(ctx, access, filter.classId)) : undefined,
+    repo.listPriceRules(ctx, limit, decodeCursor(cursor), filter, reach),
+  ]);
+  if (course) orThrow(course);
+  if (klass) orThrow(klass);
   const { data, nextCursor } = toPage(rows, limit);
   return { data: data.map(toPriceRule), nextCursor };
-}
-
-async function findPriceRuleOr404(ctx: OrgCtx, id: string, reach: repo.PriceRuleReach) {
-  const row = await repo.findPriceRule(ctx, id, reach);
-  if (!row) throw notFound('Price rule');
-  return row;
 }
 
 /** The columns a price is stored in. It must be in the org's currency. */
@@ -188,10 +182,19 @@ export async function createPriceRule(
   access: Access,
   input: CreatePriceRule,
 ): Promise<PriceRule> {
-  const reach = reachOf(access);
-  const klass = input.classId != null ? await classes.getClass(ctx, access, input.classId) : null;
-  if (input.courseId != null) await curriculum.getCourse(ctx, input.courseId);
-  if (input.taxRateId != null) await findTaxRateOr404(ctx, input.taxRateId);
+  reachOf(access);
+  // What the rule would price is known from the request, so whether that target already has a
+  // rule is read beside the class, the course and the tax rate it names.
+  const target = { classId: input.classId ?? null, courseId: input.courseId ?? null };
+  const [found, course, taxRate, taken] = await Promise.all([
+    input.classId != null ? held(classes.getClass(ctx, access, input.classId)) : undefined,
+    input.courseId != null ? held(curriculum.getCourse(ctx, input.courseId)) : undefined,
+    input.taxRateId != null ? repo.findTaxRate(ctx, input.taxRateId) : undefined,
+    repo.priceRuleTaken(ctx, target, input.basis),
+  ]);
+  const klass = found ? orThrow(found) : null;
+  if (course) orThrow(course);
+  if (input.taxRateId != null && !taxRate) throw notFound('Tax rate');
   const price = await priceColumns(ctx, input.price);
 
   if (klass && !basisFitsClass(input.basis, klass.termId !== null)) {
@@ -202,14 +205,12 @@ export async function createPriceRule(
       { basis: [klass.termId !== null ? 'The class is in a term' : 'The class has no term'] },
     );
   }
-  const target = { classId: klass?.id ?? null, courseId: input.courseId ?? null };
-  if (await repo.priceRuleTaken(ctx, target, input.basis)) {
-    throw conflict('A price rule already covers these classes.', { _: ['Taken'] });
-  }
+  if (taken) throw conflict('A price rule already covers these classes.', { _: ['Taken'] });
 
-  const id = newId('priceRule');
-  await repo.insertPriceRule(ctx, {
-    id,
+  // The caller reaches the rule they add: a class's rule is in that class's branch, which the
+  // class check above held them to, and every other rule has no branch.
+  const row = await repo.insertPriceRule(ctx, {
+    id: newId('priceRule'),
     orgId: ctx.orgId,
     ...target,
     branchId: klass?.branchId ?? null,
@@ -219,7 +220,7 @@ export async function createPriceRule(
     freeTrialLessons: input.freeTrialLessons,
     taxRateId: input.taxRateId ?? null,
   });
-  return toPriceRule(await findPriceRuleOr404(ctx, id, reach));
+  return toPriceRule(row);
 }
 
 /** A rule keeps what it prices and its basis; the price, pack size, trial and tax can change. */
@@ -230,24 +231,31 @@ export async function updatePriceRule(
   input: UpdatePriceRule,
 ): Promise<PriceRule> {
   const reach = reachOf(access);
-  const before = await findPriceRuleOr404(ctx, id, reach);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
+  const { updatedAt, price, ...rest } = input;
+  const [before, taxRate] = await Promise.all([
+    repo.findPriceRule(ctx, id, reach),
+    rest.taxRateId != null ? repo.findTaxRate(ctx, rest.taxRateId) : undefined,
+  ]);
+  if (!before) throw notFound('Price rule');
+  if (before.updatedAt !== updatedAt) throw staleData();
 
-  const { updatedAt: _ignored, price, ...rest } = input;
   if (rest.packLessons !== undefined && before.basis !== 'pack') {
     throw validationFailed({ packLessons: ['Only a pack has lessons'] });
   }
-  if (rest.taxRateId != null) await findTaxRateOr404(ctx, rest.taxRateId);
+  if (rest.taxRateId != null && !taxRate) throw notFound('Tax rate');
   const changes: repo.PriceRuleChanges = { ...rest };
   if (price !== undefined) Object.assign(changes, await priceColumns(ctx, price));
   if (Object.keys(changes).length === 0) return toPriceRule(before);
 
-  await repo.updatePriceRule(ctx, before, changes);
-  return toPriceRule(await findPriceRuleOr404(ctx, id, reach));
+  const updated = await repo.updatePriceRule(ctx, before, changes);
+  if (!updated) throw notFound('Price rule');
+  return toPriceRule(updated);
 }
 
 export async function deletePriceRule(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  await repo.softDeletePriceRule(ctx, await findPriceRuleOr404(ctx, id, reachOf(access)));
+  const before = await repo.findPriceRule(ctx, id, reachOf(access));
+  if (!before) throw notFound('Price rule');
+  await repo.softDeletePriceRule(ctx, before);
 }
 
 // ── What other modules ask about prices ─────────────────────────────────────
