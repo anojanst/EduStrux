@@ -460,6 +460,56 @@ describe('price rules', () => {
     ]);
     expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404]);
   });
+
+  it('reports the same error as before when several apply', async () => {
+    // The checks are read together now (TUI-97) and judged in the order they always ran in.
+    const { api, addClass, addRule, rules } = await setup();
+    const klass = await addClass();
+    const rule = await addRule({ classId: klass.id, ...PER_LESSON });
+    const usd = { amount: 4000, currency: 'USD' };
+    const error = async (method: string, path: string, body?: unknown) => {
+      const res = await api(method, path, body);
+      return [res.status, res.body.error.message.split('.')[0]];
+    };
+    const post = (body: Record<string, unknown>) => error('POST', '/price-rules', body);
+    const patch = (body: Record<string, unknown>) =>
+      error('PATCH', `/price-rules/${rule.id}`, body);
+
+    // The class, then the course, then the tax rate, then the currency.
+    expect(await post({ ...PER_LESSON, classId: 'cls_nope', taxRateId: 'txr_nope' })).toEqual([
+      404,
+      'Class not found',
+    ]);
+    expect(await post({ ...PER_LESSON, courseId: 'crs_nope', taxRateId: 'txr_nope' })).toEqual([
+      404,
+      'Course not found',
+    ]);
+    expect(await post({ ...PER_LESSON, taxRateId: 'txr_nope', price: usd })).toEqual([
+      404,
+      'Tax rate not found',
+    ]);
+    expect((await post({ classId: klass.id, basis: 'per_month', price: usd }))[0]).toBe(400);
+    // A basis the class isn't billed on, before the rule the class already has.
+    expect((await post({ classId: klass.id, basis: 'per_month', price: nzd(1) }))[0]).toBe(422);
+    expect((await post({ classId: klass.id, basis: 'per_term', price: nzd(1) }))[0]).toBe(409);
+    expect(await error('GET', '/price-rules?courseId=crs_nope&classId=cls_nope')).toEqual([
+      404,
+      'Course not found',
+    ]);
+
+    // A PATCH: the pack size, then the tax rate, then the currency. A stale updatedAt first.
+    const fresh = { updatedAt: rule.updatedAt };
+    expect((await patch({ ...fresh, packLessons: 10, taxRateId: 'txr_nope' }))[0]).toBe(400);
+    expect(await patch({ ...fresh, taxRateId: 'txr_nope', price: usd })).toEqual([
+      404,
+      'Tax rate not found',
+    ]);
+    await api('PATCH', `/price-rules/${rule.id}`, { ...fresh, freeTrialLessons: 1 });
+    expect((await patch({ ...fresh, packLessons: 10, taxRateId: 'txr_nope' }))[0]).toBe(409);
+    expect(await rules()).toEqual([
+      { ...rule, freeTrialLessons: 1, updatedAt: expect.any(String) },
+    ]);
+  });
 });
 
 describe('what a price rule points at', () => {

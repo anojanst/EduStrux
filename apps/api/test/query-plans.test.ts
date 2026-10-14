@@ -926,3 +926,142 @@ describe('enrolments are read in one stage, by queries for what the stage finds 
     expect(plan).not.toMatch(READS_AN_ORG);
   });
 });
+
+describe('an invoice is read with its lines and names by a query for it (TUI-97)', () => {
+  const MEMBER = 'mem_a';
+  const everyone: billing.InvoiceReach = {};
+  const staff = (ctx: OrgCtx): billing.InvoiceReach => ({
+    familyIds: peopleService.familiesInBranches(ctx, IDS),
+  });
+  const parent = (ctx: OrgCtx): billing.InvoiceReach => ({
+    familyIds: peopleService.familiesOfGuardian(ctx, MEMBER),
+    issuedOnly: true,
+  });
+  const one = (ctx: OrgCtx, reach = everyone) => billing.invoiceWithin(ctx, 'inv_a', reach);
+  const parentsFamilies: Reached = [
+    ['families', 'id'],
+    ['guardians', 'membership_id'],
+  ];
+
+  // What is looked up, the call that sends it, and every table in it with its column.
+  const lookups: [string, Send, Reached][] = [
+    [
+      'the lines of one invoice',
+      (ctx) => billing.listLines(ctx, one(ctx)),
+      [
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the lines of one invoice, for a parent',
+      (ctx) => billing.listLines(ctx, one(ctx, parent(ctx))),
+      [['invoice_lines', 'invoice_id'], ['invoices', 'id'], ...parentsFamilies],
+    ],
+    [
+      'the family of one invoice',
+      (ctx) => people.familyLabels(ctx, billing.familyOfInvoice(ctx, 'inv_a', everyone)),
+      [
+        ['families', 'id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the students on one invoice',
+      (ctx) => people.studentNames(ctx, billing.studentsOnLines(ctx, one(ctx))),
+      [
+        ['students', 'id'],
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the classes on one invoice',
+      (ctx) => classes.classLabels(ctx, billing.classesOnLines(ctx, one(ctx))),
+      [
+        ['classes', 'id'],
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'id'],
+      ],
+    ],
+    [
+      'the lines on the invoices a run made',
+      (ctx) => billing.linesGeneratedBy(ctx, 'job_a'),
+      [
+        ['invoice_lines', 'invoice_id'],
+        ['invoices', 'job_id'],
+      ],
+    ],
+    // A parent's page is read from their families. A filter only narrows it: with a status it
+    // read every invoice the org has with that status.
+    [
+      'GET /invoices?status, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { status: 'issued' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+    [
+      'GET /invoices?termId, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, 'id_a', { termId: 'trm_a' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+    [
+      'GET /invoices?month, for a parent',
+      (ctx) => billing.listInvoices(ctx, 50, undefined, { month: '2026-11' }, parent(ctx)),
+      [['invoices', 'family_id'], ...parentsFamilies],
+    ],
+  ];
+
+  it.each(lookups)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  // What a page shows of other tables is read from the page: the first rows along the page's
+  // own index, for staff of some branches too. The table, its column, and the call.
+  const page = (ctx: OrgCtx, reach: billing.InvoiceReach) =>
+    billing.invoicesOnPage(ctx, 50, undefined, {}, reach);
+  const onAPage: [string, string, string, Send][] = [
+    [
+      'the lines on a page',
+      'invoice_lines',
+      'invoice_id',
+      (ctx) => billing.listLines(ctx, page(ctx, everyone)),
+    ],
+    [
+      'the lines on a page, for staff of some branches',
+      'invoice_lines',
+      'invoice_id',
+      (ctx) => billing.listLines(ctx, page(ctx, staff(ctx))),
+    ],
+    [
+      'the families on a page, for staff of some branches',
+      'families',
+      'id',
+      (ctx) => people.familyLabels(ctx, billing.familiesOnPage(ctx, 50, undefined, {}, staff(ctx))),
+    ],
+    [
+      'the students on a page, for staff of some branches',
+      'students',
+      'id',
+      (ctx) => people.studentNames(ctx, billing.studentsOnLines(ctx, page(ctx, staff(ctx)))),
+    ],
+    [
+      'the classes on a page',
+      'classes',
+      'id',
+      (ctx) => classes.classLabels(ctx, billing.classesOnLines(ctx, page(ctx, everyone))),
+    ],
+  ];
+
+  it.each(onAPage)('%s', async (_what, table, column, send) => {
+    const plan = await planOf(send);
+    expect(plan).toMatch(searchBy(table, column));
+    expect(plan).toMatch(searchIn('invoices', 'invoices_org_id_uq'));
+    expect(plan).not.toMatch(
+      /^SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\? AND branch_id=\?/m,
+    );
+    // The lines are sorted by enrolment for the answer. Nothing else is: the page is in order.
+    if (table !== 'invoice_lines') expect(plan).not.toContain(SORT);
+  });
+});
