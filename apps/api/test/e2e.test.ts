@@ -273,6 +273,28 @@ describe('end to end', () => {
     expect((await asParent('GET', '/invoices')).body.data).toEqual([paid]);
     expect((await asParent('GET', '/payments')).body.data).toEqual([payment]);
 
+    // ── The parent portal shows them the same: their children, the term's lessons and the
+    // invoice, its lines without the price rule that priced them (D-126).
+    const children = (await asParent('GET', '/portal/children')).body.data as {
+      firstName: string;
+      enrolments: Row[];
+    }[];
+    expect(children.map((c) => [c.firstName, c.enrolments.map((e) => e.id)])).toEqual([
+      ['Aroha', [enrolments[0]!.id]],
+      ['Kai', [enrolments[1]!.id]],
+    ]);
+    const timetable = (
+      await asParent('GET', `/portal/sessions?from=${firstMonday}&to=${lastDay}&limit=50`)
+    ).body.data as (Row & { children: { firstName: string }[] })[];
+    expect(timetable.map((session) => session.id)).toEqual(lessons.map((l) => l.id));
+    for (const session of timetable) {
+      expect(session.children.map((c) => c.firstName)).toEqual(['Aroha', 'Kai']);
+    }
+    const lines = paid.lines as Record<string, unknown>[];
+    expect((await asParent('GET', '/portal/invoices')).body.data).toEqual([
+      { ...paid, lines: lines.map(({ priceSource: _s, priceRuleId: _r, ...line }) => line) },
+    ]);
+
     // ── Every write along the way left an audit row, under the person who made it.
     const name = { [owner.userId]: 'owner', [teacher.userId]: 'teacher' };
     const audit = (await api('GET', '/audit-log?limit=100')).body.data as {

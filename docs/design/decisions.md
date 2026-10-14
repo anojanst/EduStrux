@@ -3494,3 +3494,54 @@ under "Not changed here" for a reach that is a subquery.
     (D-113, TUI-79).
   - Assumption: recorded from the implementation; the owner hasn't stated the two choices above.
 - **Tasks:** TUI-103 (and TUI-79).
+
+## D-126 · 2026-10-15 · The parent portal
+
+- **Context:** TUI-39 builds the first three parent portal endpoints in handoff §9: children,
+  timetable and invoices. The handoff listed only their paths. During the build the owner was
+  asked whether parents see a student's notes.
+- **Decision:**
+  - The routes, under a new Parent portal tag:
+    - `GET /portal/children`: every student of the families the parent is a signed-in guardian
+      of (a parent can be a guardian in more than one family), in name order. Each child carries
+      `familyId`, `familyName`, `branchId` (the family's home branch), `firstName`, `lastName`,
+      `dateOfBirth`, `gradeLevelId` and `enrolments`: their active enrolments, oldest first, as
+      `GET /enrolments` returns them, with `priceOverride` (D-110). Not paged: the whole list as
+      `{ data, nextCursor: null }`, as grade levels are (D-035).
+    - `GET /portal/sessions` (`from` and `to` required, both included; filter `?studentId`):
+      only the sessions a child's active enrolment covers, on the dates it covers.
+      `GET /sessions` gives a parent every session of their children's classes (D-060). Each
+      session is the Session plus `children` (`[{ id, firstName, lastName }]`): which of the
+      parent's children it is for. Cancelled sessions are included. `?studentId` gives one
+      child's; any other student is 404. Paged and ordered as `GET /sessions`: date, start time,
+      then id.
+    - `GET /portal/invoices` (filters `?familyId`, `?status`): the parent rule on
+      `GET /invoices` (D-096). Issued invoices only: a draft isn't listed. A voided one stays, as
+      void. Each carries `paid` and `balance` (D-119). Newest first. The lines leave out
+      `priceSource` and `priceRuleId`, as D-096 suggested. A `familyId` outside the parent's
+      families is 404.
+  - Every portal route is for the parent role alone. The owner and every staff role get 403.
+    Each route also needs the permission the parent already reads that data with, at `own`
+    scope: `people:read`, `classes:read` and `billing:read`. No new permission.
+  - The portal owns no tables. It reads through the people, enrolment, classes and billing
+    modules with the parent's own reach, so it never shows more than those modules' routes
+    already allow.
+  - A student's `notes` ("anything staff should know about the student") are for staff. Parents
+    don't see them. The owner decided this on 2026-10-15, asked during the build, and picked
+    "Hide from parents (Recommended)". The portal leaves them out. Teachers and every other role
+    keep seeing them.
+  - Database trips (D-102, D-104): each endpoint is sign-in and one read stage. Its reads find
+    the parent's children and families by a query. The test suite holds each to 2 stages, and
+    `apps/api/test/query-plans.test.ts` pins the new reads.
+- **Consequences:**
+  - Today a parent still reads `notes` through `GET /students` and `GET /families`. TUI-105
+    changes those routes.
+  - D-123's last step is done: the end-to-end test now has the parent read their children,
+    their timetable and the paid invoice through the portal.
+  - A staff member who is also a parent can't use the portal under that membership: a
+    membership has one role. More than one role per person is for later.
+  - Not built here: the invoice PDF, absence notices and make-up credits for the portal.
+  - Assumption: recorded from the implementation. The owner hasn't stated that staff get 403,
+    that the timetable is narrowed to the dates each enrolment covers, or that invoice lines
+    leave out `priceSource` and `priceRuleId`. The notes rule is the owner's decision.
+- **Tasks:** TUI-39 (and TUI-105).

@@ -584,6 +584,34 @@ export async function deleteStudent(ctx: OrgCtx, access: Access, id: string): Pr
   await repo.softDeleteStudent(ctx, found.student);
 }
 
+/**
+ * A parent's children as the API returns students, each with their family's name, in name order:
+ * every student of the families they are a signed-in guardian of. One stage: the students, their
+ * families, their grades and the academic years are read together, each by a query for the
+ * families.
+ */
+export async function childrenOfGuardian(ctx: OrgCtx, guardianMembershipId: string) {
+  const reach: repo.Reach = { guardianMembershipId };
+  const familyIds = repo.familiesWithin(ctx, reach);
+  const [families, rows, grades, years] = await Promise.all([
+    repo.familyLabels(ctx, familyIds),
+    repo.studentsOfFamilies(ctx, familyIds, {}),
+    repo.listGrades(ctx, repo.studentIdsOfFamilies(ctx, familyIds, {})),
+    calendar.academicYears(ctx),
+  ]);
+  const familyOf = new Map(families.map((family) => [family.id, family]));
+  // A guardian unlinked between those statements can leave a child without their family: they
+  // are no longer the parent's to see.
+  return rows.flatMap((row) => {
+    const family = familyOf.get(row.familyId);
+    if (!family) return [];
+    const ownGrades = grades.filter((g) => g.studentId === row.id);
+    return [
+      { student: toStudent(row, family.branchId, ownGrades, years), familyName: family.name },
+    ];
+  });
+}
+
 // ── Who a caller reaches, for other modules to filter by ─────────────────────
 // Each is a query for ids, written into the statement it filters: no database trip (D-104).
 

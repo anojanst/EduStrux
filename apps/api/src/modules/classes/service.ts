@@ -584,14 +584,17 @@ export async function listSessions(
   access: Access,
   limit: number,
   cursor: string | undefined,
-  query: Omit<repo.SessionFilter, 'enrolled'> & { studentId?: string },
+  query: Omit<repo.SessionFilter, 'enrolled'> & { studentId?: string; enrolledStudents?: Ids },
 ) {
   const reach = reachOf(ctx, access);
-  const { studentId, ...filter } = query;
+  const { studentId, enrolledStudents, ...filter } = query;
   const { timezone } = await orgClock(ctx);
-  // A student's timetable is their classes' sessions, on the dates each enrolment covers. The
-  // enrolments are a query inside the read of the sessions, so that read doesn't wait for them.
-  const enrolled = studentId ? timetableOf(ctx, studentId) : undefined;
+  // A student's timetable is their classes' sessions, on the dates each enrolment covers. Some
+  // students' (a parent's children, D-126) is the sessions any of them is enrolled for, and a
+  // `studentId` among them picks theirs. The enrolments are a query inside the read of the
+  // sessions, so that read doesn't wait for them.
+  const timetableFor = studentId ?? enrolledStudents;
+  const enrolled = timetableFor ? timetableOf(ctx, timetableFor) : undefined;
   const [branch, room, grade, klass, teacher, student, rows] = await Promise.all([
     hold(filter.branchId ? branches.getBranch(ctx, filter.branchId) : null),
     hold(filter.roomId ? branches.getRoom(ctx, filter.roomId) : null),

@@ -53,6 +53,9 @@ describe('API docs', () => {
         '/api/v1/orgs/{orgId}/invoices/{invoiceId}',
         '/api/v1/orgs/{orgId}/invoices/{invoiceId}/issue',
         '/api/v1/orgs/{orgId}/invoices/{invoiceId}/void',
+        '/api/v1/orgs/{orgId}/portal/children',
+        '/api/v1/orgs/{orgId}/portal/sessions',
+        '/api/v1/orgs/{orgId}/portal/invoices',
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);

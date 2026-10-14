@@ -1,4 +1,4 @@
-import { scopeFor, type Permission } from '@edustrux/shared';
+import { scopeFor, type Permission, type Role } from '@edustrux/shared';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { forbidden } from '../lib/errors';
@@ -20,4 +20,16 @@ export function requirePermission(permission: Permission) {
  */
 export function orgAccess(permission: Permission) {
   return [requireOrgMember, requirePermission(permission)];
+}
+
+/**
+ * `orgAccess` for a route only one role uses, such as the parent portal: every other role gets
+ * 403, whatever its permissions (D-126). It reads nothing more.
+ */
+export function roleAccess(role: Role, permission: Permission) {
+  const onlyRole = createMiddleware<AppEnv>(async (c, next) => {
+    if (c.var.membership.role !== role) throw forbidden();
+    await next();
+  });
+  return [...orgAccess(permission), onlyRole];
 }

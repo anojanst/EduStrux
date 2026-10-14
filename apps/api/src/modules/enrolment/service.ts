@@ -237,6 +237,19 @@ export async function createEnrolment(
 // ── What other modules ask about enrolments ─────────────────────────────────
 
 /** How many enrolments a class or a student has. Neither can be deleted while it has any. */
+/**
+ * The active enrolments of these students, oldest first, with their names and classes. One
+ * stage: the names and the classes are read by queries for the same students.
+ */
+export async function activeEnrolmentsOf(ctx: OrgCtx, studentIds: Ids): Promise<Enrolment[]> {
+  const [rows, names, labels] = await Promise.all([
+    repo.activeOf(ctx, studentIds),
+    people.studentNames(ctx, studentIds),
+    classes.classLabels(ctx, repo.activeClasses(ctx, studentIds)),
+  ]);
+  return withNames(ctx, rows, names, labels);
+}
+
 export function countEnrolments(ctx: OrgCtx, filter: repo.EnrolmentFilter) {
   return repo.countEnrolments(ctx, filter);
 }
