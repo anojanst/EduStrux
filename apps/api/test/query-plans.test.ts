@@ -17,6 +17,7 @@ import { lessonLengths } from '../src/modules/curriculum/for-classes';
 import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as people from '../src/modules/people/repository';
 import * as peopleService from '../src/modules/people/service';
+import { classDatesOf } from '../src/modules/classes/for-enrolment';
 import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
 
 // D1 counts and bills the rows a statement reads, and production has no table statistics to
@@ -777,5 +778,107 @@ describe('price rules are read through their org (D-101)', () => {
     expect(plan).toMatch(searchBy('price_rules', 'org_id'));
     expect(plan).not.toMatch(/^SCAN price_rules/m);
     expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('enrolments are read in one stage, by queries for what the stage finds (TUI-94)', () => {
+  const MEMBER = 'mem_a';
+  type Page = [
+    after: string | undefined,
+    enrolment.EnrolmentFilter,
+    (ctx: OrgCtx) => enrolment.Reach,
+  ];
+  const everyone = () => ({});
+  const staff = (ctx: OrgCtx) => ({
+    classIds: classesService.classesInBranches(ctx, IDS),
+    studentIds: peopleService.studentsInBranches(ctx, IDS),
+  });
+  /** The names of the students, or the labels of the classes, on a page: read by a query for it. */
+  const names =
+    ([after, filter, reach]: Page): Send =>
+    (ctx) =>
+      people.studentNames(ctx, enrolment.onPage(ctx, 'studentId', 50, after, filter, reach(ctx)));
+  const labels =
+    ([after, filter, reach]: Page): Send =>
+    (ctx) =>
+      classes.classLabels(ctx, enrolment.onPage(ctx, 'classId', 50, after, filter, reach(ctx)));
+
+  // What a page shows, the table it is in, the index the page is read along, and the call.
+  const shown: [string, string, string, Send][] = [
+    [
+      'the students on a page',
+      'students',
+      'enrolments_org_id_uq',
+      names([undefined, {}, everyone]),
+    ],
+    [
+      'the classes on a later page',
+      'classes',
+      'enrolments_org_id_uq',
+      labels(['id_a', {}, everyone]),
+    ],
+    [
+      'the students in one class',
+      'students',
+      'enrolments_org_class_idx',
+      names([undefined, { classId: 'cls_a' }, everyone]),
+    ],
+    [
+      'the classes of one student',
+      'classes',
+      'enrolments_org_student_idx',
+      labels(['id_a', { studentId: 'stu_a' }, everyone]),
+    ],
+    [
+      'the students on a page, for staff of some branches',
+      'students',
+      'enrolments_org_id_uq',
+      names([undefined, {}, staff]),
+    ],
+    [
+      'the classes of one student, for staff of some branches',
+      'classes',
+      'enrolments_org_student_idx',
+      labels([undefined, { studentId: 'stu_a' }, staff]),
+    ],
+  ];
+
+  it.each(shown)(
+    '%s are read by id, from the page in its own order',
+    async (_what, table, index, send) => {
+      const plan = await planOf(send);
+      expect(plan).toMatch(searchBy(table, 'id'));
+      expect(plan).toMatch(searchIn('enrolments', index));
+      expect(plan).not.toContain(SORT);
+    },
+  );
+
+  it('reads them from a teacher’s classes and a parent’s children, as it reads the page', async () => {
+    const taught = (ctx: OrgCtx) => ({ classIds: classesService.classesTaughtBy(ctx, MEMBER) });
+    const children = (ctx: OrgCtx) => ({
+      studentIds: peopleService.studentsOfGuardian(ctx, MEMBER),
+    });
+
+    const forTeacher = await planOf(names([undefined, {}, taught]));
+    expect(forTeacher).toMatch(searchBy('students', 'id'));
+    expect(forTeacher).toMatch(searchBy('enrolments', 'class_id'));
+    expect(forTeacher).not.toMatch(READS_AN_ORG);
+
+    const forParent = await planOf(labels([undefined, {}, children]));
+    expect(forParent).toMatch(searchBy('classes', 'id'));
+    expect(forParent).toMatch(searchBy('enrolments', 'student_id'));
+    expect(forParent).not.toMatch(READS_AN_ORG);
+  });
+
+  it('counts the places taken in a class from the class’s own enrolments', async () => {
+    const plan = await planOf((ctx) => enrolment.placesIn(ctx, 'cls_a', 'stu_a'));
+    expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+  });
+
+  it('finds a class’s term through the class’s id, before the class is read', async () => {
+    const plan = await planOf((ctx) => classDatesOf(ctx, 'cls_a'));
+    expect(plan).toMatch(searchBy('terms', 'id'));
+    expect(plan).toMatch(searchBy('classes', 'id'));
+    expect(plan).not.toMatch(READS_AN_ORG);
   });
 });

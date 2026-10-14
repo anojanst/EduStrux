@@ -391,6 +391,41 @@ describe('enrolments', () => {
     expect((await api('GET', `/enrolments?classId=${open.id}`)).body.data).toHaveLength(4);
   });
 
+  it('reports the first of several problems, in the order it checks them', async () => {
+    const { api, start, end, addClass, newStudent, enrol } = await setup();
+    const klass = await addClass({ capacity: 2 });
+    const [ana, ben] = [await newStudent('Ana'), await newStudent('Ben')];
+    await enrol(ana.id, klass.id);
+    // Ben's enrolment has a last day. He is still enrolled, and the class is full until then.
+    await enrol(ben.id, klass.id, { endDate: addDays(start, 6) });
+    const aud = { priceOverride: { amount: 4000, currency: 'AUD' } };
+    const tooLate = { startDate: addDays(end, 1) };
+    const post = async (body: Record<string, unknown>) => {
+      const res = await api('POST', '/enrolments', {
+        studentId: ana.id,
+        classId: klass.id,
+        ...body,
+      });
+      return [res.status, res.body.error.message];
+    };
+
+    // The student, then the class, then the price, then the dates, then the place.
+    expect(await post({ studentId: 'stu_nope', classId: 'cls_nope', ...aud })).toEqual([
+      404,
+      'Student not found',
+    ]);
+    expect(await post({ classId: 'cls_nope', ...aud })).toEqual([404, 'Class not found']);
+    expect(await post({ ...aud, ...tooLate })).toEqual([400, 'Request validation failed']);
+    expect((await post(tooLate))[0]).toBe(422);
+    // Already enrolled wins over full, whatever last day the enrolment has.
+    for (const student of [ana, ben]) {
+      expect(await post({ studentId: student.id })).toEqual([
+        409,
+        'This student is already enrolled in this class.',
+      ]);
+    }
+  });
+
   it('returns 404 for a student or class the org does not have', async () => {
     const { api, addClass, newStudent } = await setup();
     const klass = await addClass();
