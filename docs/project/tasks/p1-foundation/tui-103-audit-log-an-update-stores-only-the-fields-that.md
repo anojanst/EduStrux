@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-103-audit-changed-fields
-pr:
+pr: 45
 ---
 
 # TUI-103 Audit log: an update stores only the fields that changed
