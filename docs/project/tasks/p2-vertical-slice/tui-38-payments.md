@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /payments
   - DELETE /payments/{id}
 branch: task/tui-38-payments
-pr:
+pr: 41
 ---
 
 # TUI-38 Record payments + allocations
