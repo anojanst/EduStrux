@@ -130,6 +130,11 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   that needs the org calls `orgs.getOrg(ctx)`, which costs no call in a request.
 - **Tests** sign their own Clerk-shaped tokens with a throwaway key, verified through the same
   code path as production. See `apps/api/test/helpers.ts`.
+- **End-to-end tests** go in `apps/api/test/e2e.test.ts`: one flow through the API, each step
+  using what the steps before it made. A step that needs a later moment fakes only `Date`
+  (`vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true })` and `vi.setSystemTime`),
+  which the API sees too, as tests run in the same Workers isolate. Sign a token per request so
+  it doesn't expire after the jump, and restore the clock in `afterEach` (D-123).
 
 ## Branches and pull requests
 
