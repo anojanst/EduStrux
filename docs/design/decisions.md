@@ -2418,6 +2418,111 @@ is the only deployed environment).
 - **Tasks:** TUI-90 (and TUI-89, TUI-94 to TUI-98, which use the counts; TUI-47, TUI-72 and
   TUI-86 for the header).
 
+## D-100 · 2026-10-13 · A lookup by a list of ids goes to the ids
+
+- **Context:** An audit took the query plan of every statement the test suite sends (TUI-91).
+  A query for rows by a list of ids read every row the org has in the table, then checked the
+  list. `inOrg` wrote `org_id = ?` beside the list from `inIds`, and production has no table
+  statistics. Without them SQLite guesses the org has about 10 rows and the list 25, so it
+  enters the table by the org. D1 counts and bills the rows read.
+- **Decision:**
+  - A lookup is still written `inOrg(ctx, table, inIds(column, ids), …)`. `inOrg` now writes the
+    org to fit the index the lookup should use:
+    - A list of primary keys: `+org_id = ?`. The plus sign stops SQLite choosing an index by the
+      org, which leaves the primary key. The org is still checked on every row.
+    - A list on any other column: `(org_id, column) IN (SELECT ?, value FROM json_each(?))`. The
+      org and the id are matched as a pair, which is what the index on `(org_id, column)` holds.
+      No `org_id = ?` stands alone for SQLite to prefer.
+  - Every statement still filters by org, and the ids are still bound as one JSON value.
+  - It holds with no statistics. Nothing relies on `ANALYZE` or `PRAGMA optimize` being run.
+  - The first id list given straight to `inOrg`, on one of the table's own columns, is the
+    lookup. A second list, or one inside `and()`, `or()` or a subquery, only narrows.
+  - A page limited to a caller's own records by a list of ids is read the same way: from the
+    ids, then sorted. That is a teacher's or a parent's enrolments, a teacher's students, a
+    parent's or a branch's invoices, and the classes of staff limited to some branches. Its cost
+    follows the list, not the centre.
+  - Staff limited to some branches reach enrolments through two lists at once, every class and
+    every student in their branches. Those only narrow the page being read (D-101).
+  - `activeStudentIdsOn` (who is expected at a lesson) no longer asks for `DISTINCT`. A student
+    has at most one active enrolment in a class (D-062), so no id repeats, and `DISTINCT` made
+    SQLite read every enrolment in the org in student order.
+  - Weighed and not chosen:
+    - A join driven from `json_each`. It changes the `FROM` of every lookup, so it can't sit
+      behind `inOrg`, and an id listed twice comes back twice.
+    - `INDEXED BY`. Each query would name its index, drizzle has no builder for it, and a
+      renamed index fails at run time.
+    - `likelihood()`. It only moves SQLite's estimates, so the plan still rests on them.
+- **Consequences:**
+  - Measured on a local D1, in an org of 300 students and 600 enrolments: three students by id
+    went from 304 rows read to 9, the classes of three students from 604 to 15, and who is
+    expected at a lesson from 601 to 31.
+  - `apps/api/test/query-plans.test.ts` takes the plan of each lookup the repositories send and
+    fails when one isn't reached through its ids. A new lookup gets a row there.
+  - Not changed here, and the same kind of miss:
+    - A reach that is a subquery, not a list of ids: a parent's families, found through
+      `guardians`, and a teacher's families, found through `students`. Each still reads the
+      org's families, because `inIds` takes a list only. Both ways of writing the org gave the
+      same plans with a subquery on a table in place of the list, so `inIds` can be widened to
+      take one when the reaches become subqueries (D-102).
+    - Every student in some branches (`studentIds`, for branch staff's enrolments) reads every
+      student in the org.
+    - An invoice run's count of the lines it made reads every invoice line in the org.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-91 (and TUI-89, TUI-94, TUI-95, TUI-97).
+
+## D-101 · 2026-10-13 · Indexes for lists paged by id and for price rules
+
+- **Context:** The same audit (TUI-92, TUI-93). A list ordered by id had no index in that
+  order, so each page read every row the org has in the table and sorted them. `price_rules`
+  had only its two partial unique indexes, which no query could use, so every statement read
+  the whole table, across all centres.
+- **Decision:**
+  - Each table with a list paged by id has a unique index on `(org_id, id)`: `enrolments`,
+    `invoices`, `classes`, `courses`, `branches`, `subjects`, `tax_rates` and `price_rules`. A
+    page with no filter walks it and reads only its own rows.
+  - It is unique, though `id` already is, so SQLite knows a lookup through it finds one row. As
+    a plain index, each joined lookup read one row more.
+  - `(org_id, id)` alone made filtered lists worse. With no statistics SQLite then walks the
+    whole org in id order and checks the filter, instead of reading the filter's rows and
+    sorting them: `GET /enrolments?classId` went from 61 rows read to 207 on a local D1. So an
+    index a list filter uses now ends with `id`, and a filtered page is read in order too:
+    - `enrolments`: `(org_id, class_id, id)` and `(org_id, student_id, id)`.
+    - `invoices`: `(org_id, family_id, id)`, `(org_id, status, id)`, `(org_id, term_id, id)` and
+      `(org_id, month, id)`.
+    - `classes`: `(org_id, branch_id, id)`, `(org_id, teacher_membership_id, id)`,
+      `(org_id, term_id, id)` and a new `(org_id, course_id, id)`. The course filter used the
+      unique name index, which can't hold the order.
+    - `rooms`: `(org_id, branch_id, id)`, for `GET /branches/{branchId}/rooms`, the one other
+      list paged by id that sorted.
+  - Ten of these replace the index of the same name, so they add no write. The new ones add one
+    index write to each new enrolment, invoice, course, branch, subject, tax rate and price
+    rule, and two to each new class.
+  - A filter with no index of its own is checked while the org's rows are walked in id order:
+    `?gradeLevelId` and `?roomId` on classes, both filters on courses, and `?classId`,
+    `?courseId` and `?taxRateId` on price rules. An org has tens of courses and price rules, and
+    those two class filters read every class of the org before as well.
+  - `price_rules` gets `(org_id, id)` and nothing more. The in-use checks behind
+    `DELETE /classes/{classId}`, `/courses/{courseId}` and `/tax-rates/{taxRateId}`, and the
+    check that a target has no rule yet, now read the org's own rules, not the table. So does
+    the invoice run, which reads every rule of the org in id order.
+  - The class name check (D-049) is written as the unique index holds it, with "no term" as an
+    empty string, so it is one lookup in that index. Left as it was, the wider indexes drew it
+    to read a whole branch's or term's classes.
+  - Migration `0013_list_paging_indexes` drops and recreates the ten replaced indexes.
+    `0014_price_rules_org_index` only creates one.
+- **Consequences:**
+  - A page reads about as many rows as it returns, however big the centre is. On a local D1 in
+    an org of 600 enrolments, a page of 10 went from 1,201 rows read to 11, and the same page
+    for one class from 61 to 11.
+  - A page limited by a list of ids is still sorted (D-100).
+  - A new list paged by id needs a unique `(org_id, id)` index, and an index its filter uses
+    must end with `id`. The README's conventions say so.
+  - `apps/api/test/query-plans.test.ts` fails when a list's plan sorts or leaves its index, and
+    when a price-rule statement scans the table.
+  - Each replaced index also holds the row's id now, about 30 bytes an entry.
+  - Assumption: recorded from the implementation; the owner hasn't stated these rules.
+- **Tasks:** TUI-92, TUI-93 (and TUI-94, TUI-96, TUI-97, TUI-98).
+
 ## D-102 · 2026-10-13 · Every endpoint's budget: about 3 database trips in sequence
 
 - **Context:** Each round-trip ticket (TUI-89, TUI-90, TUI-94 to TUI-98) proposed a target for

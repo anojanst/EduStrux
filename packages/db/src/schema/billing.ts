@@ -35,6 +35,9 @@ export const priceRules = sqliteTable(
       sql`(case when ${t.courseId} is null then '' else ${t.courseId} end)`,
     ] as const;
     return [
+      // The only index a query can use: the two below each need their own WHERE repeated. It
+      // keeps a read to the org's own rules, and GET /price-rules pages in its order (D-101).
+      uniqueIndex('price_rules_org_id_uq').on(t.orgId, t.id),
       // One target has at most one rule that fits a class in a term, and at most one that fits
       // a class with no term. A per_lesson or pack rule fits both, so it is in both indexes.
       uniqueIndex('price_rules_org_target_term_uq')
@@ -76,10 +79,13 @@ export const invoices = sqliteTable(
     jobId: text('job_id'),
   },
   (t) => [
-    index('invoices_org_family_idx').on(t.orgId, t.familyId),
-    index('invoices_org_status_idx').on(t.orgId, t.status),
-    index('invoices_org_term_idx').on(t.orgId, t.termId),
-    index('invoices_org_month_idx').on(t.orgId, t.month),
+    // GET /invoices pages in id order, newest first: through the first index, or through the one
+    // for the filter it is given (D-101).
+    uniqueIndex('invoices_org_id_uq').on(t.orgId, t.id),
+    index('invoices_org_family_idx').on(t.orgId, t.familyId, t.id),
+    index('invoices_org_status_idx').on(t.orgId, t.status, t.id),
+    index('invoices_org_term_idx').on(t.orgId, t.termId, t.id),
+    index('invoices_org_month_idx').on(t.orgId, t.month, t.id),
     index('invoices_org_job_idx').on(t.orgId, t.jobId),
   ],
 );

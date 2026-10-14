@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-13 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-14 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -281,7 +281,7 @@ Student logins come later (v1.1+). The super-admin console sits outside org rout
 
 ## 7. Data model (core tables)
 
-All tables except `users` include `org_id`, `created_at`, `updated_at` and `deleted_at`. Indexes lead with `org_id`.
+All tables except `users` include `org_id`, `created_at`, `updated_at` and `deleted_at`. Indexes lead with `org_id`. A table with a list paged by id has a unique index on `(org_id, id)`, and an index one of that list's filters uses ends with `id`, so a page is read in order and never sorted (D-101). A lookup by a list of ids is written so SQLite goes to the ids, which holds with no table statistics (D-100).
 
 | Area | Tables | Key columns |
 |---|---|---|

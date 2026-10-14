@@ -307,11 +307,11 @@ const invoiceFilter = (filter: InvoiceFilter) => [
   filter.status ? eq(invoices.status, filter.status) : undefined,
 ];
 
-const withinInvoiceReach = (reach: InvoiceReach) =>
-  and(
-    reach.familyIds ? inIds(invoices.familyId, reach.familyIds) : undefined,
-    reach.issuedOnly ? isNotNull(invoices.issuedAt) : undefined,
-  );
+/** Spread into `inOrg`, so the families a caller reaches are ids the query goes straight to. */
+const withinInvoiceReach = (reach: InvoiceReach) => [
+  reach.familyIds ? inIds(invoices.familyId, reach.familyIds) : undefined,
+  reach.issuedOnly ? isNotNull(invoices.issuedAt) : undefined,
+];
 
 /** Newest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
 export function listInvoices(
@@ -329,7 +329,7 @@ export function listInvoices(
         ctx,
         invoices,
         ...invoiceFilter(filter),
-        withinInvoiceReach(reach),
+        ...withinInvoiceReach(reach),
         beforeId ? lt(invoices.id, beforeId) : undefined,
       ),
     )
@@ -341,7 +341,7 @@ export function findInvoice(ctx: OrgCtx, id: string, reach: InvoiceReach) {
   return ctx.db
     .select()
     .from(invoices)
-    .where(inOrg(ctx, invoices, eq(invoices.id, id), withinInvoiceReach(reach)))
+    .where(inOrg(ctx, invoices, eq(invoices.id, id), ...withinInvoiceReach(reach)))
     .get();
 }
 

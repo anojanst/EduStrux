@@ -27,9 +27,13 @@ export const classes = sqliteTable(
     endDate: text('end_date'),
   },
   (t) => [
-    index('classes_org_branch_idx').on(t.orgId, t.branchId),
-    index('classes_org_teacher_idx').on(t.orgId, t.teacherMembershipId),
-    index('classes_org_term_idx').on(t.orgId, t.termId),
+    // GET /classes pages in id order: through the first index, or through the one for the filter
+    // it is given (D-101).
+    uniqueIndex('classes_org_id_uq').on(t.orgId, t.id),
+    index('classes_org_branch_idx').on(t.orgId, t.branchId, t.id),
+    index('classes_org_course_idx').on(t.orgId, t.courseId, t.id),
+    index('classes_org_teacher_idx').on(t.orgId, t.teacherMembershipId, t.id),
+    index('classes_org_term_idx').on(t.orgId, t.termId, t.id),
     // A name is unique among a course's classes in the same term and branch, ignoring case and
     // deleted rows. "No term" is indexed as '' (NULLs are distinct in a unique index), written
     // with CASE because drizzle-kit splits an index expression at its commas.
