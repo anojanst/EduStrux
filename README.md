@@ -77,7 +77,10 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 - **Ids.** A list of ids to filter by has the type `Ids` (`apps/api/src/db/scope.ts`): real ids,
   or a query for them that is written into the statement it filters and costs no trip. A
   repository takes `Ids` wherever it takes ids and filters with `inIds(column, ids)`, the same
-  for both. `idsFrom(ctx, table, column, …conditions)` makes a query and puts the org in it.
+  for both. `idsFrom(ctx, table, column, …conditions)` makes a query and puts the org in it. A
+  query's conditions may read a column of the row it filters: the classes an enrolment covers on
+  a session's own date. Such a query only narrows, so give `inOrg` ids it can go to before it
+  (D-108).
 - **Reading across modules.** A repository names only its own module's tables. To filter by
   another module's rows, take a query for ids from its service. To show another module's rows
   beside yours, give its load-by-ids function (`people.studentNames`, `people.familyLabels`,

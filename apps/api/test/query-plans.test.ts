@@ -12,6 +12,9 @@ import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as enrolmentService from '../src/modules/enrolment/service';
+import { termDates } from '../src/modules/calendar/for-classes';
+import { lessonLengths } from '../src/modules/curriculum/for-classes';
+import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as people from '../src/modules/people/repository';
 import * as peopleService from '../src/modules/people/service';
 import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
@@ -243,6 +246,38 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
       'the sessions a parent reaches',
       (ctx) => classes.listSessions(ctx, 50, undefined, WEEK, { classIds: childrensClasses(ctx) }),
       [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
+    ],
+    [
+      'the sessions on a student’s timetable',
+      (ctx) =>
+        classes.listSessions(
+          ctx,
+          50,
+          undefined,
+          { ...WEEK, enrolled: timetableOf(ctx, 'stu_a') },
+          {},
+        ),
+      [
+        ['sessions', 'class_id'],
+        ['enrolments', 'student_id'],
+        ['classes', 'id'],
+      ],
+    ],
+    [
+      'a class’s term, read with the class',
+      (ctx) => termDates(ctx, classes.ofClass(ctx, 'cls_a', 'termId')),
+      [
+        ['terms', 'id'],
+        ['classes', 'id'],
+      ],
+    ],
+    [
+      'a class’s course, read with the class',
+      (ctx) => lessonLengths(ctx, classes.ofClass(ctx, 'cls_a', 'courseId')),
+      [
+        ['courses', 'id'],
+        ['classes', 'id'],
+      ],
     ],
     [
       'the invoices a parent reaches',
@@ -700,6 +735,20 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
     const plan = await planOf((ctx) => classes.classNameTaken(ctx, key));
     expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
     expect(plan).toMatch(searchBy('classes', 'branch_id'));
+  });
+
+  it('checks a rename the same way, finding the class’s own course and term', async () => {
+    const plan = await planOf((ctx) => classes.otherClassHasName(ctx, 'cls_a', 'Monday'));
+    expect(plan).toMatch(searchBy('self', 'id'));
+    expect(plan).toMatch(searchIn('classes', 'classes_org_course_term_branch_name_uq'));
+    expect(plan).toMatch(searchBy('classes', 'branch_id'));
+  });
+
+  it('reads the weekly slots of a page of classes from the page, in one statement', async () => {
+    const page = (ctx: OrgCtx) => classes.classesOnPage(ctx, 50, 'id_a', {}, {});
+    const plan = await planOf((ctx) => classes.listSlots(ctx, page(ctx)));
+    expect(plan).toMatch(searchBy('class_schedules', 'class_id'));
+    expect(plan).toMatch(searchIn('classes', 'classes_org_id_uq'));
   });
 });
 

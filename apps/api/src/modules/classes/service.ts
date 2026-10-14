@@ -24,8 +24,11 @@ import {
 import { byDateTime, decodeCursor, decodeDateTimeCursor, toPage } from '../../lib/pagination';
 import * as billing from '../billing/service';
 import * as branches from '../branches/service';
+import { closedFrom, termDates } from '../calendar/for-classes';
 import * as calendar from '../calendar/service';
+import { lessonLengths } from '../curriculum/for-classes';
 import * as curriculum from '../curriculum/service';
+import { timetableOf } from '../enrolment/for-classes';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
@@ -38,13 +41,39 @@ import {
   type LocalMoment,
 } from './schedule';
 
-const toSlot = (row: repo.SlotRow): ScheduleSlot => ({
-  weekday: row.weekday,
-  startTime: row.startTime,
-  endTime: row.endTime,
+// Every request here reads in one stage (D-102): what it needs goes to D1 together, and the
+// checks run afterwards on what came back. Three things make that possible.
+// - A read that needs something from a class's row gets it as a query, such as "this class's
+//   term", written into its own statement (D-104).
+// - A read of another module that answers 404 by throwing is sent with `hold`, and `take`
+//   reports it later, in the order the checks have always run in. So the same error still wins
+//   when several apply.
+// - A write answers with the row its own statement returned, so nothing is read back.
+
+type Held<T> = { value: T } | { error: unknown };
+
+/** Sends a read now and keeps its answer, or the error it threw, for `take`. */
+async function hold<T>(read: T): Promise<Held<Awaited<T>>> {
+  try {
+    return { value: await read };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/** The answer of a read sent with `hold`. Throws the error if that is what it got. */
+function take<T>(held: Held<T>): T {
+  if ('error' in held) throw held.error;
+  return held.value;
+}
+
+const toSlot = (slot: ScheduleSlot): ScheduleSlot => ({
+  weekday: slot.weekday,
+  startTime: slot.startTime,
+  endTime: slot.endTime,
 });
 
-export function toClass(row: repo.ClassRow, slots: repo.SlotRow[]): Class {
+export function toClass(row: repo.ClassRow, slots: ScheduleSlot[]): Class {
   const { orgId: _org, deletedAt: _deleted, teacherMembershipId, ...klass } = row;
   return { ...klass, teacherId: teacherMembershipId, schedule: slots.map(toSlot) };
 }
@@ -83,13 +112,7 @@ function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
   }
 }
 
-async function findClassOr404(ctx: OrgCtx, id: string, reach: repo.Reach) {
-  const row = await repo.findClass(ctx, id, reach);
-  if (!row) throw notFound('Class');
-  return row;
-}
-
-/** The org's timezone and the local date and time there right now. */
+/** The org's timezone and the local date and time there right now. No trip in a request. */
 async function orgClock(ctx: OrgCtx): Promise<{ now: LocalMoment; timezone: string }> {
   const { timezone } = await orgs.getOrg(ctx);
   const { date, time } = localNow(timezone);
@@ -101,17 +124,15 @@ const nameTaken = () =>
     name: ['Taken'],
   });
 
-/** The room must exist and be in the class's branch. */
-async function checkRoom(ctx: OrgCtx, roomId: string, branchId: string) {
-  const room = await branches.getRoom(ctx, roomId);
+/** The room must be in the class's branch. */
+function checkRoom(room: { branchId: string }, branchId: string) {
   if (room.branchId !== branchId) {
     throw unprocessable("The room isn't in the class's branch.", { roomId: ['In another branch'] });
   }
 }
 
 /** Any active member of staff can teach, whatever their role: a solo tutor is the owner. */
-async function checkTeacher(ctx: OrgCtx, teacherId: string) {
-  const member = await orgs.findMember(ctx, teacherId);
+function checkTeacher(member: Awaited<ReturnType<typeof orgs.findMember>>) {
   if (!member) throw notFound('Teacher');
   if (member.role === 'parent' || member.status !== 'active') {
     throw unprocessable('Only active staff can teach a class.', {
@@ -158,28 +179,25 @@ export async function listClasses(
   cursor: string | undefined,
   filter: repo.ClassFilter,
 ) {
-  if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
-  if (filter.termId) await calendar.getTerm(ctx, filter.termId);
-  if (filter.courseId) await curriculum.getCourse(ctx, filter.courseId);
-  if (filter.gradeLevelId) await curriculum.getGradeLevel(ctx, filter.gradeLevelId);
-  if (filter.teacherId && !(await orgs.findMember(ctx, filter.teacherId))) {
-    throw notFound('Teacher');
-  }
+  const reach = reachOf(ctx, access);
+  const afterId = decodeCursor(cursor);
+  // The page's weekly slots are read by a query for the ids on the page, not by the ids.
+  const [branch, term, course, grade, teacher, rows, slots] = await Promise.all([
+    hold(filter.branchId ? branches.getBranch(ctx, filter.branchId) : null),
+    hold(filter.termId ? calendar.getTerm(ctx, filter.termId) : null),
+    hold(filter.courseId ? curriculum.getCourse(ctx, filter.courseId) : null),
+    hold(filter.gradeLevelId ? curriculum.getGradeLevel(ctx, filter.gradeLevelId) : null),
+    filter.teacherId ? orgs.findMember(ctx, filter.teacherId) : null,
+    repo.listClasses(ctx, limit, afterId, filter, reach),
+    repo.listSlots(ctx, repo.classesOnPage(ctx, limit, afterId, filter, reach)),
+  ]);
+  take(branch);
+  take(term);
+  take(course);
+  take(grade);
+  if (filter.teacherId && !teacher) throw notFound('Teacher');
 
-  const rows = await repo.listClasses(
-    ctx,
-    limit,
-    decodeCursor(cursor),
-    filter,
-    reachOf(ctx, access),
-  );
   const { data, nextCursor } = toPage(rows, limit);
-  const slots = data.length
-    ? await repo.listSlots(
-        ctx,
-        data.map((c) => c.id),
-      )
-    : [];
   return {
     data: data.map((c) =>
       toClass(
@@ -191,9 +209,14 @@ export async function listClasses(
   };
 }
 
+/** One stage: the weekly slots are read by the id asked for, together with the class. */
 export async function getClass(ctx: OrgCtx, access: Access, id: string): Promise<Class> {
-  const row = await findClassOr404(ctx, id, reachOf(ctx, access));
-  return toClass(row, await repo.listSlots(ctx, [id]));
+  const [row, slots] = await Promise.all([
+    repo.findClass(ctx, id, reachOf(ctx, access)),
+    repo.listSlots(ctx, [id]),
+  ]);
+  if (!row) throw notFound('Class');
+  return toClass(row, slots);
 }
 
 // Who a caller reaches, for other modules to filter by. Each is a query for ids, written into
@@ -264,28 +287,36 @@ export function countClasses(
 
 /** Branch staff can only add a class in one of their own branches. */
 export async function createClass(ctx: OrgCtx, access: Access, input: CreateClass): Promise<Class> {
-  const course = await curriculum.getCourse(ctx, input.courseId);
-  const term = input.termId ? await calendar.getTerm(ctx, input.termId) : null;
-  await branches.getBranch(ctx, input.branchId);
-  if (access.scope !== 'all' && access.branchIds && !access.branchIds.includes(input.branchId)) {
-    throw forbidden();
-  }
-  if (input.roomId) await checkRoom(ctx, input.roomId, input.branchId);
-  if (input.teacherId) await checkTeacher(ctx, input.teacherId);
-
-  const dates = { startDate: input.startDate ?? null, endDate: input.endDate ?? null };
-  checkDates(dates, term);
   const key = {
-    courseId: course.id,
-    termId: term?.id ?? null,
+    courseId: input.courseId,
+    termId: input.termId || null,
     branchId: input.branchId,
     name: input.name,
   };
-  if (await repo.classNameTaken(ctx, key)) throw nameTaken();
+  // Nothing here needs another's answer: the name check is on ids the request already gives.
+  const [heldCourse, heldTerm, branch, room, teacher, taken] = await Promise.all([
+    hold(curriculum.getCourse(ctx, input.courseId)),
+    hold(key.termId ? calendar.getTerm(ctx, key.termId) : null),
+    hold(branches.getBranch(ctx, input.branchId)),
+    hold(input.roomId ? branches.getRoom(ctx, input.roomId) : null),
+    input.teacherId ? orgs.findMember(ctx, input.teacherId) : undefined,
+    repo.classNameTaken(ctx, key),
+  ]);
+  const course = take(heldCourse);
+  const term = take(heldTerm);
+  take(branch);
+  if (access.scope !== 'all' && access.branchIds && !access.branchIds.includes(input.branchId)) {
+    throw forbidden();
+  }
+  if (input.roomId) checkRoom(take(room)!, input.branchId);
+  if (input.teacherId) checkTeacher(teacher);
 
-  const id = newId('class');
-  await repo.insertClass(ctx, {
-    id,
+  const dates = { startDate: input.startDate ?? null, endDate: input.endDate ?? null };
+  checkDates(dates, term);
+  if (taken) throw nameTaken();
+
+  const row = await repo.insertClass(ctx, {
+    id: newId('class'),
     orgId: ctx.orgId,
     ...key,
     gradeLevelId: course.gradeLevelId,
@@ -294,7 +325,7 @@ export async function createClass(ctx: OrgCtx, access: Access, input: CreateClas
     capacity: input.capacity ?? null,
     ...dates,
   });
-  return getClass(ctx, access, id);
+  return toClass(row, []);
 }
 
 /**
@@ -307,40 +338,55 @@ export async function updateClass(
   id: string,
   input: UpdateClass,
 ): Promise<Class> {
-  const before = await findClassOr404(ctx, id, reachOf(ctx, access));
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-
-  const { updatedAt: _ignored, teacherId, ...rest } = input;
+  const { updatedAt, teacherId, ...rest } = input;
   const changes: repo.ClassChanges = { ...rest };
   if (teacherId !== undefined) changes.teacherMembershipId = teacherId;
-  if (Object.keys(changes).length === 0) return getClass(ctx, access, id);
+  const { now } = await orgClock(ctx);
+
+  // Dates in the request may move the class's sessions, so what that needs is read now, with
+  // the class. Whether they differ from the stored dates is only known once the class is back.
+  const datesGiven = 'startDate' in changes || 'endDate' in changes;
+  const [before, slots, room, teacher, taken, generation] = await Promise.all([
+    repo.findClass(ctx, id, reachOf(ctx, access)),
+    repo.listSlots(ctx, [id]),
+    hold(changes.roomId ? branches.getRoom(ctx, changes.roomId) : null),
+    changes.teacherMembershipId ? orgs.findMember(ctx, changes.teacherMembershipId) : undefined,
+    changes.name !== undefined ? repo.otherClassHasName(ctx, id, changes.name) : false,
+    datesGiven ? readGeneration(ctx, id, now) : null,
+  ]);
+  if (!before) throw notFound('Class');
+  if (before.updatedAt !== updatedAt) throw staleData();
+  if (Object.keys(changes).length === 0) return toClass(before, slots);
 
   const after = { ...before, ...changes };
-  if (changes.roomId) await checkRoom(ctx, changes.roomId, before.branchId);
-  if (changes.teacherMembershipId) await checkTeacher(ctx, changes.teacherMembershipId);
+  if (changes.roomId) checkRoom(take(room)!, before.branchId);
+  if (changes.teacherMembershipId) checkTeacher(teacher);
   const datesChanged = after.startDate !== before.startDate || after.endDate !== before.endDate;
-  if (datesChanged) {
-    checkDates(after, before.termId ? await calendar.getTerm(ctx, before.termId) : null);
-  }
-  if (changes.name !== undefined && (await repo.classNameTaken(ctx, after, id))) throw nameTaken();
+  // Dates can only differ when the request gave some, so what moving sessions needs was read.
+  const sessionsToPlan = datesChanged ? generation! : null;
+  if (sessionsToPlan) checkDates(after, termOf(before, sessionsToPlan.terms));
+  if (taken) throw nameTaken();
 
   const restaffed =
     after.roomId !== before.roomId || after.teacherMembershipId !== before.teacherMembershipId;
-  if (!datesChanged && !restaffed) {
-    await repo.updateClass(ctx, before, changes);
-    return getClass(ctx, access, id);
-  }
-
-  const { now } = await orgClock(ctx);
-  const slots = datesChanged ? (await repo.listSlots(ctx, [id])).map(toSlot) : [];
-  await repo.updateClass(ctx, before, changes, {
-    from: now,
-    restaff: restaffed
-      ? { roomId: after.roomId, teacherMembershipId: after.teacherMembershipId }
+  const updated = await repo.updateClass(
+    ctx,
+    before,
+    changes,
+    sessionsToPlan || restaffed
+      ? {
+          from: now,
+          restaff: restaffed
+            ? { roomId: after.roomId, teacherMembershipId: after.teacherMembershipId }
+            : undefined,
+          plan: sessionsToPlan
+            ? planSessions(ctx, after, slots.map(toSlot), now, sessionsToPlan).plan
+            : undefined,
+        }
       : undefined,
-    plan: datesChanged ? (await planSessions(ctx, after, slots, now)).plan : undefined,
-  });
-  return getClass(ctx, access, id);
+  );
+  if (!updated) throw notFound('Class');
+  return toClass(updated, slots);
 }
 
 /**
@@ -348,12 +394,16 @@ export async function updateClass(
  * a price rule of its own.
  */
 export async function deleteClass(ctx: OrgCtx, access: Access, id: string): Promise<void> {
-  const before = await findClassOr404(ctx, id, reachOf(ctx, access));
-  const enrolmentCount = await enrolment.countEnrolments(ctx, { classId: id });
+  const [before, enrolmentCount, priceRuleCount] = await Promise.all([
+    repo.findClass(ctx, id, reachOf(ctx, access)),
+    enrolment.countEnrolments(ctx, { classId: id }),
+    billing.countPriceRules(ctx, { classId: id }),
+  ]);
+  if (!before) throw notFound('Class');
   if (enrolmentCount > 0) {
     throw unprocessable(`This class has ${enrolmentCount} enrolment(s), so it can't be deleted.`);
   }
-  if ((await billing.countPriceRules(ctx, { classId: id })) > 0) {
+  if (priceRuleCount > 0) {
     throw unprocessable("Delete this class's price rule first.");
   }
   await repo.softDeleteClass(ctx, before);
@@ -362,16 +412,46 @@ export async function deleteClass(ctx: OrgCtx, access: Access, id: string): Prom
 // ── Schedule and session generation ─────────────────────────────────────────
 
 /**
+ * What working out a class's upcoming sessions reads: the dates of its term, the holidays that
+ * close its branch from today on, and the sessions it has that haven't started.
+ */
+type Generation = {
+  terms: (DateRange & { id: string })[];
+  closed: DateRange[];
+  existing: repo.SessionRow[];
+};
+
+/**
+ * Reads them by the class's id alone, so they go to D1 together with the read of the class. The
+ * class's term and branch are queries inside the calendar's statements (D-104).
+ */
+async function readGeneration(ctx: OrgCtx, classId: string, now: LocalMoment): Promise<Generation> {
+  const [terms, closed, existing] = await Promise.all([
+    termDates(ctx, repo.ofClass(ctx, classId, 'termId')),
+    closedFrom(ctx, repo.ofClass(ctx, classId, 'branchId'), now.date),
+    repo.upcomingSessions(ctx, classId, now),
+  ]);
+  return { terms, closed, existing };
+}
+
+/** The class's term among the terms read for it. A class whose term is gone is 404. */
+function termOf(klass: Pick<repo.ClassRow, 'termId'>, terms: Generation['terms']) {
+  if (!klass.termId) return null;
+  const term = terms.find((t) => t.id === klass.termId);
+  if (!term) throw notFound('Term');
+  return term;
+}
+
+/**
  * The dates to generate sessions for, from today on: the class's term, narrowed by the class's
  * own dates, or the next OPEN_ENDED_HORIZON_DAYS for a class with no term. null = nothing left.
  */
-async function generationRange(ctx: OrgCtx, klass: repo.ClassRow, today: string) {
+function generationRange(klass: repo.ClassRow, term: DateRange | null, today: string) {
   const later = (a: string, b: string | null) => (b !== null && b > a ? b : a);
   const earlier = (a: string, b: string | null) => (b !== null && b < a ? b : a);
   let start: string;
   let end: string;
-  if (klass.termId) {
-    const term = await calendar.getTerm(ctx, klass.termId);
+  if (term) {
     start = later(term.startDate, klass.startDate);
     end = earlier(term.endDate, klass.endDate);
   } else {
@@ -389,21 +469,18 @@ async function generationRange(ctx: OrgCtx, klass: repo.ClassRow, today: string)
  * session that already matches is kept, so saving the same schedule twice changes nothing, and
  * so does anything attached to it. Dates closed by a holiday get no session.
  */
-async function planSessions(
+function planSessions(
   ctx: OrgCtx,
   klass: repo.ClassRow,
   slots: ScheduleSlot[],
   now: LocalMoment,
+  { terms, closed, existing }: Generation,
 ) {
-  const range = await generationRange(ctx, klass, now.date);
-  const closed =
-    range && slots.length
-      ? await calendar.closedRanges(ctx, klass.branchId, range.from, range.to)
-      : [];
+  const range = generationRange(klass, termOf(klass, terms), now.date);
+  // `closed` has every holiday from today on. One past the range closes no date inside it.
   const wanted = range
     ? occurrences(slots, range.from, range.to, closed).filter((lesson) => notStarted(lesson, now))
     : [];
-  const existing = await repo.upcomingSessions(ctx, klass.id, now);
 
   const key = (s: { date: string; startTime: string }) => `${s.date} ${s.startTime}`;
   const current = new Map(existing.map((s) => [key(s), s]));
@@ -447,16 +524,22 @@ export async function setSchedule(
   classId: string,
   input: SetSchedule,
 ): Promise<ScheduleResult> {
-  const klass = await findClassOr404(ctx, classId, reachOf(ctx, access));
-  const course = await curriculum.getCourse(ctx, klass.courseId);
+  const { now } = await orgClock(ctx);
+  const [klass, before, lengths, generation] = await Promise.all([
+    repo.findClass(ctx, classId, reachOf(ctx, access)),
+    repo.listSlots(ctx, [classId]),
+    lessonLengths(ctx, repo.ofClass(ctx, classId, 'courseId')),
+    readGeneration(ctx, classId, now),
+  ]);
+  if (!klass) throw notFound('Class');
+  const course = lengths.find((c) => c.id === klass.courseId);
+  if (!course) throw notFound('Course');
   const resolved = resolveSlots(input.slots, course.durationMinutes);
   if ('errors' in resolved) throw validationFailed(resolved.errors);
   const { slots } = resolved;
 
-  const before = await repo.listSlots(ctx, [classId]);
   const slotsChanged = JSON.stringify(before.map(toSlot)) !== JSON.stringify(slots);
-  const { now } = await orgClock(ctx);
-  const { plan, kept, through } = await planSessions(ctx, klass, slots, now);
+  const { plan, kept, through } = planSessions(ctx, klass, slots, now, generation);
 
   if (slotsChanged || plan.add.length > 0 || plan.removeIds.length > 0) {
     await repo.setSchedule(
@@ -474,8 +557,9 @@ export async function setSchedule(
       plan,
     );
   }
+  // The write leaves the class's own row as it was read, and its slots are now the ones saved.
   return {
-    class: await getClass(ctx, access, classId),
+    class: toClass(klass, slotsChanged ? slots : before),
     sessions: { added: plan.add.length, removed: plan.removeIds.length, kept, through },
   };
 }
@@ -500,32 +584,30 @@ export async function listSessions(
   access: Access,
   limit: number,
   cursor: string | undefined,
-  query: Omit<repo.SessionFilter, 'spans'> & { studentId?: string },
+  query: Omit<repo.SessionFilter, 'enrolled'> & { studentId?: string },
 ) {
   const reach = reachOf(ctx, access);
   const { studentId, ...filter } = query;
-  if (filter.branchId) await branches.getBranch(ctx, filter.branchId);
-  if (filter.roomId) await branches.getRoom(ctx, filter.roomId);
-  if (filter.gradeLevelId) await curriculum.getGradeLevel(ctx, filter.gradeLevelId);
-  if (filter.classId) await findClassOr404(ctx, filter.classId, reach);
-  if (filter.teacherId && !(await orgs.findMember(ctx, filter.teacherId))) {
-    throw notFound('Teacher');
-  }
-  // A student's timetable: their classes' sessions, on the dates each enrolment covers.
-  let spans: repo.EnrolledSpan[] | undefined;
-  if (studentId) {
-    await people.getStudent(ctx, access, studentId);
-    spans = await enrolment.spansOf(ctx, studentId);
-  }
-
   const { timezone } = await orgClock(ctx);
-  const rows = await repo.listSessions(
-    ctx,
-    limit,
-    decodeDateTimeCursor(cursor),
-    { ...filter, spans },
-    reach,
-  );
+  // A student's timetable is their classes' sessions, on the dates each enrolment covers. The
+  // enrolments are a query inside the read of the sessions, so that read doesn't wait for them.
+  const enrolled = studentId ? timetableOf(ctx, studentId) : undefined;
+  const [branch, room, grade, klass, teacher, student, rows] = await Promise.all([
+    hold(filter.branchId ? branches.getBranch(ctx, filter.branchId) : null),
+    hold(filter.roomId ? branches.getRoom(ctx, filter.roomId) : null),
+    hold(filter.gradeLevelId ? curriculum.getGradeLevel(ctx, filter.gradeLevelId) : null),
+    filter.classId ? repo.findClass(ctx, filter.classId, reach) : null,
+    filter.teacherId ? orgs.findMember(ctx, filter.teacherId) : null,
+    hold(studentId ? people.getStudent(ctx, access, studentId) : null),
+    repo.listSessions(ctx, limit, decodeDateTimeCursor(cursor), { ...filter, enrolled }, reach),
+  ]);
+  take(branch);
+  take(room);
+  take(grade);
+  if (filter.classId && !klass) throw notFound('Class');
+  if (filter.teacherId && !teacher) throw notFound('Teacher');
+  take(student);
+
   const { data, nextCursor } = toPage(
     rows.map((row) => ({ ...row, id: row.session.id })),
     limit,
