@@ -2927,3 +2927,62 @@ under "Not changed here" for a reach that is a subquery.
     covers a query for ids that reads a column of the row it filters, and answering a class
     write without reading the class again.
 - **Tasks:** TUI-96 (and TUI-95, which the timetable's third stage waits on).
+
+## D-109 · 2026-10-14 · The attendance write's speed is accepted, and the web app marks optimistically
+
+- **Context:** TUI-89 began with a measurement: marking one student on production took a median
+  of 546 ms, with 11 database trips. The endpoint performance tasks (TUI-89 to TUI-99) cut the
+  trips and the rows read (D-099 to D-105), and D-105 left production unmeasured. On
+  2026-10-14, with them merged and deployed (`main` at `2397cac`), the same test was run again
+  and the owner was given the numbers below.
+- **Decision:** Stated by the owner on 2026-10-14: "363 ms is not a bad number. in frontend we
+  can optimistically update the ui and sync with response to give an seemless feel".
+  - The attendance write's speed on production is accepted as it is.
+  - The web app (P7 UI) marks attendance optimistically: it shows the mark at once, sends the
+    `PUT`, and syncs with the roster the response returns.
+- **Consequences:**
+  - What was measured: the same test each time, 1,000 single-student
+    `PUT /sessions/{sessionId}/attendance` through the API, from NZ via Cloudflare's Auckland
+    edge, with one-off scripts that aren't in the repo. Times are in ms. "Wait on D1" is the
+    median of the `dur` that the `Server-Timing` header reported (D-099).
+
+    | Production run     | At a time | Per second | Median | p95 | p99 | Fastest | Wait on D1 |
+    | ------------------ | --------- | ---------- | ------ | --- | --- | ------- | ---------- |
+    | Before, 2026-10-13 | 8         | 13.9       | 546    | 682 | 777 | 363     | –          |
+    | After, 2026-10-14  | 8         | 33.2       | 227    | 306 | 336 | 144     | 193        |
+    | After, 2026-10-14  | 20        | 51.3       | 363    | 468 | 503 | 138     | 333        |
+    - After the fixes, 8 at a time: the 1,000 marks took 30.1 s, all returned 200 and all read
+      back. The header reported 7 trips, 3 in sequence, which is the budget of D-102. 193 ms
+      over 3 stages is about 64 ms a stage, not the 40 ms a trip that TUI-89 estimated and
+      D-099 repeated.
+    - After the fixes, 20 at a time: the 1,000 marks took 19.5 s. 999 returned 200 and one
+      returned 500 (`internal_error`), and the read-back confirmed that its mark wasn't saved.
+      Its cause isn't known: production hides the error detail, and the Worker's logs weren't
+      checked.
+    - Local (`wrangler dev`): 55.8 requests a second and a 139 ms median before the fixes.
+      After them, 8 at a time: 85.3 a second, a 92 ms median, 7 trips, 3 in sequence.
+
+  - The speed accepted is the 363 ms median at 20 at a time, and 227 ms at 8. No further work
+    to cut it is planned. This keeps to D-102: the write is at its budget of about 3 trips in
+    sequence, and Cloudflare Smart Placement stays "not now".
+  - Why it suits the API as built:
+    - The `PUT` merges (D-071). A mark already in place changes nothing and writes no second
+      audit row, so sending a mark again after a failed or lost response is safe.
+    - The response is the whole roster (D-072, D-105), which the UI can sync against.
+  - Marking optimistically hides latency, not capacity. From 8 to 20 at a time, throughput rose
+    1.5 times and each request got 60% slower (a median of 227 ms to 363 ms), almost all of it
+    waiting on D1 (193 ms to 333 ms). Where throughput levels off wasn't tested.
+  - Left in the production database by the tests: three orgs named "Load test … (safe to
+    delete)", each with 12 students, 6 classes, 84 sessions and about 1,000 attendance rows:
+    - `org_01m4t84ydweta7j49mvxm0zyzk`, made 2026-10-13 09:05 UTC
+    - `org_01m4w9sq340g7jdsv1z87yhym1`, made 2026-10-14 04:12 UTC
+    - `org_01m4w9ytcgx5157w114y9vjhz3`, made 2026-10-14 04:15 UTC
+  - Assumptions: what this asks of the UI, read from the decision, not stated by the owner.
+    - A failed save has to be retried and, if it still fails, shown to the teacher, because a
+      mark shown at once looks saved. One request in 1,000 failed in the run of 20 at a time.
+    - A response's roster is as its own request read it (D-105). With several marks in flight
+      for one session, an answer can lack a mark sent just before or after it, so the UI can't
+      simply replace what it shows with each answer.
+    - Offline attendance stays in v1.1 (handoff §8). A mark shown at once still needs its
+      request to reach the API.
+- **Tasks:** TUI-89 (the measurement); TUI-57 and TUI-40 (the screens that mark attendance).
