@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-104-pr-checks
-pr:
+pr: 43
 ---
 
 # TUI-104 CI: typecheck and tests on pull requests
