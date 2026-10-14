@@ -1,5 +1,6 @@
 import { branches, now, rooms, type Db } from '@edustrux/db';
 import { and, asc, count, eq, gt, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type BranchRow = typeof branches.$inferSelect;
@@ -56,26 +57,39 @@ export function insertBranchStatement(db: Db, branch: NewBranchRow) {
   return db.insert(branches).values(branch);
 }
 
-export async function insertBranch(ctx: OrgCtx, branch: NewBranchRow & { id: string }) {
-  await writeWithAudit(ctx, [insertBranchStatement(ctx.db, branch)], {
-    action: 'branch.created',
-    entityType: 'branch',
-    entityId: branch.id,
-    after: branch,
-  });
+/** Returns the branch as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertBranch(
+  ctx: OrgCtx,
+  branch: NewBranchRow & { id: string },
+): Promise<BranchRow> {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [insertBranchStatement(ctx.db, branch).returning()],
+    { action: 'branch.created', entityType: 'branch', entityId: branch.id, after: branch },
+  );
+  const row = (inserted as BranchRow[])[0];
+  if (!row) throw new Error('Branch missing after insert');
+  return row;
 }
 
-export async function updateBranch(ctx: OrgCtx, before: BranchRow, changes: BranchChanges) {
-  await writeWithAudit(
+/** Returns the branch as updated, from the same batch. undefined if it was just deleted. */
+export async function updateBranch(
+  ctx: OrgCtx,
+  before: BranchRow,
+  changes: BranchChanges,
+): Promise<BranchRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(branches)
         .set(changes)
-        .where(inOrg(ctx, branches, eq(branches.id, before.id))),
+        .where(inOrg(ctx, branches, eq(branches.id, before.id)))
+        .returning(),
     ],
     { action: 'branch.updated', entityType: 'branch', entityId: before.id, before, after: changes },
   );
+  return (updated as BranchRow[])[0];
 }
 
 export async function softDeleteBranch(ctx: OrgCtx, before: BranchRow) {
@@ -122,12 +136,7 @@ export async function countRooms(ctx: OrgCtx, branchId: string) {
 }
 
 /** Case-insensitive, among the branch's rooms that aren't deleted. */
-export async function roomNameTaken(
-  ctx: OrgCtx,
-  branchId: string,
-  name: string,
-  exceptId?: string,
-) {
+export async function roomNameTaken(ctx: OrgCtx, branchId: string, name: string) {
   const row = await ctx.db
     .select({ id: rooms.id })
     .from(rooms)
@@ -136,33 +145,67 @@ export async function roomNameTaken(
         ctx,
         rooms,
         and(eq(rooms.branchId, branchId), sql`lower(${rooms.name}) = lower(${name})`),
-        exceptId ? ne(rooms.id, exceptId) : undefined,
       ),
     )
     .get();
   return row !== undefined;
 }
 
-export async function insertRoom(ctx: OrgCtx, room: NewRoomRow & { id: string }) {
-  await writeWithAudit(ctx, [ctx.db.insert(rooms).values(room)], {
+/**
+ * Whether another room in this room's branch has the name. The branch comes from the room's own
+ * row inside the statement, so this can be sent together with the read of the room.
+ */
+export async function otherRoomHasName(ctx: OrgCtx, id: string, name: string) {
+  const self = alias(rooms, 'self');
+  const row = await ctx.db
+    .select({ id: rooms.id })
+    .from(self)
+    .innerJoin(
+      rooms,
+      inOrg(
+        ctx,
+        rooms,
+        eq(rooms.branchId, self.branchId),
+        sql`lower(${rooms.name}) = lower(${name})`,
+        ne(rooms.id, self.id),
+      ),
+    )
+    .where(inOrg(ctx, self, eq(self.id, id)))
+    .get();
+  return row !== undefined;
+}
+
+/** Returns the room as stored, from the same batch, so the caller doesn't read it back. */
+export async function insertRoom(ctx: OrgCtx, room: NewRoomRow & { id: string }): Promise<RoomRow> {
+  const [, inserted] = await writeWithAudit(ctx, [ctx.db.insert(rooms).values(room).returning()], {
     action: 'room.created',
     entityType: 'room',
     entityId: room.id,
     after: room,
   });
+  const row = (inserted as RoomRow[])[0];
+  if (!row) throw new Error('Room missing after insert');
+  return row;
 }
 
-export async function updateRoom(ctx: OrgCtx, before: RoomRow, changes: RoomChanges) {
-  await writeWithAudit(
+/** Returns the room as updated, from the same batch. undefined if it was just deleted. */
+export async function updateRoom(
+  ctx: OrgCtx,
+  before: RoomRow,
+  changes: RoomChanges,
+): Promise<RoomRow | undefined> {
+  const [, updated] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(rooms)
         .set(changes)
-        .where(inOrg(ctx, rooms, eq(rooms.id, before.id))),
+        .where(inOrg(ctx, rooms, eq(rooms.id, before.id)))
+        .returning(),
     ],
     { action: 'room.updated', entityType: 'room', entityId: before.id, before, after: changes },
   );
+  return (updated as RoomRow[])[0];
 }
 
 export async function softDeleteRoom(ctx: OrgCtx, before: RoomRow) {

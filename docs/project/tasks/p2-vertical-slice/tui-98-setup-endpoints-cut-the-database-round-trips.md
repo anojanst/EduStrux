@@ -1,7 +1,7 @@
 ---
 id: TUI-98
 title: 'Setup endpoints: cut the database round trips'
-status: todo
+status: done
 phase: P2
 module: orgs
 priority: P2
@@ -25,8 +25,8 @@ endpoints:
   - PATCH|DELETE /subjects/{id}
   - GET|POST /terms
   - PATCH|DELETE /terms/{id}
-branch:
-pr:
+branch: task/tui-98-setup-round-trips
+pr: 32
 ---
 
 # TUI-98 Setup endpoints: cut the database round trips
@@ -80,4 +80,66 @@ Three causes are shared and have their own tasks: the two trips of sign-in and m
 every request (TUI-90), lookups by a list of ids that read the whole centre (TUI-91), and list
 pages that read and sort the whole centre (TUI-92). What is listed here is on top of those.
 
-Proposed target, for the owner to confirm: about 200 ms on production, which is roughly 5 trips.
+Target: the owner set the budget in D-102. Every endpoint gets about 3 trips in sequence: sign-in,
+one read stage, one write. Calls in flight together count once, which is the `stages` number
+every response reports (D-099). This replaced the proposal of about 200 ms, roughly 5 trips.
+
+## Result
+
+Every setup endpoint is within the budget: 3 stages for a write, 2 for a read.
+`apps/api/test/setup-trips.test.ts` calls each one once on its heaviest path and holds it to
+these numbers. No response, status code, error order or audit row changed.
+
+Counted on 2026-10-14 in the test suite, with the same request before and after. "Before" is
+`main` after TUI-90, so sign-in is already one trip, not the two the table above counted. Before
+this task every call waited for the one before it, so trips and stages were the same number.
+
+| Endpoint                     | Before | Trips after | Stages after |
+| ---------------------------- | ------ | ----------- | ------------ |
+| `GET /orgs/{id}`             | 1      | 1           | 1            |
+| `PATCH /orgs/{id}`           | 4      | 4           | 3            |
+| `GET /branches`              | 2      | 2           | 2            |
+| `POST /branches`             | 4      | 3           | 3            |
+| `PATCH /branches/{id}`       | 5      | 4           | 3            |
+| `DELETE /branches/{id}`      | 9      | 9           | 3            |
+| `GET /branches/{id}/rooms`   | 3      | 3           | 2            |
+| `POST /branches/{id}/rooms`  | 5      | 4           | 3            |
+| `PATCH /rooms/{id}`          | 5      | 4           | 3            |
+| `DELETE /rooms/{id}`         | 4      | 4           | 3            |
+| `GET /academic-years`        | 2      | 2           | 2            |
+| `POST /academic-years`       | 5      | 4           | 3            |
+| `PATCH /academic-years/{id}` | 7      | 6           | 3            |
+| `GET /terms`                 | 3      | 3           | 2            |
+| `POST /terms`                | 6      | 5           | 3            |
+| `PATCH /terms/{id}`          | 7      | 5           | 3            |
+| `DELETE /terms/{id}`         | 4      | 4           | 3            |
+| `GET /holidays`              | 3      | 3           | 2            |
+| `POST /holidays`             | 5      | 4           | 3            |
+| `DELETE /holidays/{id}`      | 3      | 3           | 3            |
+| `GET /grade-levels`          | 2      | 2           | 2            |
+| `POST /grade-levels`         | 5      | 4           | 3            |
+| `PATCH /grade-levels/{id}`   | 5      | 4           | 3            |
+| `DELETE /grade-levels/{id}`  | 5      | 5           | 3            |
+| `PUT /grade-levels/order`    | 4      | 3           | 3            |
+| `GET /subjects`              | 2      | 2           | 2            |
+| `POST /subjects`             | 4      | 3           | 3            |
+| `PATCH /subjects/{id}`       | 5      | 4           | 3            |
+| `DELETE /subjects/{id}`      | 4      | 4           | 3            |
+| `GET /courses`               | 4      | 4           | 2            |
+| `POST /courses`              | 6      | 5           | 3            |
+| `PATCH /courses/{id}`        | 5      | 4           | 3            |
+| `DELETE /courses/{id}`       | 5      | 5           | 3            |
+
+How:
+
+- A write answers with the row its own statement returned, so nothing is read back.
+- Reads that don't need each other's answer are sent together: the checks before a create, the
+  "is it in use" counts before a delete, the name check and the row for the `updatedAt` check.
+- A check that needs something from the row being changed reads it inside its own statement, by
+  joining that row to the rows it is checked against. That covers a room's branch, a term's year,
+  a course's subject, grade level and unsent label, and the date a `PATCH` of a year or a term
+  doesn't send. So it goes out with the read of the row, not after it.
+- The checks still run in the same order on what came back, so the same error is reported when
+  more than one would refuse.
+
+These are counts from the local test database. Nothing was measured on production.
