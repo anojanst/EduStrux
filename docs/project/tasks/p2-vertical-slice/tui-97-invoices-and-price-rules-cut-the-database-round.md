@@ -18,7 +18,7 @@ endpoints:
   - PATCH|DELETE /tax-rates/{id}
   - POST /terms/{id}/generate-invoices
 branch: task/tui-97-billing-round-trips
-pr:
+pr: 38
 ---
 
 # TUI-97 Invoices and price rules: cut the database round trips
