@@ -11,7 +11,7 @@ endpoints:
   - GET /portal/sessions
   - GET /portal/invoices
 branch: task/tui-39-parent-portal
-pr:
+pr: 46
 ---
 
 # TUI-39 Parent portal: children, timetable, invoices
