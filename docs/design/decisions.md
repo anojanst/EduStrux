@@ -3413,3 +3413,43 @@ under "Not changed here" for a reach that is a subquery.
   - When the parent portal is built (TUI-39), its view joins the test.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-41 (and TUI-38, TUI-39, TUI-42, TUI-72).
+
+## D-124 · 2026-10-14 · How the pull-request checks run
+
+- **Context:** The owner decided typecheck and the tests run on every pull request, not required
+  to merge (D-117). TUI-104 builds it, and settled the details the owner didn't state.
+- **Decision:**
+  - A second workflow, `.github/workflows/pr-checks.yml`, with one job, "Typecheck and test". It
+    installs from the lockfile, then runs `pnpm typecheck` and `pnpm test`.
+  - It runs on `pull_request`, never `pull_request_target`. It has `contents: read`, no secrets,
+    and the checkout keeps no credentials, so a pull request from a fork reaches no token
+    (D-117).
+  - It uses the same pinned actions, Node 24 and pnpm setup as the deploy workflow, and the same
+    15-minute cap.
+  - The deploy workflow is unchanged. It still runs typecheck and the tests after a merge, before
+    the deploy, and keeps the four details the owner confirmed in D-117.
+  - Asked whether the deploy still needs its own checks, the owner picked "Keep both — PR checks
+    warn you before merging; the deploy re-checks exactly what ships and stops a broken build."
+    The pull-request checks don't block a merge, and `main` can move after a pull request's run,
+    so the deploy's run is the one that stops a broken build reaching production. The other
+    options were dropping the checks from the deploy, or making the pull-request check required
+    with branches up to date and then dropping them.
+  - It isn't added to the `main` ruleset (D-117).
+  - Chosen by Claude while building it, not stated by the owner:
+    - A pull request that only changes `docs/`, Markdown files or `.claude/` doesn't run it: the
+      same paths the deploy ignores.
+    - A new push to a pull request cancels the run still going for its older commit.
+    - It runs for pull requests into any branch, so stacked pull requests are checked too.
+- **Consequences:**
+  - A failing run shows on the pull request and doesn't block the merge. The owner sees it and
+    decides.
+  - Skipping docs-only pull requests works only while the check isn't required. A required check
+    that never runs leaves such a pull request waiting. If the owner makes it required, the
+    skipped paths go, or a job that always passes is added for them.
+  - A code change is checked twice: on its pull request, and again after the merge before the
+    deploy. Free while the repository is public; if it is made private, both runs use the plan's
+    Actions minutes (D-065, D-076).
+  - Not verified: the workflow first runs on TUI-104's own pull request.
+  - Assumption: recorded from the implementation; the owner hasn't stated the three choices
+    above.
+- **Tasks:** TUI-104.
