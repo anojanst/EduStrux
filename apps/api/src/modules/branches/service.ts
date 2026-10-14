@@ -50,14 +50,10 @@ export async function listBranches(ctx: OrgCtx, limit: number, cursor?: string) 
   return { data: data.map(toBranch), nextCursor };
 }
 
-async function findBranchOr404(ctx: OrgCtx, id: string) {
+export async function getBranch(ctx: OrgCtx, id: string): Promise<Branch> {
   const row = await repo.findBranch(ctx, id);
   if (!row) throw notFound('Branch');
-  return row;
-}
-
-export async function getBranch(ctx: OrgCtx, id: string): Promise<Branch> {
-  return toBranch(await findBranchOr404(ctx, id));
+  return toBranch(row);
 }
 
 export function countBranches(ctx: OrgCtx) {
@@ -71,28 +67,30 @@ export async function createBranch(ctx: OrgCtx, input: CreateBranch): Promise<Br
   }
   if (await repo.branchNameTaken(ctx, input.name)) throw nameTaken();
 
-  const id = newId('branch');
-  await repo.insertBranch(ctx, {
-    id,
+  const row = await repo.insertBranch(ctx, {
+    id: newId('branch'),
     orgId: ctx.orgId,
     name: input.name,
     address: input.address ?? null,
   });
-  return getBranch(ctx, id);
+  return toBranch(row);
 }
 
 export async function updateBranch(ctx: OrgCtx, id: string, input: UpdateBranch): Promise<Branch> {
-  const before = await findBranchOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt, ...changes } = input;
+  // The name check needs nothing from the branch's row, so both reads go to D1 together.
+  const [before, taken] = await Promise.all([
+    repo.findBranch(ctx, id),
+    changes.name !== undefined ? repo.branchNameTaken(ctx, changes.name, id) : false,
+  ]);
+  if (!before) throw notFound('Branch');
+  if (before.updatedAt !== updatedAt) throw staleData();
   if (Object.keys(changes).length === 0) return toBranch(before);
-  if (changes.name !== undefined && (await repo.branchNameTaken(ctx, changes.name, id))) {
-    throw nameTaken();
-  }
+  if (taken) throw nameTaken();
 
-  await repo.updateBranch(ctx, before, changes);
-  return getBranch(ctx, id);
+  const updated = await repo.updateBranch(ctx, before, changes);
+  if (!updated) throw notFound('Branch');
+  return toBranch(updated);
 }
 
 /**
@@ -101,30 +99,37 @@ export async function updateBranch(ctx: OrgCtx, id: string, input: UpdateBranch)
  * it is, and staff limited to it, must be moved first.
  */
 export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findBranchOr404(ctx, id);
+  // None of these reads needs another's answer, so they go to D1 together. The checks below
+  // still run in the same order, so the same one is reported when several would refuse.
+  const [before, branchCount, roomCount, classCount, familyCount, holidayCount, staffCount] =
+    await Promise.all([
+      repo.findBranch(ctx, id),
+      repo.countBranches(ctx),
+      repo.countRooms(ctx, id),
+      classes.countClasses(ctx, { branchId: id }),
+      people.countFamilies(ctx, id),
+      calendar.countBranchHolidays(ctx, id),
+      orgs.countMembersLimitedToBranch(ctx, id),
+    ]);
+  if (!before) throw notFound('Branch');
 
-  if ((await repo.countBranches(ctx)) <= 1) {
+  if (branchCount <= 1) {
     throw unprocessable('An organisation needs at least one branch.');
   }
-  const roomCount = await repo.countRooms(ctx, id);
   if (roomCount > 0) {
     throw unprocessable(`Delete this branch's ${roomCount} room(s) first.`);
   }
-  const classCount = await classes.countClasses(ctx, { branchId: id });
   if (classCount > 0) {
     throw unprocessable(`Delete this branch's ${classCount} class(es) first.`);
   }
-  const familyCount = await people.countFamilies(ctx, id);
   if (familyCount > 0) {
     throw unprocessable(
       `${familyCount} family(ies) have this as their home branch. Move them to another branch first.`,
     );
   }
-  const holidayCount = await calendar.countBranchHolidays(ctx, id);
   if (holidayCount > 0) {
     throw unprocessable(`Delete this branch's ${holidayCount} holiday(s) first.`);
   }
-  const staffCount = await orgs.countMembersLimitedToBranch(ctx, id);
   if (staffCount > 0) {
     throw unprocessable(
       `${staffCount} staff member(s) are limited to this branch. Change their branches first.`,
@@ -137,58 +142,63 @@ export async function deleteBranch(ctx: OrgCtx, id: string): Promise<void> {
 // ── Rooms ───────────────────────────────────────────────────────────────────
 
 export async function listRooms(ctx: OrgCtx, branchId: string, limit: number, cursor?: string) {
-  await findBranchOr404(ctx, branchId);
-  const rows = await repo.listRooms(ctx, branchId, limit, decodeCursor(cursor));
+  const [branch, rows] = await Promise.all([
+    repo.findBranch(ctx, branchId),
+    repo.listRooms(ctx, branchId, limit, decodeCursor(cursor)),
+  ]);
+  if (!branch) throw notFound('Branch');
   const { data, nextCursor } = toPage(rows, limit);
   return { data: data.map(toRoom), nextCursor };
 }
 
-async function findRoomOr404(ctx: OrgCtx, id: string) {
+export async function getRoom(ctx: OrgCtx, id: string): Promise<Room> {
   const row = await repo.findRoom(ctx, id);
   if (!row) throw notFound('Room');
-  return row;
-}
-
-export async function getRoom(ctx: OrgCtx, id: string): Promise<Room> {
-  return toRoom(await findRoomOr404(ctx, id));
+  return toRoom(row);
 }
 
 export async function createRoom(ctx: OrgCtx, branchId: string, input: CreateRoom): Promise<Room> {
-  await findBranchOr404(ctx, branchId);
-  if (await repo.roomNameTaken(ctx, branchId, input.name)) throw roomNameTaken();
+  const [branch, taken] = await Promise.all([
+    repo.findBranch(ctx, branchId),
+    repo.roomNameTaken(ctx, branchId, input.name),
+  ]);
+  if (!branch) throw notFound('Branch');
+  if (taken) throw roomNameTaken();
 
-  const id = newId('room');
-  await repo.insertRoom(ctx, {
-    id,
+  const row = await repo.insertRoom(ctx, {
+    id: newId('room'),
     orgId: ctx.orgId,
     branchId,
     name: input.name,
     capacity: input.capacity ?? null,
   });
-  return getRoom(ctx, id);
+  return toRoom(row);
 }
 
 export async function updateRoom(ctx: OrgCtx, id: string, input: UpdateRoom): Promise<Room> {
-  const before = await findRoomOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
-
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt, ...changes } = input;
+  // The name check finds the room's branch itself, so it goes to D1 with the read of the room.
+  const [before, taken] = await Promise.all([
+    repo.findRoom(ctx, id),
+    changes.name !== undefined ? repo.otherRoomHasName(ctx, id, changes.name) : false,
+  ]);
+  if (!before) throw notFound('Room');
+  if (before.updatedAt !== updatedAt) throw staleData();
   if (Object.keys(changes).length === 0) return toRoom(before);
-  if (
-    changes.name !== undefined &&
-    (await repo.roomNameTaken(ctx, before.branchId, changes.name, id))
-  ) {
-    throw roomNameTaken();
-  }
+  if (taken) throw roomNameTaken();
 
-  await repo.updateRoom(ctx, before, changes);
-  return getRoom(ctx, id);
+  const updated = await repo.updateRoom(ctx, before, changes);
+  if (!updated) throw notFound('Room');
+  return toRoom(updated);
 }
 
 /** Refused while a class is held in the room. */
 export async function deleteRoom(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findRoomOr404(ctx, id);
-  const classCount = await classes.countClasses(ctx, { roomId: id });
+  const [before, classCount] = await Promise.all([
+    repo.findRoom(ctx, id),
+    classes.countClasses(ctx, { roomId: id }),
+  ]);
+  if (!before) throw notFound('Room');
   if (classCount > 0) {
     throw unprocessable(`${classCount} class(es) use this room. Move them to another room first.`);
   }
