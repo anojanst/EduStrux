@@ -62,32 +62,31 @@ export async function listGradeLevels(ctx: OrgCtx) {
   return { data: rows.map(toGradeLevel), nextCursor: null };
 }
 
-async function findGradeLevelOr404(ctx: OrgCtx, id: string) {
+export async function getGradeLevel(ctx: OrgCtx, id: string): Promise<GradeLevel> {
   const row = await repo.findGradeLevel(ctx, id);
   if (!row) throw notFound('Grade level');
-  return row;
-}
-
-export async function getGradeLevel(ctx: OrgCtx, id: string): Promise<GradeLevel> {
-  return toGradeLevel(await findGradeLevelOr404(ctx, id));
+  return toGradeLevel(row);
 }
 
 /** New grade levels go to the end of the order. */
 export async function createGradeLevel(ctx: OrgCtx, input: CreateGradeLevel): Promise<GradeLevel> {
-  const stats = await repo.gradeLevelStats(ctx);
+  // Neither read needs the other's answer, so they go to D1 together.
+  const [stats, taken] = await Promise.all([
+    repo.gradeLevelStats(ctx),
+    repo.gradeLevelNameTaken(ctx, input.name),
+  ]);
   if (stats.count >= MAX_GRADE_LEVELS) {
     throw unprocessable(`An organisation can have at most ${MAX_GRADE_LEVELS} grade levels.`);
   }
-  if (await repo.gradeLevelNameTaken(ctx, input.name)) throw gradeNameTaken();
+  if (taken) throw gradeNameTaken();
 
-  const id = newId('gradeLevel');
-  await repo.insertGradeLevel(ctx, {
-    id,
+  const row = await repo.insertGradeLevel(ctx, {
+    id: newId('gradeLevel'),
     orgId: ctx.orgId,
     name: input.name,
     sortOrder: stats.lastSortOrder + 1,
   });
-  return getGradeLevel(ctx, id);
+  return toGradeLevel(row);
 }
 
 export async function updateGradeLevel(
@@ -95,23 +94,33 @@ export async function updateGradeLevel(
   id: string,
   input: UpdateGradeLevel,
 ): Promise<GradeLevel> {
-  const before = await findGradeLevelOr404(ctx, id);
+  // The name check needs nothing from the grade level's row, so both reads go to D1 together.
+  const [before, taken] = await Promise.all([
+    repo.findGradeLevel(ctx, id),
+    input.name !== undefined ? repo.gradeLevelNameTaken(ctx, input.name, id) : false,
+  ]);
+  if (!before) throw notFound('Grade level');
   if (before.updatedAt !== input.updatedAt) throw staleData();
   if (input.name === undefined) return toGradeLevel(before);
+  if (taken) throw gradeNameTaken();
 
-  if (await repo.gradeLevelNameTaken(ctx, input.name, id)) throw gradeNameTaken();
-  await repo.updateGradeLevel(ctx, before, input.name);
-  return getGradeLevel(ctx, id);
+  const updated = await repo.updateGradeLevel(ctx, before, input.name);
+  if (!updated) throw notFound('Grade level');
+  return toGradeLevel(updated);
 }
 
 /** Refused while a course is taught at this grade level, or a student has been in it. */
 export async function deleteGradeLevel(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findGradeLevelOr404(ctx, id);
-  const courseCount = await repo.countCourses(ctx, { gradeLevelId: id });
+  // The counts need only the id, so they go to D1 together with the read of the grade level.
+  const [before, courseCount, studentCount] = await Promise.all([
+    repo.findGradeLevel(ctx, id),
+    repo.countCourses(ctx, { gradeLevelId: id }),
+    people.countStudentsInGrade(ctx, id),
+  ]);
+  if (!before) throw notFound('Grade level');
   if (courseCount > 0) {
     throw unprocessable(`Delete this grade level's ${courseCount} course(s) first.`);
   }
-  const studentCount = await people.countStudentsInGrade(ctx, id);
   if (studentCount > 0) {
     throw unprocessable(
       `${studentCount} student grade record(s) use this grade level. Change them first.`,
@@ -134,12 +143,13 @@ export async function reorderGradeLevels(ctx: OrgCtx, ids: string[]) {
     });
   }
 
-  await repo.reorderGradeLevels(
+  // The write returns the rows in the new order, which is the list as it now stands.
+  const rows = await repo.reorderGradeLevels(
     ctx,
     current.map((g) => g.id),
     ids,
   );
-  return listGradeLevels(ctx);
+  return { data: rows.map(toGradeLevel), nextCursor: null };
 }
 
 // ── Subjects ────────────────────────────────────────────────────────────────
@@ -150,22 +160,15 @@ export async function listSubjects(ctx: OrgCtx, limit: number, cursor?: string) 
   return { data: data.map(toSubject), nextCursor };
 }
 
-async function findSubjectOr404(ctx: OrgCtx, id: string) {
-  const row = await repo.findSubject(ctx, id);
-  if (!row) throw notFound('Subject');
-  return row;
-}
-
-async function getSubject(ctx: OrgCtx, id: string): Promise<Subject> {
-  return toSubject(await findSubjectOr404(ctx, id));
-}
-
 export async function createSubject(ctx: OrgCtx, input: CreateSubject): Promise<Subject> {
   if (await repo.subjectNameTaken(ctx, input.name)) throw subjectNameTaken();
 
-  const id = newId('subject');
-  await repo.insertSubject(ctx, { id, orgId: ctx.orgId, name: input.name });
-  return getSubject(ctx, id);
+  const row = await repo.insertSubject(ctx, {
+    id: newId('subject'),
+    orgId: ctx.orgId,
+    name: input.name,
+  });
+  return toSubject(row);
 }
 
 export async function updateSubject(
@@ -173,19 +176,28 @@ export async function updateSubject(
   id: string,
   input: UpdateSubject,
 ): Promise<Subject> {
-  const before = await findSubjectOr404(ctx, id);
+  // The name check needs nothing from the subject's row, so both reads go to D1 together.
+  const [before, taken] = await Promise.all([
+    repo.findSubject(ctx, id),
+    input.name !== undefined ? repo.subjectNameTaken(ctx, input.name, id) : false,
+  ]);
+  if (!before) throw notFound('Subject');
   if (before.updatedAt !== input.updatedAt) throw staleData();
   if (input.name === undefined) return toSubject(before);
+  if (taken) throw subjectNameTaken();
 
-  if (await repo.subjectNameTaken(ctx, input.name, id)) throw subjectNameTaken();
-  await repo.updateSubject(ctx, before, input.name);
-  return getSubject(ctx, id);
+  const updated = await repo.updateSubject(ctx, before, input.name);
+  if (!updated) throw notFound('Subject');
+  return toSubject(updated);
 }
 
 /** Refused while a course teaches this subject. */
 export async function deleteSubject(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findSubjectOr404(ctx, id);
-  const courseCount = await repo.countCourses(ctx, { subjectId: id });
+  const [before, courseCount] = await Promise.all([
+    repo.findSubject(ctx, id),
+    repo.countCourses(ctx, { subjectId: id }),
+  ]);
+  if (!before) throw notFound('Subject');
   if (courseCount > 0) {
     throw unprocessable(`Delete this subject's ${courseCount} course(s) first.`);
   }
@@ -200,21 +212,22 @@ export async function listCourses(
   cursor: string | undefined,
   filter: repo.CourseFilter,
 ) {
-  if (filter.subjectId) await findSubjectOr404(ctx, filter.subjectId);
-  if (filter.gradeLevelId) await findGradeLevelOr404(ctx, filter.gradeLevelId);
-  const rows = await repo.listCourses(ctx, limit, decodeCursor(cursor), filter);
+  // The filter ids are checked alongside the page, in one stage.
+  const [subject, grade, rows] = await Promise.all([
+    filter.subjectId ? repo.findSubject(ctx, filter.subjectId) : undefined,
+    filter.gradeLevelId ? repo.findGradeLevel(ctx, filter.gradeLevelId) : undefined,
+    repo.listCourses(ctx, limit, decodeCursor(cursor), filter),
+  ]);
+  if (filter.subjectId && !subject) throw notFound('Subject');
+  if (filter.gradeLevelId && !grade) throw notFound('Grade level');
   const { data, nextCursor } = toPage(rows, limit);
   return { data: data.map(toCourse), nextCursor };
 }
 
-async function findCourseOr404(ctx: OrgCtx, id: string) {
+export async function getCourse(ctx: OrgCtx, id: string): Promise<Course> {
   const row = await repo.findCourse(ctx, id);
   if (!row) throw notFound('Course');
-  return row;
-}
-
-export async function getCourse(ctx: OrgCtx, id: string): Promise<Course> {
-  return toCourse(await findCourseOr404(ctx, id));
+  return toCourse(row);
 }
 
 /** Each of the given courses' default price, by course id. null = the course has none. */
@@ -240,62 +253,69 @@ async function priceColumns(ctx: OrgCtx, price: CreateCourse['defaultPrice']) {
 }
 
 export async function createCourse(ctx: OrgCtx, input: CreateCourse): Promise<Course> {
-  await findSubjectOr404(ctx, input.subjectId);
-  await findGradeLevelOr404(ctx, input.gradeLevelId);
-  const price = await priceColumns(ctx, input.defaultPrice);
   const key = {
     subjectId: input.subjectId,
     gradeLevelId: input.gradeLevelId,
     curriculum: input.curriculum ?? null,
     teachingMedium: input.teachingMedium ?? null,
   };
-  if (await repo.courseTaken(ctx, key)) throw courseTaken();
+  // The three reads need nothing from each other, so they go to D1 together. The checks still
+  // run in the same order: the subject, the grade level, the price, then the combination.
+  const [subject, grade, taken] = await Promise.all([
+    repo.findSubject(ctx, input.subjectId),
+    repo.findGradeLevel(ctx, input.gradeLevelId),
+    repo.courseTaken(ctx, key),
+  ]);
+  if (!subject) throw notFound('Subject');
+  if (!grade) throw notFound('Grade level');
+  const price = await priceColumns(ctx, input.defaultPrice);
+  if (taken) throw courseTaken();
 
-  const id = newId('course');
-  await repo.insertCourse(ctx, {
-    id,
+  const row = await repo.insertCourse(ctx, {
+    id: newId('course'),
     orgId: ctx.orgId,
     ...key,
     ...price,
     durationMinutes: input.durationMinutes ?? null,
   });
-  return getCourse(ctx, id);
+  return toCourse(row);
 }
 
 /** A course keeps its subject and grade level; everything else can change. */
 export async function updateCourse(ctx: OrgCtx, id: string, input: UpdateCourse): Promise<Course> {
-  const before = await findCourseOr404(ctx, id);
-  if (before.updatedAt !== input.updatedAt) throw staleData();
+  const { updatedAt, defaultPrice, ...rest } = input;
+  const newLabels = rest.curriculum !== undefined || rest.teachingMedium !== undefined;
+  // The check for a course that would now be the same reads this course's subject, grade level
+  // and unsent label itself, so it goes to D1 with the read of the course.
+  const [before, taken] = await Promise.all([
+    repo.findCourse(ctx, id),
+    newLabels ? repo.otherCourseMatches(ctx, id, rest) : false,
+  ]);
+  if (!before) throw notFound('Course');
+  if (before.updatedAt !== updatedAt) throw staleData();
 
-  const { updatedAt: _ignored, defaultPrice, ...rest } = input;
   const changes: repo.CourseChanges = { ...rest };
   if (defaultPrice !== undefined) Object.assign(changes, await priceColumns(ctx, defaultPrice));
   if (Object.keys(changes).length === 0) return toCourse(before);
+  if (taken) throw courseTaken();
 
-  if (rest.curriculum !== undefined || rest.teachingMedium !== undefined) {
-    // null clears the label, so only a missing key keeps the stored one.
-    const key = {
-      subjectId: before.subjectId,
-      gradeLevelId: before.gradeLevelId,
-      curriculum: rest.curriculum !== undefined ? rest.curriculum : before.curriculum,
-      teachingMedium:
-        rest.teachingMedium !== undefined ? rest.teachingMedium : before.teachingMedium,
-    };
-    if (await repo.courseTaken(ctx, key, id)) throw courseTaken();
-  }
-
-  await repo.updateCourse(ctx, before, changes);
-  return getCourse(ctx, id);
+  const updated = await repo.updateCourse(ctx, before, changes);
+  if (!updated) throw notFound('Course');
+  return toCourse(updated);
 }
 
 /** Refused while a class runs this course, or a price rule prices it. */
 export async function deleteCourse(ctx: OrgCtx, id: string): Promise<void> {
-  const before = await findCourseOr404(ctx, id);
-  const classCount = await classes.countClasses(ctx, { courseId: id });
+  // The counts need only the id, so they go to D1 together with the read of the course.
+  const [before, classCount, ruleCount] = await Promise.all([
+    repo.findCourse(ctx, id),
+    classes.countClasses(ctx, { courseId: id }),
+    billing.countPriceRules(ctx, { courseId: id }),
+  ]);
+  if (!before) throw notFound('Course');
   if (classCount > 0) {
     throw unprocessable(`Delete this course's ${classCount} class(es) first.`);
   }
-  const ruleCount = await billing.countPriceRules(ctx, { courseId: id });
   if (ruleCount > 0) {
     throw unprocessable(`Delete this course's ${ruleCount} price rule(s) first.`);
   }
