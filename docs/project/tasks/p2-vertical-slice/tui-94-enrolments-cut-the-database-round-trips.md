@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|POST /enrolments
 branch: task/tui-94-enrolment-round-trips
-pr:
+pr: 37
 ---
 
 # TUI-94 Enrolments: cut the database round trips
