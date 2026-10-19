@@ -1,6 +1,6 @@
 import { sessions } from '@edustrux/db';
-import { eq } from 'drizzle-orm';
-import { idsFrom, type IdQuery, type OrgCtx } from '../../db/scope';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import { idsFrom, inIds, inOrg, type IdQuery, type OrgCtx } from '../../db/scope';
 
 // What attendance asks of classes so that it can read a session and its roster in one stage
 // (TUI-89). It is in a file of its own only because this module's service and repository were
@@ -14,4 +14,13 @@ import { idsFrom, type IdQuery, type OrgCtx } from '../../db/scope';
  */
 export function classOfSession(ctx: OrgCtx, sessionId: string): IdQuery {
   return idsFrom(ctx, sessions, sessions.classId, eq(sessions.id, sessionId));
+}
+
+/**
+ * The date of a session, as a value another statement compares with: no database trip. Like
+ * `classOfSession`, it says nothing about who may see the session. null when there is none.
+ */
+export function dateOfSession(ctx: OrgCtx, sessionId: string): SQL {
+  const found = inOrg(ctx, sessions, inIds(sessions.id, [sessionId]));
+  return sql`(select ${sessions.date} from ${sessions} where ${found})`;
 }

@@ -12,6 +12,7 @@ export * from './schemas/common';
 export * from './schemas/curriculum';
 export * from './schemas/enrolment';
 export * from './schemas/invoices';
+export * from './schemas/learning';
 export * from './schemas/orgs';
 export * from './schemas/payments';
 export * from './schemas/people';

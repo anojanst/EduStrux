@@ -1,5 +1,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { ClassEmergencyContacts, MarkAttendance, SessionAttendance } from '@edustrux/shared';
+import {
+  AbsenceNotice,
+  AbsenceNoticeQuery,
+  ClassEmergencyContacts,
+  CreateAbsenceNotice,
+  MarkAttendance,
+  SessionAttendance,
+  page,
+} from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { orgAccess } from '../../middleware/permission';
@@ -74,6 +82,45 @@ const getEmergencyContactsRoute = createRoute({
   },
 });
 
+// Absence notices reach the students a caller reaches through enrolments: branch staff their
+// branches' classes' students and their branches' students in any class, a teacher the students
+// in their classes, a parent their own children (read here, given through the portal).
+
+const listAbsenceNoticesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/absence-notices',
+  tags: ['Attendance'],
+  summary: 'List absence notices',
+  description:
+    'Oldest first. `from` and `to` keep the notices that overlap those dates (`to` before ' +
+    '`from` is 400), and `studentId` one student’s; a student the caller can’t reach is 404. ' +
+    'A parent gets their own children’s.',
+  middleware: orgAccess('attendance:read'),
+  request: { params: OrgParams, query: AbsenceNoticeQuery },
+  responses: {
+    200: json(page(AbsenceNotice).openapi('AbsenceNoticePage'), 'A page of absence notices'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const createAbsenceNoticeRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/absence-notices',
+  tags: ['Attendance'],
+  summary: 'Record an absence notice',
+  description:
+    'A student is, or was, away from `startDate` to `endDate` (both included; leave `endDate` ' +
+    'out for one day, at most 366 days). The student shows as notified on the roster of every ' +
+    'lesson of theirs in those dates. Nothing is marked: staff still set the status. A student ' +
+    'the caller can’t reach is 404. Parents use `POST /portal/absence-notices`.',
+  middleware: orgAccess('attendance:write'),
+  request: { params: OrgParams, body: jsonBody(CreateAbsenceNotice) },
+  responses: {
+    201: json(AbsenceNotice, 'The new absence notice'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
 export const attendanceRoutes = createRouter()
   .openapi(getAttendanceRoute, async (c) => {
     const { sessionId } = c.req.valid('param');
@@ -89,4 +136,17 @@ export const attendanceRoutes = createRouter()
   .openapi(getEmergencyContactsRoute, async (c) => {
     const { classId } = c.req.valid('param');
     return c.json(await service.emergencyContacts(orgCtx(c), access(c), classId), 200);
+  })
+  .openapi(listAbsenceNoticesRoute, async (c) => {
+    const { limit, cursor, ...filter } = c.req.valid('query');
+    return c.json(
+      await service.listAbsenceNotices(orgCtx(c), access(c), limit, cursor, filter),
+      200,
+    );
+  })
+  .openapi(createAbsenceNoticeRoute, async (c) => {
+    return c.json(
+      await service.createAbsenceNotice(orgCtx(c), access(c), c.req.valid('json'), 'staff'),
+      201,
+    );
   });

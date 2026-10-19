@@ -3,5 +3,6 @@ export * from './billing';
 export * from './classes';
 export * from './core';
 export * from './enrolment';
+export * from './learning';
 export * from './people';
 export * from './setup';
