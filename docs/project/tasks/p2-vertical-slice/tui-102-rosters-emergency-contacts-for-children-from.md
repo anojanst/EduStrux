@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET /classes/{classId}/emergency-contacts
 branch: task/tui-102-cross-branch-emergency-contacts
-pr:
+pr: 48
 ---
 
 # TUI-102 Rosters: emergency contacts for children from another branch
