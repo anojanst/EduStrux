@@ -154,7 +154,9 @@ const createPriceRuleRoute = createRoute({
     'default price, then the org-wide rule; an enrolment’s price override replaces the amount ' +
     'and keeps the basis. `per_term` only fits a class in a term and `per_month` a class with ' +
     'no term (422 on a class that doesn’t fit). A target can’t have two rules that would price ' +
-    'the same class (409). The price must be in the organisation’s currency (400).',
+    'the same class (409). The price must be in the organisation’s currency (400). Only the ' +
+    'owner adds org-wide and course rules; branch managers and front desk add class rules ' +
+    'for their own branches’ classes (403 otherwise).',
   middleware: orgAccess('billing:write'),
   request: { params: OrgParams, body: jsonBody(CreatePriceRule) },
   responses: {
@@ -171,7 +173,7 @@ const updatePriceRuleRoute = createRoute({
   description:
     'A rule keeps what it prices and its basis. `taxRateId: null` goes back to the ' +
     'organisation’s default tax rate. Send the `updatedAt` you last read; a newer one on the ' +
-    'server returns 409.',
+    'server returns 409. Only the owner changes org-wide and course rules (403).',
   middleware: orgAccess('billing:write'),
   request: { params: PriceRuleParams, body: jsonBody(UpdatePriceRule) },
   responses: {
@@ -185,6 +187,7 @@ const deletePriceRuleRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/price-rules/{priceRuleId}',
   tags: ['Billing'],
   summary: 'Delete a price rule',
+  description: 'Only the owner deletes org-wide and course rules (403).',
   middleware: orgAccess('billing:write'),
   request: { params: PriceRuleParams },
   responses: {

@@ -35,7 +35,7 @@ const deleted = { 204: { description: 'Deleted' } };
 // read-only; a teacher the students enrolled in the classes they teach, with those students'
 // families and guardians but not their siblings, read-only. Guardians and students are reached
 // through their family, and anything outside the caller's reach is 404, like something that
-// doesn't exist.
+// doesn't exist. A student's notes are for staff: parents get students without them (D-126).
 
 const listFamiliesRoute = createRoute({
   method: 'get',
@@ -45,7 +45,8 @@ const listFamiliesRoute = createRoute({
   description:
     'In name order, each with its guardians and students. Branch staff see the families of ' +
     'their branches, a parent their own, and a teacher the families of the students in their ' +
-    'classes, showing only those students. A `branchId` the org doesn’t have is 404.',
+    'classes, showing only those students. A `branchId` the org doesn’t have is 404. Parents ' +
+    'get each student without `notes`.',
   middleware: orgAccess('people:read'),
   request: { params: OrgParams, query: FamilyQuery },
   responses: {
@@ -75,6 +76,7 @@ const getFamilyRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/families/{familyId}',
   tags: ['People'],
   summary: 'Get a family',
+  description: 'Parents get each student without `notes`.',
   middleware: orgAccess('people:read'),
   request: { params: FamilyParams },
   responses: {
@@ -170,7 +172,7 @@ const listStudentsRoute = createRoute({
   description:
     'In last name, then first name order. `gradeLevelId` keeps students in that grade level ' +
     'in `academicYearId`, or in the current academic year. A filter id the org doesn’t have ' +
-    'is 404.',
+    'is 404. Parents get each student without `notes`.',
   middleware: orgAccess('people:read'),
   request: { params: OrgParams, query: StudentQuery },
   responses: {
@@ -200,6 +202,7 @@ const getStudentRoute = createRoute({
   path: '/api/v1/orgs/{orgId}/students/{studentId}',
   tags: ['People'],
   summary: 'Get a student',
+  description: 'Parents get the student without `notes`.',
   middleware: orgAccess('people:read'),
   request: { params: StudentParams },
   responses: {

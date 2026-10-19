@@ -572,20 +572,25 @@ describe('org isolation', () => {
 });
 
 describe('permissions', () => {
+  // Branch staff with no branch list write every class's rules, but org-wide and course rules
+  // are the owner's alone (D-111).
   it.each(['branch_manager', 'front_desk'] as Role[])(
-    '%s can add, change and delete price rules',
+    '%s can add, change and delete class rules, but not org-wide or course ones',
     async (role) => {
-      const { member, rules, lastAudit } = await setup();
+      const { course, addClass, addRule, member, rules, lastAudit } = await setup();
+      const klass = await addClass();
+      const orgWide = await addRule();
+      const forCourse = await addRule({ ...PER_LESSON, courseId: course.id });
       const staff = await member(role);
 
-      const created = await staff.as('POST', '/price-rules', PER_LESSON);
+      const created = await staff.as('POST', '/price-rules', { ...PER_LESSON, classId: klass.id });
       expect(created.status).toBe(201);
       const updated = await staff.as('PATCH', `/price-rules/${created.body.id}`, {
         updatedAt: created.body.updatedAt,
         price: nzd(4200),
       });
       expect(updated.status).toBe(200);
-      expect(await rules(staff.as)).toEqual([updated.body]);
+      expect(await rules(staff.as)).toEqual([orgWide, forCourse, updated.body]);
       expect((await staff.as('DELETE', `/price-rules/${created.body.id}`)).status).toBe(204);
 
       // The audit rows name the staff member, not the owner.
@@ -594,6 +599,28 @@ describe('permissions', () => {
         ['price_rule.updated', staff.userId],
         ['price_rule.created', staff.userId],
       ]);
+
+      // They read the org-wide and course rules, but can't add, change or delete them.
+      const refused = await Promise.all([
+        staff.as('POST', '/price-rules', { ...PER_LESSON, basis: 'pack', packLessons: 10 }),
+        staff.as('POST', '/price-rules', {
+          ...PER_LESSON,
+          basis: 'pack',
+          packLessons: 10,
+          courseId: course.id,
+        }),
+        ...[orgWide, forCourse].flatMap((rule) => [
+          staff.as('PATCH', `/price-rules/${rule.id}`, {
+            updatedAt: rule.updatedAt,
+            price: nzd(1),
+          }),
+          staff.as('DELETE', `/price-rules/${rule.id}`),
+        ]),
+      ]);
+      expect(refused.map((r) => r.status)).toEqual(Array(6).fill(403));
+      expect(refused[0]!.body.error.code).toBe('forbidden');
+      expect(await rules()).toEqual([orgWide, forCourse]);
+      expect((await lastAudit())[0]!.action).toBe('price_rule.deleted');
     },
   );
 
@@ -652,25 +679,31 @@ describe('permissions', () => {
     expect(hidden.map((r) => r.status)).toEqual([404, 404, 404]);
     expect(await rules(manager.as)).toEqual([orgWide]);
 
-    // A course's rule and the org-wide one have no branch, so they are theirs to change.
-    const forCourse = await manager.as('POST', '/price-rules', {
-      ...PER_LESSON,
-      courseId: course.id,
-    });
-    expect(forCourse.status).toBe(201);
+    // A course's rule and the org-wide one have no branch: they read them, but only the owner
+    // writes them (D-111). Their own branch's class rules are theirs to write.
+    const forCourse = await addRule({ ...PER_LESSON, courseId: course.id });
+    const ownersOnly = await Promise.all([
+      manager.as('POST', '/price-rules', { ...PER_LESSON, basis: 'pack', packLessons: 10 }),
+      manager.as('PATCH', `/price-rules/${orgWide.id}`, {
+        updatedAt: orgWide.updatedAt,
+        price: nzd(4100),
+      }),
+      manager.as('DELETE', `/price-rules/${forCourse.id}`),
+    ]);
+    expect(ownersOnly.map((r) => r.status)).toEqual([403, 403, 403]);
     const forMain = await manager.as('POST', '/price-rules', {
       ...PER_LESSON,
       classId: mainClass.id,
     });
     expect(forMain.status).toBe(201);
-    const changed = await manager.as('PATCH', `/price-rules/${orgWide.id}`, {
-      updatedAt: orgWide.updatedAt,
+    const changed = await manager.as('PATCH', `/price-rules/${forMain.body.id}`, {
+      updatedAt: forMain.body.updatedAt,
       price: nzd(4100),
     });
     expect(changed.status).toBe(200);
     expect((await rules(manager.as)).map((r) => r.id)).toEqual([
       orgWide.id,
-      forCourse.body.id,
+      forCourse.id,
       forMain.body.id,
     ]);
 
@@ -679,7 +712,7 @@ describe('permissions', () => {
     expect((await rules(albanyDesk.as)).map((r) => r.id)).toEqual([
       orgWide.id,
       forAlbany.id,
-      forCourse.body.id,
+      forCourse.id,
     ]);
     expect(await rules()).toHaveLength(4);
     // A rule can't be added for a class out of reach either, even once it has none.

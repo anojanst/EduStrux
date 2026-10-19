@@ -115,7 +115,11 @@ export const Course = z
     curriculum: z.string().nullable(),
     teachingMedium: z.string().nullable(),
     // A union rather than Money.nullable(): the OpenAPI generator drops "or null" from a $ref.
-    defaultPrice: z.union([Money, z.null()]),
+    // Left out, not null, for the roles that don't see it, since null means no price is set.
+    defaultPrice: z
+      .union([Money, z.null()])
+      .optional()
+      .openapi({ description: 'null = not set. Left out for teachers and parents (D-110).' }),
     durationMinutes: z.number().int().nullable(),
     createdAt: Timestamp,
     updatedAt: Timestamp,

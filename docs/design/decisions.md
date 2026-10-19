@@ -3033,6 +3033,9 @@ under "Not changed here" for a reach that is a subquery.
     Parents keep seeing their own children's prices, which they pay (Claude's wording, in the
     option the owner picked).
 - **Tasks:** TUI-100 (and TUI-30).
+- **Update 2026-10-19 (TUI-100):** Built. Teachers and parents get courses without
+  `defaultPrice`, and teachers get enrolments without `priceOverride`. The field is left out, not
+  sent as null (D-127).
 
 ## D-111 · 2026-10-14 · Price rules: the owner writes org-wide and course rules, branch staff their classes'
 
@@ -3061,6 +3064,9 @@ under "Not changed here" for a reach that is a subquery.
     you set default prices": branch managers and front desk still create and change courses, but
     only the owner sets or changes a course's `defaultPrice`.
 - **Tasks:** TUI-101 (and TUI-36).
+- **Update 2026-10-19 (TUI-101):** Built. Anyone but the owner writing an org-wide or course rule
+  gets 403, branch staff with no branch list too, as assumed above. Only the owner sets or
+  changes a course's `defaultPrice`; others may still send the price it already has (D-127).
 
 ## D-112 · 2026-10-14 · The class's branch sees a cross-branch child's emergency contacts
 
@@ -3545,3 +3551,46 @@ under "Not changed here" for a reach that is a subquery.
     that the timetable is narrowed to the dates each enrolment covers, or that invoice lines
     leave out `priceSource` and `priceRuleId`. The notes rule is the owner's decision.
 - **Tasks:** TUI-39 (and TUI-105).
+- **Update 2026-10-19 (TUI-105):** Built. A parent now gets students without `notes` through
+  `GET /students` and `GET /families` too (D-127).
+
+## D-127 · 2026-10-19 · Hidden fields are left out, and who may send a course's price
+
+- **Context:** TUI-100, TUI-101 and TUI-105 build what the owner decided in D-110, D-111 and
+  D-126. D-110 left to the task whether a hidden field is left out or sent as null. D-111 didn't
+  say whether a non-owner who sends a course's current `defaultPrice` is setting it. The build
+  settled these, and the order of the new refusals.
+- **Decision:**
+  - A field a role doesn't see is left out of the response, not sent as null, so null keeps
+    meaning "not set". `Course.defaultPrice`, `Enrolment.priceOverride` and `Student.notes` are
+    optional in the OpenAPI schemas.
+  - Who loses which field:
+    - `GET /courses`: teachers and parents get no `defaultPrice` (D-110).
+    - `GET /enrolments`: teachers get no `priceOverride` (D-110). Parents keep it, and the
+      portal's children still carry it (D-126).
+    - `GET /students`, `GET /students/{studentId}`, and the students in `GET /families` and
+      `GET /families/{familyId}`: parents get no `notes` (D-126). The portal already left them
+      out.
+  - Responses to writes aren't trimmed: every role that can write these records sees these
+    fields.
+  - A course's default price from anyone but the owner is 403 only when it would change. The
+    price the course already has, or null when it has none, is allowed, so a form that sends
+    every field still saves. A new or cleared price is 403.
+    - `POST /courses`: any price but null is 403. It is checked after the subject and grade level
+      (404) and before the currency (400).
+    - `PATCH /courses/{courseId}`: checked after the 404 and the stale 409, since it compares
+      with the stored price.
+  - Price rules: an org-wide or course rule from anyone but the owner is 403 on `POST`, `PATCH`
+    and `DELETE`. `POST` refuses before anything is read. `PATCH` and `DELETE` refuse after the
+    404 and before the stale 409; a rule's target can't change. Class rules keep the branch
+    check: one outside the caller's branches is 404.
+  - "The owner" is checked as org-wide scope on the route's permission (`classes:write` for
+    courses, `billing:write` for price rules). Only the owner holds it, so branch staff with no
+    branch list are refused too, as D-111 assumed.
+- **Consequences:**
+  - D-110, D-111 and D-126's notes rule are built. No route, table or migration was added.
+  - A client tells a hidden field from an unset one by the key: missing is hidden, null is not
+    set.
+  - Assumption: recorded from the implementation. The owner hasn't stated that hidden fields are
+    left out, that resending the current price is allowed, or the order of the refusals.
+- **Tasks:** TUI-100, TUI-101, TUI-105 (and TUI-30, TUI-36, TUI-39).

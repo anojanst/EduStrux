@@ -870,26 +870,120 @@ describe('permissions', () => {
     expect(res.status).toBe(201);
   });
 
-  it.each(['teacher', 'parent', 'accountant'] as Role[])(
-    '%s can read courses but not change them',
+  // Teachers and parents read courses without the default price; the field is left out rather
+  // than null, which means no price is set (D-110).
+  it.each<[Role, boolean]>([
+    ['teacher', false],
+    ['parent', false],
+    ['accountant', true],
+  ])('%s can read courses but not change them (sees prices: %s)', async (role, seesPrice) => {
+    const { org, base, addCourse, maths, y10 } = await courseSetup();
+    const priced = await addCourse({
+      subjectId: maths.id,
+      gradeLevelId: y10.id,
+      defaultPrice: { amount: 4500, currency: 'NZD' },
+    });
+    const unpriced = await addCourse({
+      subjectId: maths.id,
+      gradeLevelId: y10.id,
+      curriculum: 'Cambridge',
+    });
+    const member = await newUser(role);
+    const token = await addMember(org.id, member.clerkUserId, role);
+    const as = (method: string, path: string, body?: unknown) =>
+      call(method, `${base}${path}`, { token, body });
+
+    const list = await as('GET', '/courses');
+    expect(list.status).toBe(200);
+    if (seesPrice) {
+      expect(list.body.data).toEqual([priced, unpriced]);
+    } else {
+      const { defaultPrice: _a, ...pricedSeen } = priced;
+      const { defaultPrice: _b, ...unpricedSeen } = unpriced;
+      expect(list.body.data).toEqual([pricedSeen, unpricedSeen]);
+      expect(list.body.data.some((c: object) => 'defaultPrice' in c)).toBe(false);
+    }
+
+    const writes = await Promise.all([
+      as('POST', '/courses', { subjectId: maths.id, gradeLevelId: y10.id, curriculum: 'Nope' }),
+      as('PATCH', `/courses/${priced.id}`, { updatedAt: priced.updatedAt, durationMinutes: 45 }),
+      as('DELETE', `/courses/${priced.id}`),
+    ]);
+    expect(writes.map((r) => r.status)).toEqual([403, 403, 403]);
+  });
+
+  // Branch managers and front desk write courses, but a course's default price is the owner's to
+  // set (D-111). They may send the one it already has, as a form that sends every field does.
+  it.each(['branch_manager', 'front_desk'] as Role[])(
+    '%s can’t set or change a course’s default price',
     async (role) => {
-      const { org, base, addCourse, pair } = await courseSetup();
-      const course = await addCourse(pair);
+      const { owner, org, base, api, addCourse, pair, maths, y10 } = await courseSetup();
       const member = await newUser(role);
       const token = await addMember(org.id, member.clerkUserId, role);
       const as = (method: string, path: string, body?: unknown) =>
         call(method, `${base}${path}`, { token, body });
+      const price = { amount: 4500, currency: 'NZD' };
 
-      const list = await as('GET', '/courses');
-      expect(list.status).toBe(200);
-      expect(list.body.data).toEqual([course]);
+      // Adding a course: with a price it's refused and nothing is added; null is no price.
+      const refusedCreate = await as('POST', '/courses', { ...pair, defaultPrice: price });
+      expect(refusedCreate.status).toBe(403);
+      expect(refusedCreate.body.error.code).toBe('forbidden');
+      expect((await api('GET', '/courses')).body.data).toEqual([]);
+      const created = await as('POST', '/courses', { ...pair, defaultPrice: null });
+      expect(created.status).toBe(201);
+      expect(created.body.defaultPrice).toBeNull();
 
-      const writes = await Promise.all([
-        as('POST', '/courses', { ...pair, curriculum: 'Nope' }),
-        as('PATCH', `/courses/${course.id}`, { updatedAt: course.updatedAt, durationMinutes: 45 }),
-        as('DELETE', `/courses/${course.id}`),
+      // Giving it one, before or after the owner has, is refused.
+      const refusedSet = await as('PATCH', `/courses/${created.body.id}`, {
+        updatedAt: created.body.updatedAt,
+        defaultPrice: price,
+      });
+      expect(refusedSet.status).toBe(403);
+      const priced = await addCourse({
+        subjectId: maths.id,
+        gradeLevelId: y10.id,
+        curriculum: 'Cambridge',
+        defaultPrice: price,
+      });
+      const refused = await Promise.all([
+        as('PATCH', `/courses/${priced.id}`, {
+          updatedAt: priced.updatedAt,
+          defaultPrice: { amount: 1, currency: 'NZD' },
+        }),
+        as('PATCH', `/courses/${priced.id}`, { updatedAt: priced.updatedAt, defaultPrice: null }),
       ]);
-      expect(writes.map((r) => r.status)).toEqual([403, 403, 403]);
+      expect(refused.map((r) => r.status)).toEqual([403, 403]);
+
+      // They see the price, and sending the same one back with other changes is fine.
+      const list = (await as('GET', '/courses')).body.data;
+      expect(list.map((c: { defaultPrice: unknown }) => c.defaultPrice)).toEqual([null, price]);
+      const updated = await as('PATCH', `/courses/${priced.id}`, {
+        updatedAt: priced.updatedAt,
+        defaultPrice: price,
+        durationMinutes: 90,
+      });
+      expect(updated.status).toBe(200);
+      expect(updated.body).toMatchObject({ defaultPrice: price, durationMinutes: 90 });
+      const unpriced = await as('PATCH', `/courses/${created.body.id}`, {
+        updatedAt: created.body.updatedAt,
+        defaultPrice: null,
+        durationMinutes: 60,
+      });
+      expect(unpriced.status).toBe(200);
+
+      // The writes that went through are theirs in the audit log, and only the price is unchanged.
+      const audit = await call('GET', `${base}/audit-log?limit=3`, { token: owner.token });
+      expect(
+        audit.body.data.map((e: { action: string; actorUserId: string; after: unknown }) => [
+          e.action,
+          e.actorUserId,
+          e.after,
+        ]),
+      ).toEqual([
+        ['course.updated', member.userId, { durationMinutes: 60 }],
+        ['course.updated', member.userId, { durationMinutes: 90 }],
+        ['course.created', owner.userId, expect.objectContaining({ defaultPriceAmount: 4500 })],
+      ]);
     },
   );
 });

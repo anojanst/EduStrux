@@ -15,7 +15,7 @@ import {
   UpdateSubject,
   page,
 } from '@edustrux/shared';
-import { orgCtx } from '../../db/scope';
+import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
@@ -163,16 +163,19 @@ const deleteSubjectRoute = createRoute({
   },
 });
 
-// Every role reads courses, like the rest of the setup data. The owner, branch managers and
-// front desk write them (`classes:write`); a course has no branch, so that permission's branch
-// scope doesn't apply and a change is org-wide.
+// Every role reads courses, like the rest of the setup data, but teachers and parents get them
+// without the default price (D-110). The owner, branch managers and front desk write them
+// (`classes:write`); a course has no branch, so that permission's branch scope doesn't apply and
+// a change is org-wide. Only the owner sets the default price (D-111).
 
 const listCoursesRoute = createRoute({
   method: 'get',
   path: '/api/v1/orgs/{orgId}/courses',
   tags: ['Curriculum'],
   summary: 'List courses',
-  description: 'Oldest first. Filter by `subjectId`, `gradeLevelId` or both; an unknown id is 404.',
+  description:
+    'Oldest first. Filter by `subjectId`, `gradeLevelId` or both; an unknown id is 404. ' +
+    'Teachers and parents get each course without `defaultPrice`.',
   middleware: orgAccess('org:read'),
   request: { params: OrgParams, query: CourseQuery },
   responses: {
@@ -189,7 +192,8 @@ const createCourseRoute = createRoute({
   description:
     'A course is a subject taught at a grade level, optionally narrowed by curriculum and ' +
     'teaching medium. That combination is unique in the org, ignoring case (409). ' +
-    'A default price must be in the organisation’s currency (400).',
+    'A default price must be in the organisation’s currency (400). Only the owner sets one: ' +
+    'anyone else sending a price other than null is 403.',
   middleware: orgAccess('classes:write'),
   request: { params: OrgParams, body: jsonBody(CreateCourse) },
   responses: {
@@ -205,7 +209,9 @@ const updateCourseRoute = createRoute({
   summary: 'Update a course',
   description:
     'A course keeps its subject and grade level. Send null to clear a field. ' +
-    'Send the `updatedAt` you last read; a newer one on the server returns 409.',
+    'Send the `updatedAt` you last read; a newer one on the server returns 409. Only the owner ' +
+    'changes `defaultPrice`: anyone else may send the one the course has, but a different one ' +
+    'is 403.',
   middleware: orgAccess('classes:write'),
   request: { params: CourseParams, body: jsonBody(UpdateCourse) },
   responses: {
@@ -268,14 +274,17 @@ export const curriculumRoutes = createRouter()
   })
   .openapi(listCoursesRoute, async (c) => {
     const { limit, cursor, ...filter } = c.req.valid('query');
-    return c.json(await service.listCourses(orgCtx(c), limit, cursor, filter), 200);
+    return c.json(await service.listCourses(orgCtx(c), access(c), limit, cursor, filter), 200);
   })
   .openapi(createCourseRoute, async (c) => {
-    return c.json(await service.createCourse(orgCtx(c), c.req.valid('json')), 201);
+    return c.json(await service.createCourse(orgCtx(c), access(c), c.req.valid('json')), 201);
   })
   .openapi(updateCourseRoute, async (c) => {
     const { courseId } = c.req.valid('param');
-    return c.json(await service.updateCourse(orgCtx(c), courseId, c.req.valid('json')), 200);
+    return c.json(
+      await service.updateCourse(orgCtx(c), access(c), courseId, c.req.valid('json')),
+      200,
+    );
   })
   .openapi(deleteCourseRoute, async (c) => {
     await service.deleteCourse(orgCtx(c), c.req.valid('param').courseId);

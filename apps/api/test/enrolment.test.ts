@@ -651,7 +651,10 @@ describe('permissions', () => {
     // "Own classes" for families and students: the students enrolled in those classes, with
     // their family and its guardians, but not a brother they don't teach.
     expect(await studentNames(as)).toEqual(['Mia']);
-    expect((await as('GET', `/students/${t.mia.id}`)).status).toBe(200);
+    const mia = await as('GET', `/students/${t.mia.id}`);
+    expect(mia.status).toBe(200);
+    // Unlike a parent, a teacher reads the notes staff keep on a student (D-126).
+    expect(mia.body).toHaveProperty('notes', null);
     expect((await as('GET', `/students/${t.sam.id}`)).status).toBe(404);
     expect((await as('GET', `/students/${t.ari.id}`)).status).toBe(404);
     const families = (await as('GET', '/families')).body.data as Family[];
@@ -716,6 +719,42 @@ describe('permissions', () => {
     expect(await seen(stranger.as)).toEqual([]);
     expect(await classNames(stranger.as)).toEqual([]);
     expect(await sessionsSeen(stranger.as, t.range)).toEqual([]);
+  });
+
+  // Teachers see no prices of any kind: their enrolments come without the price override, which
+  // is left out rather than null, since null means there is none (D-110). Parents keep their own
+  // children's, which they pay.
+  it('shows every role but teachers the price override', async () => {
+    const t = await twoBranches();
+    await t.enrol(t.sam.id, t.mainClass.id, { priceOverride: { amount: 4000, currency: 'NZD' } });
+    const parent = await t.member('parent');
+    await db()
+      .update(guardians)
+      .set({ membershipId: parent.id })
+      .where(eq(guardians.id, t.mainGuardian.id));
+    const prices = async (as: As, query = '') =>
+      ((await as('GET', `/enrolments${query}`)).body.data as Enrolment[]).map((e) => [
+        `${e.studentFirstName} in ${e.className}`,
+        'priceOverride' in e ? e.priceOverride : 'hidden',
+      ]);
+    const main = `?classId=${t.mainClass.id}`;
+
+    expect(await prices(t.teacher.as, main)).toEqual([
+      ['Mia in Main group', 'hidden'],
+      ['Sam in Main group', 'hidden'],
+    ]);
+    expect(await prices(t.teacher.as, `?studentId=${t.sam.id}`)).toEqual([
+      ['Sam in Main group', 'hidden'],
+    ]);
+    const priced = [
+      ['Mia in Main group', null],
+      ['Sam in Main group', { amount: 4000, currency: 'NZD' }],
+    ];
+    expect(await prices(parent.as, main)).toEqual(priced);
+    expect(await prices(t.api, main)).toEqual(priced);
+    for (const role of ['branch_manager', 'front_desk'] as Role[]) {
+      expect(await prices((await t.member(role)).as, main)).toEqual(priced);
+    }
   });
 
   it.each(['branch_manager', 'front_desk'] as Role[])(

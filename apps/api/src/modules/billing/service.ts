@@ -144,6 +144,17 @@ function reachOf(access: Access): repo.PriceRuleReach {
   return access.scope === 'branch' && access.branchIds ? { branchIds: access.branchIds } : {};
 }
 
+/**
+ * Org-wide and course rules price classes in every branch, so only the owner writes them
+ * (D-111). Branch staff write the rules of their own branches' classes, which the class check
+ * holds them to, even with no branch list.
+ */
+function checkRuleWriter(access: Access, rule: { classId: string | null }) {
+  if (access.scope !== 'all' && rule.classId === null) {
+    throw forbidden('Only the owner sets org-wide and course price rules.');
+  }
+}
+
 /** One stage: the course and the class a filter names are checked beside the page. */
 export async function listPriceRules(
   ctx: OrgCtx,
@@ -186,9 +197,11 @@ export async function createPriceRule(
   input: CreatePriceRule,
 ): Promise<PriceRule> {
   reachOf(access); // A parent reaches no price rule: 403 before anything is read.
-  // What the rule would price is known from the request, so whether that target already has a
-  // rule is read beside the class, the course and the tax rate it names.
+  // What the rule would price is known from the request. So whether the caller may write a rule
+  // for it is checked before anything is read, and whether that target already has a rule is
+  // read beside the class, the course and the tax rate it names.
   const target = { classId: input.classId ?? null, courseId: input.courseId ?? null };
+  checkRuleWriter(access, target);
   const [found, course, taxRate, taken] = await Promise.all([
     input.classId != null ? held(classes.getClass(ctx, access, input.classId)) : undefined,
     input.courseId != null ? held(curriculum.getCourse(ctx, input.courseId)) : undefined,
@@ -240,6 +253,7 @@ export async function updatePriceRule(
     rest.taxRateId != null ? repo.findTaxRate(ctx, rest.taxRateId) : undefined,
   ]);
   if (!before) throw notFound('Price rule');
+  checkRuleWriter(access, before);
   if (before.updatedAt !== updatedAt) throw staleData();
 
   if (rest.packLessons !== undefined && before.basis !== 'pack') {
@@ -258,6 +272,7 @@ export async function updatePriceRule(
 export async function deletePriceRule(ctx: OrgCtx, access: Access, id: string): Promise<void> {
   const before = await repo.findPriceRule(ctx, id, reachOf(access));
   if (!before) throw notFound('Price rule');
+  checkRuleWriter(access, before);
   await repo.softDeletePriceRule(ctx, before);
 }
 

@@ -61,6 +61,17 @@ export function toEnrolment(
 }
 
 /**
+ * An enrolment as this caller reads it. Teachers get no price override, so they see no prices of
+ * any kind (D-110). The field is left out, so null still means there is no override. Parents keep
+ * theirs: they pay it.
+ */
+function forReader(enrolment: Enrolment, access: Access): Enrolment {
+  if (access.role !== 'teacher') return enrolment;
+  const { priceOverride: _hidden, ...rest } = enrolment;
+  return rest;
+}
+
+/**
  * A role's scope as a filter on enrolments. Branch staff reach the enrolments in their branches'
  * classes and those of their branches' students, wherever the class is. A teacher reaches the
  * enrolments in the classes they teach, and a parent their own children's. It costs no database
@@ -148,15 +159,13 @@ export async function listEnrolments(
   const inClass = take(klass);
 
   const { data, nextCursor } = toPage(rows, limit);
-  return {
-    data: await withNames(
-      ctx,
-      data,
-      ofStudent ? new Map([[ofStudent.id, ofStudent]]) : (names ?? new Map()),
-      inClass ? new Map([[inClass.id, inClass]]) : (labels ?? new Map()),
-    ),
-    nextCursor,
-  };
+  const enrolments = await withNames(
+    ctx,
+    data,
+    ofStudent ? new Map([[ofStudent.id, ofStudent]]) : (names ?? new Map()),
+    inClass ? new Map([[inClass.id, inClass]]) : (labels ?? new Map()),
+  );
+  return { data: enrolments.map((e) => forReader(e, access)), nextCursor };
 }
 
 /**

@@ -85,6 +85,10 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   `studentsEnrolledIn` and `classesOfStudents`. Never read the ids first to filter by them. A
   new rule is a function like these in the module that owns it, built with `idsFrom`, or from
   another module's query.
+- **Fields some roles don't see.** Leave the field out of the response, not null, so null keeps
+  meaning "not set", and mark it `.optional()` in the shared schema. The service passes every
+  record a read returns through a `forReader(record, access)` step. A write's response isn't
+  trimmed while every role that can make the write sees the field (D-127).
 - **Ids.** A list of ids to filter by has the type `Ids` (`apps/api/src/db/scope.ts`): real ids,
   or a query for them that is written into the statement it filters and costs no trip. A
   repository takes `Ids` wherever it takes ids and filters with `inIds(column, ids)`, the same
