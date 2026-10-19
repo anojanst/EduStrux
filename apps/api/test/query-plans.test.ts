@@ -565,6 +565,31 @@ describe('a session’s roster is read through the session’s id, in the stage 
   });
 });
 
+describe('a class’s emergency contacts are read by a query for its students (TUI-102)', () => {
+  const onRoster = (ctx: OrgCtx) => enrolmentService.studentsEnrolledIn(ctx, IDS);
+  const classesStudents: Reached = [['enrolments', 'class_id']];
+
+  // What is read, the call that sends it, and every table in it with its column.
+  const reads: [string, Send, Reached][] = [
+    [
+      'the students enrolled in a class, by name',
+      (ctx) => people.studentsByName(ctx, onRoster(ctx)),
+      [['students', 'id'], ...classesStudents],
+    ],
+    [
+      'the emergency contacts of their families',
+      (ctx) => people.emergencyContacts(ctx, onRoster(ctx)),
+      [['guardians', 'family_id'], ['students', 'id'], ...classesStudents],
+    ],
+  ];
+
+  it.each(reads)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+});
+
 describe('ids marked wide are checked row by row, and the page keeps its order (D-104)', () => {
   const classesInBranches = (ctx: OrgCtx) => classesService.classesInBranches(ctx, IDS);
   const studentsInBranches = (ctx: OrgCtx) => peopleService.studentsInBranches(ctx, IDS);

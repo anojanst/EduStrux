@@ -563,6 +563,45 @@ export function studentFamilies(ctx: OrgCtx, ids: Ids) {
 }
 
 /** The names of the given students. */
+/** The given students with their families, by last name, then first name, then id. */
+export function studentsByName(ctx: OrgCtx, ids: Ids) {
+  return ctx.db
+    .select({
+      id: students.id,
+      familyId: students.familyId,
+      firstName: students.firstName,
+      lastName: students.lastName,
+    })
+    .from(students)
+    .where(inOrg(ctx, students, inIds(students.id, ids)))
+    .orderBy(asc(students.lastNameNorm), asc(students.firstNameNorm), asc(students.id));
+}
+
+/**
+ * The guardians marked as emergency contacts in these students' families, oldest first, with
+ * only what a call needs: name, relationship and phone (D-112).
+ */
+export function emergencyContacts(ctx: OrgCtx, studentIds: Ids) {
+  return ctx.db
+    .select({
+      familyId: guardians.familyId,
+      firstName: guardians.firstName,
+      lastName: guardians.lastName,
+      relationship: guardians.relationship,
+      phone: guardians.phone,
+    })
+    .from(guardians)
+    .where(
+      inOrg(
+        ctx,
+        guardians,
+        inIds(guardians.familyId, familiesOfStudents(ctx, studentIds)),
+        eq(guardians.emergencyContact, true),
+      ),
+    )
+    .orderBy(asc(guardians.familyId), asc(guardians.id));
+}
+
 export function studentNames(ctx: OrgCtx, ids: Ids) {
   return ctx.db
     .select({ id: students.id, firstName: students.firstName, lastName: students.lastName })

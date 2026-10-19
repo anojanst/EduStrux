@@ -11,6 +11,7 @@ import {
   type Guardian,
   type Org,
   type Student,
+  type StudentEmergencyContacts,
   type UpdateFamily,
   type UpdateGuardian,
   type UpdateStudent,
@@ -678,6 +679,29 @@ export async function familyLabels(ctx: OrgCtx, ids: Ids) {
 /** Each of the given students' family, by student id. */
 export async function familyIdsOfStudents(ctx: OrgCtx, ids: Ids) {
   return new Map((await repo.studentFamilies(ctx, ids)).map((row) => [row.id, row.familyId]));
+}
+
+/**
+ * The given students by name, each with the guardians to call in an emergency: name,
+ * relationship and phone only (D-112). For whoever may see the students on a class's roster,
+ * whichever branch their families belong to. One stage: both reads go by a query for the students.
+ */
+export async function emergencyContactsOf(
+  ctx: OrgCtx,
+  studentIds: Ids,
+): Promise<StudentEmergencyContacts[]> {
+  const [rows, contacts] = await Promise.all([
+    repo.studentsByName(ctx, studentIds),
+    repo.emergencyContacts(ctx, studentIds),
+  ]);
+  return rows.map((student) => ({
+    studentId: student.id,
+    studentFirstName: student.firstName,
+    studentLastName: student.lastName,
+    contacts: contacts
+      .filter((contact) => contact.familyId === student.familyId)
+      .map(({ familyId: _family, ...contact }) => contact),
+  }));
 }
 
 /** The names of the given students, by student id, whoever is asking. */

@@ -72,3 +72,42 @@ export const MarkAttendance = z
   })
   .openapi('MarkAttendance');
 export type MarkAttendance = z.infer<typeof MarkAttendance>;
+
+// ── Emergency contacts ──────────────────────────────────────────────────────
+
+/** A guardian to call in an emergency, as a class's roster shows them: no email, no ids (D-112). */
+export const EmergencyContact = z
+  .object({
+    firstName: z.string(),
+    lastName: z.string(),
+    relationship: z.string().nullable().openapi({ example: 'Mother' }),
+    phone: z.string().nullable().openapi({ example: '+64 21 555 0100' }),
+  })
+  .openapi('EmergencyContact');
+export type EmergencyContact = z.infer<typeof EmergencyContact>;
+
+export const StudentEmergencyContacts = z
+  .object({
+    studentId: StudentId,
+    studentFirstName: z.string(),
+    studentLastName: z.string(),
+    contacts: z.array(EmergencyContact).openapi({
+      description:
+        'The guardians of the student’s family marked as emergency contacts, oldest first. ' +
+        'Empty when none is.',
+    }),
+  })
+  .openapi('StudentEmergencyContacts');
+export type StudentEmergencyContacts = z.infer<typeof StudentEmergencyContacts>;
+
+export const ClassEmergencyContacts = z
+  .object({
+    classId: z.string().openapi({ example: 'cls_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    students: z.array(StudentEmergencyContacts).openapi({
+      description:
+        'Every student with an active enrolment in the class, by last name then first name, ' +
+        'whichever branch their family belongs to.',
+    }),
+  })
+  .openapi('ClassEmergencyContacts');
+export type ClassEmergencyContacts = z.infer<typeof ClassEmergencyContacts>;

@@ -3,11 +3,12 @@ import {
   newId,
   normaliseName,
   type AttendanceRecord,
+  type ClassEmergencyContacts,
   type MarkAttendance,
   type SessionAttendance,
 } from '@edustrux/shared';
 import type { Access, OrgCtx } from '../../db/scope';
-import { unprocessable } from '../../lib/errors';
+import { forbidden, unprocessable } from '../../lib/errors';
 import { classOfSession } from '../classes/for-attendance';
 import * as classes from '../classes/service';
 import { studentsExpectedIn } from '../enrolment/for-attendance';
@@ -175,4 +176,29 @@ export async function markAttendance(
   for (const { studentId, status } of changed) if (status === null) marksNow.delete(studentId);
   for (const mark of saved) marksNow.set(mark.studentId, mark);
   return toAttendance(sessionId, expected, marksNow, names);
+}
+
+/**
+ * The emergency contacts of every student on a class's roster: those with an active enrolment in
+ * it, whichever branch their family belongs to (D-112). Staff limited to the class's branch can't
+ * open a child from another branch or their family, but get the guardians to call. A teacher gets
+ * the classes they teach. A parent gets 403: the class's other children aren't theirs. A class
+ * outside the caller's reach is 404.
+ *
+ * One stage: the class, and the contacts by a query for the class's students. Nothing the
+ * contacts read is used when the class answers 404.
+ */
+export async function emergencyContacts(
+  ctx: OrgCtx,
+  access: Access,
+  classId: string,
+): Promise<ClassEmergencyContacts> {
+  if (access.role === 'parent') throw forbidden();
+  const [klass, students] = await Promise.allSettled([
+    classes.getClass(ctx, access, classId),
+    people.emergencyContactsOf(ctx, enrolment.studentsEnrolledIn(ctx, [classId])),
+  ]);
+  if (klass.status === 'rejected') throw klass.reason;
+  if (students.status === 'rejected') throw students.reason;
+  return { classId, students: students.value };
 }

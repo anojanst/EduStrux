@@ -1236,6 +1236,8 @@ get them without the default price).
   assumption the owner hasn't confirmed, so the question stays open in handoff §11 (D-074).
 - **Update 2026-10-14:** The owner decided the class's branch sees a cross-branch child's
   emergency contacts: name, relationship and phone, read only (D-112).
+- **Update 2026-10-19 (TUI-102):** Built, through `GET /classes/{classId}/emergency-contacts`
+  (D-128). The enrolment shape is unchanged.
 
 ## D-062 · 2026-10-12 · Enrolment rules: dates, price override, status, duplicates, capacity
 
@@ -1642,6 +1644,9 @@ contacts). Marking the child by name is unchanged.
   - The open question in handoff §11 stays open, with a note that attendance was built this way.
   - Giving the class's branch those contacts later means a new decision.
 - **Tasks:** TUI-34.
+- **Update 2026-10-19 (TUI-102):** Built: the class's branch gets the child's emergency contacts
+  from `GET /classes/{classId}/emergency-contacts` (D-112, D-128). The roster record still
+  carries the id and name only.
 
 ## D-075 · 2026-10-12 · Attendance routes, table, audit row and in-use checks
 
@@ -3092,6 +3097,10 @@ under "Not changed here" for a reach that is a subquery.
     every guardian of the family shows. Asked as a follow-up the same day, the owner kept it on by
     default. A guardian's email isn't included.
 - **Tasks:** TUI-102 (and TUI-33, TUI-34).
+- **Update 2026-10-19 (TUI-102):** Built. The owner picked a route of its own:
+  `GET /classes/{classId}/emergency-contacts` lists every student with an active enrolment in the
+  class and their family's emergency contacts. The roster and the enrolments are unchanged
+  (D-128).
 
 ## D-113 · 2026-10-14 · An update's audit row stores only the fields that changed
 
@@ -3594,3 +3603,46 @@ under "Not changed here" for a reach that is a subquery.
   - Assumption: recorded from the implementation. The owner hasn't stated that hidden fields are
     left out, that resending the current price is allowed, or the order of the refusals.
 - **Tasks:** TUI-100, TUI-101, TUI-105 (and TUI-30, TUI-36, TUI-39).
+
+## D-128 · 2026-10-19 · A class's emergency contacts have a route of their own
+
+- **Context:** D-112 gave the class's branch a cross-branch child's emergency contacts and left
+  to TUI-102 where the API carries them: on the roster, on the enrolment or in a route of their
+  own.
+- **Decision:**
+  - The owner decided this during the build on 2026-10-19. Asked where branch staff get a
+    cross-branch child's emergency contacts, they picked "A class's own call (Recommended)". The
+    other options were each record of `GET` and `PUT /sessions/{sessionId}/attendance` carrying
+    them, or each enrolment of `GET /enrolments`.
+  - The route is `GET /classes/{classId}/emergency-contacts`, under the Attendance tag, not paged.
+    It returns `{ classId, students }`. Each student has `studentId`, `studentFirstName`,
+    `studentLastName` and `contacts`, and each contact has `firstName`, `lastName`,
+    `relationship` and `phone`.
+  - The students: everyone with an active enrolment in the class, whatever its dates (the set
+    that gives a teacher their reach, D-060), whichever branch their family belongs to. The
+    class's own branch's children are on it too, so it is one complete sheet. By last name, first
+    name, then id.
+  - The contacts: the guardians of the student's family with `emergencyContact` true (D-054),
+    oldest first. Only first name, last name, relationship and phone: no email, and no guardian,
+    family or membership id. A student whose family has nobody marked is listed with
+    `contacts: []`.
+  - Who reaches it, with `attendance:read` (no new permission): the owner every class; branch
+    managers and front desk the classes in their branches (no branch list means every branch); a
+    teacher the classes they teach. A class outside the caller's reach, or unknown, is 404. A
+    parent gets 403 before anything is read, even for their own child's class. An accountant gets
+    403, having no `attendance:read`.
+  - Database trips (D-102, D-104): sign-in and one read stage. It reads the class, the students
+    by name, and the contacts by a query for the class's students. The test suite holds it to 2
+    stages and at most 5 trips, and `apps/api/test/query-plans.test.ts` pins the two new reads.
+- **Consequences:**
+  - D-112 is built. The attendance roster and the enrolment responses are unchanged.
+  - Branch-limited staff still can't open a cross-branch child's student or family (D-074).
+  - A teacher already reaches these guardians in full (D-060). The route gives them the same
+    sheet as the class's branch.
+  - Assumption: the route is the owner's choice. The option they picked also stated that every
+    child on the roster is included, the class's own branch's too, that the teacher gets the
+    classes they teach, and that parents and accountants get 403. The rest is recorded from the
+    implementation: `attendance:read`, the order of the students and the contacts,
+    `contacts: []`, and refusing a parent before anything is read. The owner hasn't stated
+    those.
+- **Tasks:** TUI-102 (and TUI-34).
