@@ -9,7 +9,7 @@ size: S
 endpoints:
   - GET|PUT /sessions/{id}/notes
 branch: task/tui-54-56-absences-lesson-notes
-pr:
+pr: 49
 ---
 
 # TUI-56 Lesson notes (typed)

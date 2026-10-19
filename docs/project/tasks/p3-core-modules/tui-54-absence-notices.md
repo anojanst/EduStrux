@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /absence-notices
   - POST /portal/absence-notices
 branch: task/tui-54-56-absences-lesson-notes
-pr:
+pr: 49
 ---
 
 # TUI-54 Absence notices (staff + parent)
