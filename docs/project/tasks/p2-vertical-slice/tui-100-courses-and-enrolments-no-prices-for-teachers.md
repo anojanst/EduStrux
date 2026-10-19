@@ -10,7 +10,7 @@ endpoints:
   - GET /courses
   - GET /enrolments
 branch: task/tui-100-105-role-visibility
-pr:
+pr: 47
 ---
 
 # TUI-100 Courses and enrolments: no prices for teachers and parents

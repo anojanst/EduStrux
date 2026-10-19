@@ -12,7 +12,7 @@ endpoints:
   - POST /courses
   - PATCH /courses/{id}
 branch: task/tui-100-105-role-visibility
-pr:
+pr: 47
 ---
 
 # TUI-101 Price rules and default prices: owner-only outside branch classes

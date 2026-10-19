@@ -12,7 +12,7 @@ endpoints:
   - GET /families
   - GET /families/{familyId}
 branch: task/tui-100-105-role-visibility
-pr:
+pr: 47
 ---
 
 # TUI-105 Students and families: no staff notes for parents
