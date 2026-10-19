@@ -99,6 +99,7 @@ async function classOfThree() {
     teacher,
     parent,
     path: `/sessions/${sessionId}/attendance`,
+    contactsPath: `/classes/${klass.id}/emergency-contacts`,
     aroha,
     ben,
     mia,
@@ -223,5 +224,27 @@ describe('a session outside the caller’s reach', () => {
     }
     // Nothing was written.
     expect(seen((await c.api('GET', c.path)).body)).toEqual(['Ben: present', 'Aroha: -', 'Mia: -']);
+  });
+});
+
+describe('GET /classes/{id}/emergency-contacts waits for 2 database trips: sign-in, then one read stage', () => {
+  it('as the owner and as the class’s teacher', async () => {
+    const c = await classOfThree();
+    for (const as of [c.api, c.teacher.as]) {
+      const res = await as('GET', c.contactsPath);
+      expect(res.status).toBe(200);
+      expect(
+        res.body.students.map((s: { studentFirstName: string }) => s.studentFirstName),
+      ).toEqual(['Ben', 'Aroha', 'Mia']);
+      expect(res.db.stages).toBeLessThanOrEqual(2);
+      expect(res.db.trips).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('refuses a parent after the sign-in trip, before anything is read', async () => {
+    const c = await classOfThree();
+    const res = await c.parent.as('GET', c.contactsPath);
+    expect(res.status).toBe(403);
+    expect(res.db).toEqual({ trips: 1, stages: 1 });
   });
 });
