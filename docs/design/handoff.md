@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-15 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-19 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -175,7 +175,7 @@ Microservices would add deploy, debugging and data-consistency overhead with no 
 | Topic | Rule |
 |---|---|
 | Base path | `/api/v1`; org data under `/orgs/{orgId}`; current user under `/me`; public forms under `/public/{orgSlug}`. Orgs are addressed by path, not subdomain. Public web pages use the slug too, e.g. `/f/{orgSlug}/…` for enquiry and enrolment forms (later the parent portal link); a vanity subdomain may come later as a redirect (D-020). |
-| Format | JSON, camelCase |
+| Format | JSON, camelCase. A field a role may not see is left out, not sent as null: null means not set (D-127). |
 | IDs | Prefixed, sortable (ULID-style): `org_`, `brn_`, `rm_`, `grd_` (grade level), `sbj_` (subject), `acy_` (academic year), `trm_` (term), `hol_` (holiday), `txr_` (tax rate), `stu_`, `fam_`, `gdn_` (guardian), `sgr_` (a student's grade for one academic year), `crs_`, `cls_`, `csl_` (a class's weekly slot), `ses_`, `enr_`, `att_` (a student's mark at a session), `prr_` (price rule), `inv_`, `inl_` (invoice line), `pay_`, `pal_` (a payment's allocation to an invoice, D-122), `job_` … |
 | Lists | Cursor paging: `?limit=50&cursor=…` → `{ data, nextCursor }`. Filters as query params, `q` for search (prefix match on normalised names, exact email/phone, D-026). A short, capped list may return everything with `nextCursor: null` (grade levels, D-035). Setup lists, courses, classes, enrolments and price rules come oldest first by id, except grade levels (grade order) and academic years, terms and holidays (start date, then id, D-040). Invoices and payments come newest first by id (D-098, D-122). Sessions come by date, start time, then id, and `GET /sessions` needs `from` and `to` (D-050). Families come in name order, and students by last name, then first name, then id. The order uses normalised names, so case and accents don't change it, and the cursor holds every sort key (D-056). A session's attendance isn't paged: the whole roster comes back in student name order (D-072). A filter by another record's id (`?academicYearId`, `?branchId`, `?subjectId`, `?gradeLevelId`, `?termId`, `?courseId`, `?roomId`, `?teacherId`, `?classId`, `?familyId`, `?studentId`, `?invoiceId`) is 404 when the org doesn't have that id (D-043, D-050, D-057, D-063, D-085, D-098, D-122). |
 | CRUD | `POST` returns 201 and the resource. `PATCH` is a partial update; one that sends only `updatedAt` changes nothing and returns the record (D-034). `DELETE` is a soft delete (`deleted_at`) and returns 204. |
@@ -208,10 +208,10 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Branches, rooms, grade levels, subjects, academic years, terms, holidays (D-033, D-040) | Full | Read | Read | Read | Read | Read |
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
 | Staff and roles | Full | Branch | — | — | — | — |
-| Families and students (D-051, D-053, D-060, D-126) | Full | Branch | Branch | Own classes, read | Own family, read | — |
+| Families and students (D-051, D-053, D-060, D-126) | Full | Branch | Branch | Own classes, read | Own family, read, no student notes | — |
 | Courses (D-041, D-110) | Full | Full, org-wide | Full, org-wide | Read, no default price | Read, no default price | Read |
 | Classes and timetable (D-048, D-060) | Full | Branch | Branch | Own classes, read | Own children, read | — |
-| Enrolments (D-058, D-059) | Full | Branch | Branch | Own classes, read | Own children, read | — |
+| Enrolments (D-058, D-059, D-110) | Full | Branch | Branch | Own classes, read, no price override | Own children, read | — |
 | Attendance and notes (D-073) | Full | Branch | Branch | Own classes | Own children, read; report absence | — |
 | Fees and payments (price rules: D-083, D-111; invoices: D-088, D-096; payments: D-121) | Full | Branch | Branch | — | Own invoices and payments, read | Read + export |
 | Messages | Full | Branch | Branch | Own classes | Own family | — |
@@ -220,7 +220,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 
 Setup data (branches, rooms, grade levels, subjects, the calendar and tax rates) is read org-wide, so a branch manager sees every branch, not only theirs (D-033).
 
-Courses have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes courses for the whole org (D-041). Every role reads all courses. Teachers and parents get them without the default price; the owner, branch managers, front desk and accountants see it (D-110). Teachers get no enrolment's `priceOverride` either. Not built yet: today every role gets both, until TUI-100 changes it.
+Courses have no branch. A branch manager or front desk member limited to some branches still adds, changes and deletes courses for the whole org (D-041). Every role reads all courses. Teachers and parents get them without the default price; the owner, branch managers, front desk and accountants see it (D-110). Teachers get no enrolment's `priceOverride` either. The hidden field is left out of the response (D-127).
 
 Classes and sessions (D-048, D-060):
 
@@ -235,7 +235,7 @@ Families, guardians and students (D-051, D-053, D-060):
 - A family has a home branch, and its guardians and students go with it. A branch manager or front desk member reads and writes only the families whose home branch is one of their membership's branches. No branch list means every branch.
 - A child in a class at another branch shows on that class's roster by name: each enrolment and each attendance record carries the student's name (D-061, D-072). The class's branch also sees the child's emergency contacts, read only (D-112, not built yet; see Attendance below). Only the home branch, the owner and staff with no branch limit change the family record.
 - A parent reads only the families where one of the guardians is linked to their membership (the guardian's `membershipId`), and changes nothing.
-- A student's `notes` are for staff: a parent doesn't see them. Teachers and every other role do (D-126). Not built yet: today a parent still gets them through the student and family routes, until TUI-105 changes it. The parent portal already leaves them out.
+- A student's `notes` are for staff: a parent doesn't see them. Teachers and every other role do (D-126). The student and family routes and the parent portal leave them out for a parent (D-127).
 - A teacher reads only the students who hold an active enrolment in a class they teach, and those students' families with all their guardians. A family's other children are left out of its `students` list and are 404 (D-060).
 - An accountant gets 403.
 - A family, guardian or student outside the caller's reach is 404, as if it didn't exist. Adding a family to a branch outside the member's branches, or moving one there, is 403.
@@ -261,10 +261,9 @@ Price rules (D-083, D-111):
 
 - The price-rule routes use `billing:read` and `billing:write`. The owner, branch managers, front desk and accountants read; who writes is below, and an accountant gets 403 on writes. A teacher gets 403.
 - A parent gets 403 too. Their `billing:read` is for their own invoices, and price rules belong to no family.
-- An org-wide rule and a course's rule have no branch. Only the owner adds, changes and deletes them (D-111).
+- An org-wide rule and a course's rule have no branch. Only the owner adds, changes and deletes them; anyone else gets 403, branch staff with no branch list too (D-111, D-127).
 - A class's rule goes with its class's branch. The owner writes every class's rule; branch managers and front desk only those of the classes in their branches (D-111). Staff limited to some branches don't see other branches' class rules, and such a rule or class is 404 for them, as for the class itself (D-048).
-- Only the owner sets or changes a course's `defaultPrice`, since it comes before the org-wide rule (D-082); branch managers and front desk still create and change courses (D-111).
-- Not built yet: today branch managers and front desk still write org-wide and course rules and set a course's default price for the whole org (D-083, D-041), until TUI-101 changes it.
+- Only the owner sets or changes a course's `defaultPrice`, since it comes before the org-wide rule (D-082); branch managers and front desk still create and change courses (D-111). They may send the price the course already has, so a form that sends every field still saves, but a new or cleared price is 403 (D-127).
 
 Invoices (D-088, D-096):
 
@@ -384,7 +383,7 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `DELETE /staff/{membershipId}`
 
 ### Families and students
-The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only), without the students' `notes` (D-126; not built yet, today they get them, TUI-105); a teacher the students who hold an active enrolment in a class they teach, with those students' families and guardians but not their siblings (read only). An accountant gets 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053, D-060).
+The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only), without the students' `notes` (D-126, D-127); a teacher the students who hold an active enrolment in a class they teach, with those students' families and guardians but not their siblings (read only). An accountant gets 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053, D-060).
 
 - `GET|POST /families` (`GET` filter `?branchId`) · `GET|PATCH|DELETE /families/{familyId}`: in name order. Every response carries the family's `guardians` and `students`. `branchId`, the home branch, is required, and `PATCH` can move the family to another branch; branch-limited staff adding or moving a family to a branch outside theirs get 403. `billingGuardianId` must be one of the family's guardians (422) and can't be set to null. `bankReference` is read-only: what the family quotes on a bank transfer, set when the family is added and shown on its invoices (D-097). `DELETE` is refused (422) while the family has students; otherwise it also deletes the guardians (D-051, D-054, D-057)
 - `POST /families/{familyId}/guardians` · `PATCH|DELETE /guardians/{guardianId}`: any contact person, with an `emergencyContact` flag (default true). The family's first guardian becomes its billing contact. `email` and `phone` are optional; `preferredChannel` is `email` (default), `sms` or `whatsapp`; `membershipId` is read-only. `PATCH` can't move a guardian to another family. `DELETE` is refused (422) for the billing contact (D-053, D-054)
@@ -400,7 +399,7 @@ The owner reaches every family; branch managers and front desk the families whos
 - `POST /imports/{id}/commit` (job)
 
 ### Courses, classes and timetable
-Courses: every role reads, but teachers and parents without the default price (D-110; not built yet, today every role gets it, TUI-100); the owner, branch managers and front desk write, for the whole org (D-041), and only the owner sets `defaultPrice` (D-111, TUI-101).
+Courses: every role reads, but teachers and parents without `defaultPrice` (D-110); the owner, branch managers and front desk write, for the whole org (D-041), and only the owner sets or changes `defaultPrice` (D-111). Anyone else sending a new or cleared price is 403; the price the course already has is accepted. On `POST` that is any price but null, checked before the currency (400); on `PATCH`, after the 404 and the stale 409 (D-127).
 - `GET|POST /courses` (`GET` filters `?subjectId`, `?gradeLevelId`) · `PATCH|DELETE /courses/{courseId}`: subject + grade level + curriculum + teaching medium must be unique (409). `PATCH` can't change the subject or grade level. `defaultPrice` must be in the org's currency (400) and is for one billing period of a class: a term, or a month for a class with no term (D-077); `durationMinutes` is the usual lesson length, 5 to 600. A `subjectId` or `gradeLevelId` the org doesn't have is 404, in a filter too (D-041, D-043). `DELETE` is refused (422) while a class uses the course or a price rule prices it (D-050, D-085)
 
 Classes and sessions: the owner reaches all of them, branch managers and front desk their branches' (read and write), a teacher the classes they teach and a parent the classes their children hold an active enrolment in (both read only). Anything outside the caller's reach is 404 (D-048, D-060).
@@ -413,7 +412,7 @@ Classes and sessions: the owner reaches all of them, branch managers and front d
 - `GET /timetable/clashes`
 
 ### Enrolment
-The enrolment routes use the class permissions. The owner, branch managers and front desk read and write; a teacher reads the enrolments in the classes they teach and a parent their own children's; an accountant gets 403. To enrol a student the caller must reach both the student and the class, so branch-limited staff can't enrol across branches: a student or class out of reach is 404 (D-058, D-059).
+The enrolment routes use the class permissions. The owner, branch managers and front desk read and write; a teacher reads the enrolments in the classes they teach and a parent their own children's; an accountant gets 403. A teacher gets each enrolment without `priceOverride`; a parent keeps it (D-110, D-127). To enrol a student the caller must reach both the student and the class, so branch-limited staff can't enrol across branches: a student or class out of reach is 404 (D-058, D-059).
 
 - `GET|POST /enrolments` (`GET` filters `?studentId`, `?classId`): oldest first; `?classId` gives a class's roster. Each enrolment carries the student's name and the class's name, course and branch (D-061). `startDate` defaults to today, or to the class's first day when that is later; `endDate` is optional (null = until the class ends). Both must fall inside the class's dates (422). `priceOverride` is Money or null and must be in the org's currency (400); it replaces the amount of the class's usual price and keeps its basis (D-077). A student holds one active enrolment in a class (409), and a class with a `capacity` refuses a new one once its places are taken (422). The student's grade isn't checked against the class's. No `GET /enrolments/{id}` and no `DELETE` (D-062, D-063)
 - `PATCH /enrolments/{id}` (transfer or withdraw, pro-rata)
@@ -438,7 +437,7 @@ A session's attendance is reached through the session: the owner every session, 
 - `PUT /sessions/{id}/notes`
 
 ### Fees and payments
-Price rules: the owner, branch managers, front desk and accountants read; a teacher or a parent gets 403. Only the owner writes org-wide and course rules. A class's rule goes with its class's branch: the owner writes any, branch managers and front desk those of their branches' classes, and one outside the caller's branches is 404 (D-083, D-111). Not built yet: today branch managers and front desk also write org-wide and course rules.
+Price rules: the owner, branch managers, front desk and accountants read; a teacher or a parent gets 403. Only the owner writes org-wide and course rules: anyone else gets 403, on `POST` before anything is read and on `PATCH` and `DELETE` after the 404 and before the stale 409 (D-127). A class's rule goes with its class's branch: the owner writes any, branch managers and front desk those of their branches' classes, and one outside the caller's branches is 404 (D-083, D-111).
 
 Which price an enrolment gets, most specific first: its class's own rule, its course's rule, the course's `defaultPrice` (per term, or per month for a class with no term), then the org-wide rule. A rule on a basis that doesn't fit the class is skipped. An enrolment's `priceOverride` replaces the amount and keeps the basis, pack size, free trial and tax rate. Tax is the rule's rate, else the org's default rate, else none. With none of these the enrolment has no price. No endpoint returns the resolved price: an invoice run reads it, turns it into amounts and copies it onto each line (D-077, D-082, D-093).
 
@@ -538,8 +537,8 @@ While production is behind Cloudflare Access, these paths need an Access bypass,
 - [x] Accounting export format for v1.1: Xero, QuickBooks or CSV? → CSV only, a download any accounting tool can import (D-116)
 - [x] Product name and domain. → EduStrux, edustrux.com; domain registration by the owner pending (D-023)
 - [x] Confirm the side-business and IP clauses in the employment agreement before building. → Confirmed by the owner (D-019)
-- [x] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads. → Every role reads courses; teachers and parents get them without the default price (D-110). Not built yet
-- [x] Who writes price rules? Built so branch managers and front desk add, change and delete them like the owner, and so org-wide and course rules ignore a member's branch limit: they change prices for the whole org. They can already set a course's default price (D-041) and an enrolment's override (D-062). This is an assumption from the build, not an owner decision (D-083): confirm it or restrict writes. → Only the owner writes org-wide and course rules; branch managers and front desk write rules for the classes in their branches (D-111). Not built yet
+- [x] Who reads courses? Built so every role reads them, so teachers, parents and accountants see default prices. This is an assumption from the build, not an owner decision (D-042): confirm it or restrict reads. → Every role reads courses; teachers and parents get them without the default price (D-110). Built (D-127)
+- [x] Who writes price rules? Built so branch managers and front desk add, change and delete them like the owner, and so org-wide and course rules ignore a member's branch limit: they change prices for the whole org. They can already set a course's default price (D-041) and an enrolment's override (D-062). This is an assumption from the build, not an owner decision (D-083): confirm it or restrict writes. → Only the owner writes org-wide and course rules; branch managers and front desk write rules for the classes in their branches (D-111). Built (D-127)
 - [x] Cross-branch enrolment: staff limited to one branch can't see a student whose family's home branch is another one, so they can't enrol that student in a class at their own branch (D-051). Enrolments (TUI-33) must decide how this works. → The caller must reach both the student and the class; cross-branch enrolments go through the owner or staff with no branch limit (D-058)
 - [x] Cross-branch children on a roster: branch-limited staff of the class's branch see such a child's name but can't open the student or family record, so they have no guardian or emergency contacts for them (D-061). Attendance (TUI-34) was built keeping this: they mark the child by name and still get no contacts. This is an assumption from the build, not an owner decision (D-074): confirm it, or say which contacts the class's branch should get. → The class's branch sees the child's guardians marked as emergency contacts, with name, relationship and phone, read only (D-112). Not built yet
 - [ ] Money a family pays beyond what its invoices owe, or before it is invoiced: built so a payment's allocations add up exactly to its amount, only to issued or part-paid invoices, with no credit on account (credits are v1.1). Staff record only what the invoices owe. This is an assumption from the build, not an owner decision (D-118): confirm it, or say where the extra money goes.

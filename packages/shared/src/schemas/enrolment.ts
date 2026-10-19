@@ -34,7 +34,11 @@ export const Enrolment = z
       description: 'The last day the student is in the class. null = until the class ends.',
     }),
     // A union rather than Money.nullable(): the OpenAPI generator drops "or null" from a $ref.
-    priceOverride: z.union([Money, z.null()]),
+    // Left out, not null, for teachers, since null means no override.
+    priceOverride: z
+      .union([Money, z.null()])
+      .optional()
+      .openapi({ description: 'null = no override. Left out for teachers (D-110).' }),
     status: z.enum(ENROLMENT_STATUSES),
     createdAt: Timestamp,
     updatedAt: Timestamp,

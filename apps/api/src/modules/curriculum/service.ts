@@ -11,8 +11,15 @@ import {
   type UpdateGradeLevel,
   type UpdateSubject,
 } from '@edustrux/shared';
-import type { OrgCtx } from '../../db/scope';
-import { conflict, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
+import type { Access, OrgCtx } from '../../db/scope';
+import {
+  conflict,
+  forbidden,
+  notFound,
+  staleData,
+  unprocessable,
+  validationFailed,
+} from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as billing from '../billing/service';
 import * as classes from '../classes/service';
@@ -42,6 +49,35 @@ export function toCourse(row: repo.CourseRow): Course {
     ...course,
     defaultPrice: amount !== null && currency !== null ? { amount, currency } : null,
   };
+}
+
+/**
+ * A course as this caller reads it. Teachers and parents get no default price (D-110): the field
+ * is left out, so null still means the course has none.
+ */
+function forReader(course: Course, access: Access): Course {
+  if (access.role !== 'teacher' && access.role !== 'parent') return course;
+  const { defaultPrice: _hidden, ...rest } = course;
+  return rest;
+}
+
+/**
+ * Only the owner sets or changes a course's default price (D-111): it comes before the org-wide
+ * price rule, so it prices the course's classes in every branch. Other staff who write courses
+ * may send the price the course already has, as a form that sends every field does, but not a
+ * new one.
+ */
+function checkPriceWriter(
+  access: Access,
+  price: CreateCourse['defaultPrice'],
+  current: { amount: number | null; currency: string | null },
+) {
+  if (access.scope === 'all' || price === undefined) return;
+  const same =
+    price === null
+      ? current.amount === null
+      : price.amount === current.amount && price.currency === current.currency;
+  if (!same) throw forbidden("Only the owner sets a course's default price.");
 }
 
 const gradeNameTaken = () =>
@@ -208,6 +244,7 @@ export async function deleteSubject(ctx: OrgCtx, id: string): Promise<void> {
 
 export async function listCourses(
   ctx: OrgCtx,
+  access: Access,
   limit: number,
   cursor: string | undefined,
   filter: repo.CourseFilter,
@@ -221,7 +258,7 @@ export async function listCourses(
   if (filter.subjectId && !subject) throw notFound('Subject');
   if (filter.gradeLevelId && !grade) throw notFound('Grade level');
   const { data, nextCursor } = toPage(rows, limit);
-  return { data: data.map(toCourse), nextCursor };
+  return { data: data.map((row) => forReader(toCourse(row), access)), nextCursor };
 }
 
 export async function getCourse(ctx: OrgCtx, id: string): Promise<Course> {
@@ -252,7 +289,11 @@ async function priceColumns(ctx: OrgCtx, price: CreateCourse['defaultPrice']) {
   return { defaultPriceAmount: price.amount, defaultPriceCurrency: price.currency };
 }
 
-export async function createCourse(ctx: OrgCtx, input: CreateCourse): Promise<Course> {
+export async function createCourse(
+  ctx: OrgCtx,
+  access: Access,
+  input: CreateCourse,
+): Promise<Course> {
   const key = {
     subjectId: input.subjectId,
     gradeLevelId: input.gradeLevelId,
@@ -268,6 +309,7 @@ export async function createCourse(ctx: OrgCtx, input: CreateCourse): Promise<Co
   ]);
   if (!subject) throw notFound('Subject');
   if (!grade) throw notFound('Grade level');
+  checkPriceWriter(access, input.defaultPrice, { amount: null, currency: null });
   const price = await priceColumns(ctx, input.defaultPrice);
   if (taken) throw courseTaken();
 
@@ -282,7 +324,12 @@ export async function createCourse(ctx: OrgCtx, input: CreateCourse): Promise<Co
 }
 
 /** A course keeps its subject and grade level; everything else can change. */
-export async function updateCourse(ctx: OrgCtx, id: string, input: UpdateCourse): Promise<Course> {
+export async function updateCourse(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  input: UpdateCourse,
+): Promise<Course> {
   const { updatedAt, defaultPrice, ...rest } = input;
   const newLabels = rest.curriculum !== undefined || rest.teachingMedium !== undefined;
   // The check for a course that would now be the same reads this course's subject, grade level
@@ -293,6 +340,10 @@ export async function updateCourse(ctx: OrgCtx, id: string, input: UpdateCourse)
   ]);
   if (!before) throw notFound('Course');
   if (before.updatedAt !== updatedAt) throw staleData();
+  checkPriceWriter(access, defaultPrice, {
+    amount: before.defaultPriceAmount,
+    currency: before.defaultPriceCurrency,
+  });
 
   const changes: repo.CourseChanges = { ...rest };
   if (defaultPrice !== undefined) Object.assign(changes, await priceColumns(ctx, defaultPrice));

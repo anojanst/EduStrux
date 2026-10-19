@@ -1168,6 +1168,41 @@ describe('permissions', () => {
     expect((await stranger.as('GET', `/families/${t.mainFamily.id}`)).status).toBe(404);
   });
 
+  // A student's notes are for staff. Parents get students without them: the field is left out
+  // rather than null, which means there are none (D-126). Teachers' view is in enrolment.test.
+  it('shows a student’s notes to staff but not to parents, wherever the student is', async () => {
+    const t = await twoBranches();
+    const nia = await t.addStudent(t.mainFamily.id, { firstName: 'Nia', notes: 'Asthma inhaler' });
+    const parent = await t.member('parent');
+    await db()
+      .update(guardians)
+      .set({ membershipId: parent.id })
+      .where(eq(guardians.id, t.mainGuardian.id));
+    /** Nia as the caller reads her in each of the four reads that carry a student. */
+    const notesSeen = async (as: As) => {
+      const [list, one, families, family] = await Promise.all([
+        as('GET', '/students'),
+        as('GET', `/students/${nia.id}`),
+        as('GET', '/families'),
+        as('GET', `/families/${t.mainFamily.id}`),
+      ]);
+      return [
+        ...(list.body.data as Student[]),
+        one.body as Student,
+        ...(families.body.data as Family[]).flatMap((f) => f.students),
+        ...(family.body as Family).students,
+      ]
+        .filter((s) => s.id === nia.id)
+        .map((s) => ('notes' in s ? s.notes : 'hidden'));
+    };
+
+    expect(await notesSeen(parent.as)).toEqual(Array(4).fill('hidden'));
+    expect(await notesSeen(t.api)).toEqual(Array(4).fill('Asthma inhaler'));
+    for (const role of ['branch_manager', 'front_desk'] as Role[]) {
+      expect(await notesSeen((await t.member(role)).as)).toEqual(Array(4).fill('Asthma inhaler'));
+    }
+  });
+
   it.each(['branch_manager', 'front_desk'] as Role[])(
     'keeps a %s limited to one branch inside that branch',
     async (role) => {

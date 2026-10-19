@@ -121,7 +121,10 @@ export const Student = z
     firstName: z.string(),
     lastName: z.string(),
     dateOfBirth: LocalDate.nullable(),
-    notes: z.string().nullable(),
+    // Left out, not null, for parents, since null means no notes.
+    notes: z.string().nullable().optional().openapi({
+      description: 'For staff. null = not set. Left out for parents (D-126).',
+    }),
     gradeLevelId: z
       .string()
       .nullable()

@@ -19,7 +19,8 @@ const listEnrolmentsRoute = createRoute({
   description:
     'Oldest first. `classId` gives a class’s roster and `studentId` a student’s classes. Each ' +
     'enrolment carries the student’s name and the class’s name, course and branch. A ' +
-    '`studentId` or `classId` the caller can’t reach is 404.',
+    '`studentId` or `classId` the caller can’t reach is 404. Teachers get each enrolment ' +
+    'without `priceOverride`.',
   middleware: orgAccess('classes:read'),
   request: { params: OrgParams, query: EnrolmentQuery },
   responses: {

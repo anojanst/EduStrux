@@ -91,6 +91,16 @@ export function toStudent(
   };
 }
 
+/**
+ * A student as this caller reads them. A student's notes are for staff, so parents don't get them
+ * (D-126). The field is left out, so null still means there are none.
+ */
+function forReader(student: Student, access: Access): Student {
+  if (access.role !== 'parent') return student;
+  const { notes: _hidden, ...rest } = student;
+  return rest;
+}
+
 export function toFamily(
   row: repo.FamilyRow,
   guardians: repo.GuardianRow[],
@@ -154,10 +164,13 @@ function membersOf(ctx: OrgCtx, familyIds: Ids, reach: repo.Reach) {
 }
 type Members = Awaited<ReturnType<typeof membersOf>>;
 
-/** Families as the API returns them, each with its own guardians and students out of `members`. */
+/**
+ * Families as this caller reads them, each with its own guardians and students out of `members`.
+ */
 function withMembers(
   rows: repo.FamilyRow[],
   [guardians, students, grades, years]: Members,
+  access: Access,
 ): Family[] {
   return rows.map((family) =>
     toFamily(
@@ -166,11 +179,14 @@ function withMembers(
       students
         .filter((s) => s.familyId === family.id)
         .map((student) =>
-          toStudent(
-            student,
-            family.branchId,
-            grades.filter((g) => g.studentId === student.id),
-            years,
+          forReader(
+            toStudent(
+              student,
+              family.branchId,
+              grades.filter((g) => g.studentId === student.id),
+              years,
+            ),
+            access,
           ),
         ),
     ),
@@ -196,7 +212,7 @@ export async function listFamilies(
   ]);
   if (branch) orThrow(branch);
   const { data, nextCursor } = toPage(rows, limit, (f) => byKeys(f.nameNorm, f.id));
-  return { data: withMembers(data, members), nextCursor };
+  return { data: withMembers(data, members, access), nextCursor };
 }
 
 /**
@@ -211,7 +227,7 @@ export async function getFamily(ctx: OrgCtx, access: Access, id: string): Promis
     membersOf(ctx, repo.familyFound(ctx, id, reach), reach),
   ]);
   if (!row) throw notFound('Family');
-  return withMembers([row], members)[0]!;
+  return withMembers([row], members, access)[0]!;
 }
 
 /** How many families have this home branch. A branch can't be deleted while any do. */
@@ -261,7 +277,7 @@ export async function updateFamily(
   ]);
   if (!before) throw notFound('Family');
   if (before.updatedAt !== updatedAt) throw staleData();
-  if (Object.keys(changes).length === 0) return withMembers([before], members)[0]!;
+  if (Object.keys(changes).length === 0) return withMembers([before], members, access)[0]!;
 
   if (changes.name !== undefined) changes.nameNorm = normaliseName(changes.name);
   if (changes.branchId !== undefined && changes.branchId !== before.branchId) {
@@ -280,7 +296,7 @@ export async function updateFamily(
   const updated = await repo.updateFamily(ctx, before, changes);
   if (!updated) throw notFound('Family');
   // The students carry their family's home branch, so they move with it.
-  return withMembers([updated], members)[0]!;
+  return withMembers([updated], members, access)[0]!;
 }
 
 /** Deletes the family and its guardians. Refused while the family has students. */
@@ -449,11 +465,14 @@ export async function listStudents(
   );
   return {
     data: data.map(({ student, branchId }) =>
-      toStudent(
-        student,
-        branchId,
-        grades.filter((g) => g.studentId === student.id),
-        years,
+      forReader(
+        toStudent(
+          student,
+          branchId,
+          grades.filter((g) => g.studentId === student.id),
+          years,
+        ),
+        access,
       ),
     ),
     nextCursor,
@@ -473,7 +492,7 @@ export async function getStudent(ctx: OrgCtx, access: Access, id: string): Promi
     calendar.academicYears(ctx),
   ]);
   if (!found) throw notFound('Student');
-  return toStudent(found.student, found.branchId, grades, years);
+  return forReader(toStudent(found.student, found.branchId, grades, years), access);
 }
 
 export async function createStudent(
