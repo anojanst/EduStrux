@@ -1,5 +1,6 @@
+import { addDays } from '../dates';
 import { z } from '../zod';
-import { Timestamp } from './common';
+import { LocalDate, PageQuery, Timestamp } from './common';
 
 export const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused'] as const;
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
@@ -8,6 +9,22 @@ export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
 export const MAX_ATTENDANCE_RECORDS = 1000;
 
 const StudentId = z.string().openapi({ example: 'stu_01j9z3k6m2q8w4e5r6t7y8u9i0' });
+
+/** Who gave an absence notice: a parent through the portal, or a member of staff. */
+export const ABSENCE_NOTICE_SOURCES = ['parent', 'staff'] as const;
+export type AbsenceNoticeSource = (typeof ABSENCE_NOTICE_SOURCES)[number];
+
+/** The longest an absence notice can run, in days, both ends included. */
+export const MAX_ABSENCE_DAYS = 366;
+
+/** What a roster shows of an absence notice that covers the session's date. */
+export const RosterAbsenceNotice = z
+  .object({
+    id: z.string().openapi({ example: 'abn_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    reason: z.string().nullable(),
+    source: z.enum(ABSENCE_NOTICE_SOURCES),
+  })
+  .openapi('RosterAbsenceNotice');
 
 export const AttendanceRecord = z
   .object({
@@ -20,6 +37,12 @@ export const AttendanceRecord = z
     // A union rather than Timestamp.nullable(), which would put the example on a null.
     markedAt: z.union([Timestamp, z.null()]).openapi({
       description: 'When the status was last set. null = not marked yet.',
+    }),
+    // A union rather than RosterAbsenceNotice.nullable(): the generator drops "or null" from a $ref.
+    absenceNotice: z.union([RosterAbsenceNotice, z.null()]).openapi({
+      description:
+        'The newest absence notice covering the session’s date. It marks nothing: staff still ' +
+        'set the status. null = none.',
     }),
   })
   .openapi('AttendanceRecord');
@@ -111,3 +134,59 @@ export const ClassEmergencyContacts = z
   })
   .openapi('ClassEmergencyContacts');
 export type ClassEmergencyContacts = z.infer<typeof ClassEmergencyContacts>;
+
+// ── Absence notices ─────────────────────────────────────────────────────────
+
+export const AbsenceNotice = z
+  .object({
+    id: z.string().openapi({ example: 'abn_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    studentId: StudentId,
+    studentFirstName: z.string(),
+    studentLastName: z.string(),
+    startDate: LocalDate.openapi({ description: 'The first day the student is away.' }),
+    endDate: LocalDate.openapi({ description: 'The last day the student is away.' }),
+    reason: z.string().nullable(),
+    source: z.enum(ABSENCE_NOTICE_SOURCES).openapi({
+      description: 'Who gave it: a parent through the portal, or a member of staff.',
+    }),
+    createdAt: Timestamp,
+    updatedAt: Timestamp,
+  })
+  .openapi('AbsenceNotice');
+export type AbsenceNotice = z.infer<typeof AbsenceNotice>;
+
+export const CreateAbsenceNotice = z
+  .object({
+    studentId: StudentId,
+    startDate: LocalDate.openapi({ description: 'The first day the student is away.' }),
+    endDate: LocalDate.optional().openapi({
+      description: 'The last day the student is away. Leave out for one day.',
+    }),
+    reason: z.string().trim().min(1).max(500).nullable().optional().openapi({
+      example: 'Unwell',
+    }),
+  })
+  // Compared only when both are real dates; a malformed one already has its own error.
+  .superRefine((v, ctx) => {
+    if (!v.endDate || !LocalDate.safeParse(v.startDate).success) return;
+    if (!LocalDate.safeParse(v.endDate).success) return;
+    if (v.endDate < v.startDate) {
+      ctx.addIssue({ code: 'custom', message: 'Must be on or after startDate', path: ['endDate'] });
+    } else if (v.endDate > addDays(v.startDate, MAX_ABSENCE_DAYS - 1)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `At most ${MAX_ABSENCE_DAYS} days after startDate`,
+        path: ['endDate'],
+      });
+    }
+  })
+  .openapi('CreateAbsenceNotice');
+export type CreateAbsenceNotice = z.infer<typeof CreateAbsenceNotice>;
+
+export const AbsenceNoticeQuery = PageQuery.extend({
+  studentId: z.string().optional().openapi({ description: 'Only this student’s notices' }),
+  from: LocalDate.optional().openapi({ description: 'Only notices that end on or after this day' }),
+  to: LocalDate.optional().openapi({
+    description: 'Only notices that start on or before this day',
+  }),
+});

@@ -1,19 +1,20 @@
 import { enrolments } from '@edustrux/db';
 import { asc } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { firstIds, idsFrom, type OrgCtx } from '../src/db/scope';
+import { firstIds, idsFrom, type Access, type OrgCtx } from '../src/db/scope';
 import type { OrgRow } from '../src/env';
 import * as attendance from '../src/modules/attendance/repository';
 import * as billing from '../src/modules/billing/repository';
 import * as branches from '../src/modules/branches/repository';
 import { currentAcademicYear } from '../src/modules/calendar/for-people';
-import { classOfSession } from '../src/modules/classes/for-attendance';
+import { classOfSession, dateOfSession } from '../src/modules/classes/for-attendance';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
 import * as curriculum from '../src/modules/curriculum/repository';
 import { studentsExpectedIn } from '../src/modules/enrolment/for-attendance';
 import * as enrolment from '../src/modules/enrolment/repository';
 import * as enrolmentService from '../src/modules/enrolment/service';
+import * as learning from '../src/modules/learning/repository';
 import { termDates } from '../src/modules/calendar/for-classes';
 import { lessonLengths } from '../src/modules/curriculum/for-classes';
 import { timetableOf } from '../src/modules/enrolment/for-classes';
@@ -587,6 +588,143 @@ describe('a class’s emergency contacts are read by a query for its students (T
     const plan = await planOf(send);
     for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
     expect(plan).not.toMatch(READS_AN_ORG);
+  });
+});
+
+describe('absence notices and lesson notes are read by queries for their students and sessions (TUI-54, TUI-56)', () => {
+  const SESSION = 'ses_a';
+  const member = (scope: Access['scope'], role: Access['role'], branchIds: string[] | null) => ({
+    scope,
+    role,
+    membershipId: 'mem_a',
+    branchIds,
+  });
+  const teacher = member('own', 'teacher', null);
+  const branchStaff = member('branch', 'branch_manager', IDS);
+  const teachersStudents: Reached = [
+    ['enrolments', 'class_id'],
+    ['classes', 'teacher_membership_id'],
+  ];
+  const parentsStudents: Reached = [
+    ['students', 'family_id'],
+    ['families', 'id'],
+    ['guardians', 'membership_id'],
+  ];
+  const sessionsStudents: Reached = [
+    ['enrolments', 'class_id'],
+    ['sessions', 'id'],
+  ];
+
+  // What is read, the call that sends it, and every table in it with its column.
+  const reads: [string, Send, Reached][] = [
+    [
+      'the notices of a teacher’s students',
+      (ctx) =>
+        attendance.listNotices(
+          ctx,
+          50,
+          undefined,
+          {},
+          enrolmentService.studentsReached(ctx, teacher),
+        ),
+      [['absence_notices', 'student_id'], ...teachersStudents],
+    ],
+    [
+      'the notices of a parent’s children',
+      (ctx) =>
+        attendance.listNotices(
+          ctx,
+          50,
+          undefined,
+          {},
+          peopleService.studentsOfGuardian(ctx, 'mem_a'),
+        ),
+      [['absence_notices', 'student_id'], ...parentsStudents],
+    ],
+    [
+      'one student’s notices',
+      (ctx) => attendance.listNotices(ctx, 50, undefined, { studentId: 'stu_a' }, undefined),
+      [['absence_notices', 'student_id']],
+    ],
+    [
+      'the names of the students on a page of notices',
+      (ctx) =>
+        people.studentNames(
+          ctx,
+          attendance.studentsOnNoticePage(
+            ctx,
+            50,
+            undefined,
+            {},
+            enrolmentService.studentsReached(ctx, teacher),
+          ),
+        ),
+      [['students', 'id'], ['absence_notices', 'student_id'], ...teachersStudents],
+    ],
+    [
+      'the student staff of some branches give a notice for, by their enrolments',
+      (ctx) =>
+        people.studentNames(ctx, enrolmentService.studentsReached(ctx, branchStaff, 'stu_a')!),
+      [
+        ['students', 'id'],
+        ['enrolments', 'student_id'],
+      ],
+    ],
+    [
+      'the notices covering a session’s date, of the students in its class',
+      (ctx) =>
+        attendance.noticesOn(
+          ctx,
+          enrolmentService.studentsEnrolledIn(ctx, classOfSession(ctx, SESSION)),
+          dateOfSession(ctx, SESSION),
+        ),
+      [['absence_notices', 'student_id'], ...sessionsStudents],
+    ],
+    [
+      'a session’s homework',
+      (ctx) => learning.findHomework(ctx, SESSION),
+      [['lesson_homework', 'session_id']],
+    ],
+    [
+      'a session’s notes',
+      (ctx) => learning.listNotes(ctx, SESSION),
+      [['lesson_notes', 'session_id']],
+    ],
+    [
+      'the names of the students with a note at a session',
+      (ctx) => people.studentNames(ctx, learning.studentsNotedAt(ctx, SESSION)),
+      [
+        ['students', 'id'],
+        ['lesson_notes', 'session_id'],
+      ],
+    ],
+  ];
+
+  it.each(reads)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+
+  it('pages the notices of staff of some branches in id order, checking each student', async () => {
+    const plan = await planOf((ctx) =>
+      attendance.listNotices(
+        ctx,
+        50,
+        undefined,
+        {},
+        enrolmentService.studentsReached(ctx, branchStaff),
+      ),
+    );
+    expect(plan).toMatch(searchIn('absence_notices', 'absence_notices_org_id_uq'));
+    expect(plan).not.toContain(SORT);
+    expect(plan).toMatch(searchBy('enrolments', 'student_id'));
+    for (const other of ['classes', 'students', 'families']) {
+      expect(plan).toMatch(searchBy(other, 'id'));
+    }
+    expect(plan).not.toMatch(
+      /^SEARCH \w+ USING (COVERING )?INDEX \S+ \(org_id=\? AND branch_id=\?/m,
+    );
   });
 });
 

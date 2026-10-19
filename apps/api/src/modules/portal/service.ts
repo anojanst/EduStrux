@@ -1,4 +1,6 @@
 import type {
+  AbsenceNotice,
+  CreateAbsenceNotice,
   Enrolment,
   Invoice,
   InvoiceStatus,
@@ -8,6 +10,7 @@ import type {
   Session,
 } from '@edustrux/shared';
 import type { Access, OrgCtx } from '../../db/scope';
+import * as attendance from '../attendance/service';
 import * as billing from '../billing/service';
 import * as classes from '../classes/service';
 import * as enrolment from '../enrolment/service';
@@ -106,4 +109,13 @@ export async function listInvoices(
 ) {
   const { data, nextCursor } = await billing.listInvoices(ctx, access, limit, cursor, query);
   return { data: data.map(toPortalInvoice), nextCursor };
+}
+
+/** A parent reports that one of their children is, or was, away. Any other student is 404. */
+export function reportAbsence(
+  ctx: OrgCtx,
+  access: Access,
+  input: CreateAbsenceNotice,
+): Promise<AbsenceNotice> {
+  return attendance.createAbsenceNotice(ctx, access, input, 'parent');
 }

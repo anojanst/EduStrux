@@ -266,6 +266,22 @@ export function countEnrolments(ctx: OrgCtx, filter: repo.EnrolmentFilter) {
 // Who a caller reaches, for other modules to filter by. Each is a query for ids, written into
 // the statement it filters: no database trip (D-104).
 
+/**
+ * The students a caller reaches through enrolments: those holding an active enrolment the caller
+ * may see (`reachOf`). Branch staff reach the students in their branches' classes and their own
+ * branches' students in any class; a teacher the students in their classes. undefined when the
+ * caller's reach has no limit. With `studentId`, only that student.
+ */
+export function studentsReached(
+  ctx: OrgCtx,
+  access: Access,
+  studentId?: string,
+): IdQuery | undefined {
+  const reach = reachOf(ctx, access);
+  if (!reach.classIds && !reach.studentIds) return undefined;
+  return repo.activeStudentsWithin(ctx, reach, studentId);
+}
+
 /** The students who hold an active enrolment in any of these classes. */
 export function studentsEnrolledIn(ctx: OrgCtx, classIds: Ids): IdQuery {
   return repo.activeStudents(ctx, classIds);

@@ -1,5 +1,7 @@
 import { createRoute } from '@hono/zod-openapi';
 import {
+  AbsenceNotice,
+  CreateAbsenceNotice,
   PortalChildList,
   PortalInvoice,
   PortalInvoiceQuery,
@@ -8,14 +10,15 @@ import {
   page,
 } from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
-import { createRouter, errors, json } from '../../lib/openapi';
+import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { roleAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as service from './service';
 
 // The parent portal: a signed-in parent's view of their own family (D-126). Every route is for
 // the parent role alone, and every other role gets 403. Each needs the permission the parent
-// already reads the same data with, at `own` scope: people, classes or billing.
+// already reads the same data with, at `own` scope: people, classes or billing. Reporting an
+// absence needs `absences:report`, which only parents (and the owner) hold.
 
 const listChildrenRoute = createRoute({
   method: 'get',
@@ -67,6 +70,23 @@ const listInvoicesRoute = createRoute({
   },
 });
 
+const reportAbsenceRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/portal/absence-notices',
+  tags: ['Parent portal'],
+  summary: 'Report an absence',
+  description:
+    'One of your children is, or was, away from `startDate` to `endDate` (both included; leave ' +
+    '`endDate` out for one day, at most 366 days). Their teachers and the centre see it on the ' +
+    'roster of every lesson in those dates. Any other student is 404.',
+  middleware: roleAccess('parent', 'absences:report'),
+  request: { params: OrgParams, body: jsonBody(CreateAbsenceNotice) },
+  responses: {
+    201: json(AbsenceNotice, 'Your absence notice'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
 export const portalRoutes = createRouter()
   .openapi(listChildrenRoute, async (c) => {
     const data = await service.listChildren(orgCtx(c), access(c));
@@ -79,4 +99,7 @@ export const portalRoutes = createRouter()
   .openapi(listInvoicesRoute, async (c) => {
     const { limit, cursor, ...query } = c.req.valid('query');
     return c.json(await service.listInvoices(orgCtx(c), access(c), limit, cursor, query), 200);
+  })
+  .openapi(reportAbsenceRoute, async (c) => {
+    return c.json(await service.reportAbsence(orgCtx(c), access(c), c.req.valid('json')), 201);
   });

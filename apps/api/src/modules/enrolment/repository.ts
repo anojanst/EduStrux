@@ -5,6 +5,7 @@ import {
   idsFrom,
   inIds,
   inOrg,
+  wide,
   writeWithAudit,
   type IdQuery,
   type Ids,
@@ -42,6 +43,23 @@ const pageConditions = (afterId: string | undefined, filter: EnrolmentFilter, re
   within(reach),
   afterId ? gt(enrolments.id, afterId) : undefined,
 ];
+
+/**
+ * The students who hold an active enrolment within the reach, as ids to filter another table by.
+ * With `studentId`, only that student: a lookup by the student. Without, a branch manager's reach
+ * is `wide`, a share of the org.
+ */
+export function activeStudentsWithin(ctx: OrgCtx, reach: Reach, studentId?: string): IdQuery {
+  const ids = idsFrom(
+    ctx,
+    enrolments,
+    enrolments.studentId,
+    studentId ? inIds(enrolments.studentId, [studentId]) : undefined,
+    active,
+    within(reach),
+  );
+  return studentId || !(reach.classIds && reach.studentIds) ? ids : wide(ids);
+}
 
 /** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
 export function listEnrolments(

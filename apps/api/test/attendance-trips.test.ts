@@ -7,7 +7,8 @@ import { call, db, newOrg, newUser } from './helpers';
 // The budget for an endpoint is about 3 database trips in sequence: sign-in, one read stage, one
 // write (D-102). Reading a session's attendance has no write, so it gets 2. `stages` is what a
 // request waited for one after another; `trips` is every call it made, pinned at what it makes
-// today so a call added by mistake shows up.
+// today so a call added by mistake shows up. A roster's read stage includes the absence notices
+// covering the session's date (TUI-54).
 
 const today = () => localNow('Pacific/Auckland').date; // sampleOrg's timezone
 
@@ -100,6 +101,7 @@ async function classOfThree() {
     parent,
     path: `/sessions/${sessionId}/attendance`,
     contactsPath: `/classes/${klass.id}/emergency-contacts`,
+    notesPath: `/sessions/${sessionId}/notes`,
     aroha,
     ben,
     mia,
@@ -118,7 +120,7 @@ describe('GET /sessions/{id}/attendance waits for 2 database trips: sign-in, the
       expect(res.status).toBe(200);
       expect(seen(res.body)).toEqual(['Ben: -', 'Aroha: -', 'Mia: -']);
       expect(res.db.stages).toBeLessThanOrEqual(2);
-      expect(res.db.trips).toBeLessThanOrEqual(6);
+      expect(res.db.trips).toBeLessThanOrEqual(7);
     }
   });
 
@@ -128,7 +130,7 @@ describe('GET /sessions/{id}/attendance waits for 2 database trips: sign-in, the
     expect(res.status).toBe(200);
     expect(seen(res.body)).toEqual(['Mia: -']);
     expect(res.db.stages).toBeLessThanOrEqual(2);
-    expect(res.db.trips).toBeLessThanOrEqual(5);
+    expect(res.db.trips).toBeLessThanOrEqual(6);
   });
 });
 
@@ -142,7 +144,7 @@ describe('PUT /sessions/{id}/attendance waits for 3: sign-in, one read stage, on
     expect(owner.status).toBe(200);
     expect(seen(owner.body)).toEqual(['Ben: present', 'Aroha: -', 'Mia: -']);
     expect(owner.db.stages).toBeLessThanOrEqual(3);
-    expect(owner.db.trips).toBeLessThanOrEqual(7);
+    expect(owner.db.trips).toBeLessThanOrEqual(8);
 
     const teacher = await c.teacher.as('PUT', c.path, {
       records: [{ studentId: c.aroha.id, status: 'late' }],
@@ -150,7 +152,7 @@ describe('PUT /sessions/{id}/attendance waits for 3: sign-in, one read stage, on
     expect(teacher.status).toBe(200);
     expect(seen(teacher.body)).toEqual(['Ben: present', 'Aroha: late', 'Mia: -']);
     expect(teacher.db.stages).toBeLessThanOrEqual(3);
-    expect(teacher.db.trips).toBeLessThanOrEqual(7);
+    expect(teacher.db.trips).toBeLessThanOrEqual(8);
   });
 
   it('for the whole class with one mark cleared, as the owner and as the class’s teacher', async () => {
@@ -168,14 +170,14 @@ describe('PUT /sessions/{id}/attendance waits for 3: sign-in, one read stage, on
     expect(owner.status).toBe(200);
     expect(seen(owner.body)).toEqual(['Ben: -', 'Aroha: present', 'Mia: present']);
     expect(owner.db.stages).toBeLessThanOrEqual(3);
-    expect(owner.db.trips).toBeLessThanOrEqual(7);
+    expect(owner.db.trips).toBeLessThanOrEqual(8);
 
     await c.api('PUT', c.path, { records: [{ studentId: c.ben.id, status: 'absent' }] });
     const teacher = await c.teacher.as('PUT', c.path, everyone(null, 'late'));
     expect(teacher.status).toBe(200);
     expect(seen(teacher.body)).toEqual(['Ben: -', 'Aroha: late', 'Mia: late']);
     expect(teacher.db.stages).toBeLessThanOrEqual(3);
-    expect(teacher.db.trips).toBeLessThanOrEqual(7);
+    expect(teacher.db.trips).toBeLessThanOrEqual(8);
   });
 
   it('stops after the read stage when the marks sent are already in place', async () => {
@@ -187,7 +189,7 @@ describe('PUT /sessions/{id}/attendance waits for 3: sign-in, one read stage, on
     expect(again.status).toBe(200);
     expect(seen(again.body)).toEqual(['Ben: present', 'Aroha: -', 'Mia: -']);
     expect(again.db.stages).toBeLessThanOrEqual(2);
-    expect(again.db.trips).toBeLessThanOrEqual(6);
+    expect(again.db.trips).toBeLessThanOrEqual(7);
   });
 
   it('refuses a parent after the sign-in trip, before anything is read', async () => {
@@ -246,5 +248,62 @@ describe('GET /classes/{id}/emergency-contacts waits for 2 database trips: sign-
     const res = await c.parent.as('GET', c.contactsPath);
     expect(res.status).toBe(403);
     expect(res.db).toEqual({ trips: 1, stages: 1 });
+  });
+});
+
+describe('absence notices wait for 2 trips to list and 3 to record: sign-in, one read stage, one write', () => {
+  it('lists, as the owner, the class’s teacher and a parent', async () => {
+    const c = await classOfThree();
+    await c.api('POST', '/absence-notices', {
+      studentId: c.mia.id,
+      startDate: addDays(today(), 1),
+    });
+    for (const as of [c.api, c.teacher.as, c.parent.as]) {
+      const res = await as('GET', '/absence-notices');
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.db.stages).toBeLessThanOrEqual(2);
+      expect(res.db.trips).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('records, as the owner and the class’s teacher, and as a parent through the portal', async () => {
+    const c = await classOfThree();
+    const body = { studentId: c.mia.id, startDate: addDays(today(), 1) };
+    for (const [as, path] of [
+      [c.api, '/absence-notices'],
+      [c.teacher.as, '/absence-notices'],
+      [c.parent.as, '/portal/absence-notices'],
+    ] as const) {
+      const res = await as('POST', path, body);
+      expect(res.status).toBe(201);
+      expect(res.db.stages).toBeLessThanOrEqual(3);
+      expect(res.db.trips).toBeLessThanOrEqual(3);
+    }
+  });
+});
+
+describe('a lesson’s notes wait for 2 trips to read and 3 to write', () => {
+  it('reads, as the owner, the class’s teacher and a parent', async () => {
+    const c = await classOfThree();
+    for (const as of [c.api, c.teacher.as, c.parent.as]) {
+      const res = await as('GET', c.notesPath);
+      expect(res.status).toBe(200);
+      expect(res.db.stages).toBeLessThanOrEqual(2);
+      expect(res.db.trips).toBeLessThanOrEqual(7);
+    }
+  });
+
+  it('writes the homework and every note, as the owner and the class’s teacher', async () => {
+    const c = await classOfThree();
+    for (const as of [c.api, c.teacher.as]) {
+      const res = await as('PUT', c.notesPath, {
+        homework: `Homework ${Math.random()}`,
+        notes: [c.aroha, c.ben, c.mia].map((s) => ({ studentId: s.id, note: `${Math.random()}` })),
+      });
+      expect(res.status).toBe(200);
+      expect(res.db.stages).toBeLessThanOrEqual(3);
+      expect(res.db.trips).toBeLessThanOrEqual(8);
+    }
   });
 });

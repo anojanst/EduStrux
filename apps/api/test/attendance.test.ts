@@ -178,6 +178,7 @@ describe('attendance', () => {
           studentLastName: 'Ngata',
           status: null,
           markedAt: null,
+          absenceNotice: null,
         },
         {
           studentId: aroha.id,
@@ -185,6 +186,7 @@ describe('attendance', () => {
           studentLastName: 'Perera',
           status: null,
           markedAt: null,
+          absenceNotice: null,
         },
       ],
     });

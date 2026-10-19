@@ -766,6 +766,9 @@ get them without the default price).
   own day on, so one removed days ahead has no marks. A session marked today before it starts can
   still be removed that day; its marks stay in the table, hidden with the session (D-070).
   Absence notices, make-up bookings and one-off moves still need their own rule.
+- **Update 2026-10-19 (TUI-54):** Built: absence notices have their rule. A notice goes by date,
+  not by session, so it holds whatever becomes of a session (D-129). Make-up bookings and one-off
+  moves still need theirs.
 
 ## D-047 · 2026-10-11 · How sessions are generated: upcoming only, by diff, stored in local time
 
@@ -1592,6 +1595,9 @@ get them without the default price).
     decide whether "expected" should instead be any enrolment that covered the date.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-34 (and TUI-46, TUI-55).
+- **Update 2026-10-19 (TUI-54, TUI-56):** Built. Each record also carries `absenceNotice`, the
+  newest absence notice covering the session's date, or null (D-129). A lesson's notes list their
+  students by this rule, with notes in place of marks (D-130).
 
 ## D-073 · 2026-10-12 · Who reaches attendance: a teacher marks the classes they teach
 
@@ -1622,6 +1628,10 @@ get them without the default price).
   - The teacher today view (TUI-57) uses these routes.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-34 (and TUI-57).
+- **Update 2026-10-19 (TUI-54, TUI-56):** Built: the rest of the row. Lesson notes are reached
+  through the session with this reach, and a parent reads the homework and their own children's
+  notes (D-130). A parent reports an absence through the portal, and every role with
+  `attendance:read` reads the notices of the students it reaches (D-129).
 
 ## D-074 · 2026-10-12 · Cross-branch children are marked by name (assumption, for the owner to confirm)
 
@@ -1680,6 +1690,8 @@ contacts). Marking the child by name is unchanged.
 - **Tasks:** TUI-34 (and TUI-46, TUI-54, TUI-79).
 - **Update 2026-10-14:** The owner decided the general option: an update's audit row stores only
   the fields that changed (D-113). Archiving stays deferred.
+- **Update 2026-10-19 (TUI-54):** Built. The owner decided an absence notice marks nothing: the
+  roster flags the student, and staff still set the status (D-129).
 
 ## D-076 · 2026-10-13 · Merging to main deploys production
 
@@ -3562,6 +3574,8 @@ under "Not changed here" for a reach that is a subquery.
 - **Tasks:** TUI-39 (and TUI-105).
 - **Update 2026-10-19 (TUI-105):** Built. A parent now gets students without `notes` through
   `GET /students` and `GET /families` too (D-127).
+- **Update 2026-10-19 (TUI-54):** Built: `POST /portal/absence-notices`, for the parent role
+  alone, with `absences:report` (D-129).
 
 ## D-127 · 2026-10-19 · Hidden fields are left out, and who may send a course's price
 
@@ -3646,3 +3660,134 @@ under "Not changed here" for a reach that is a subquery.
     `contacts: []`, and refusing a parent before anything is read. The owner hasn't stated
     those.
 - **Tasks:** TUI-102 (and TUI-34).
+
+## D-129 · 2026-10-19 · An absence notice is a child away from a date to a date, and marks nothing
+
+- **Context:** TUI-54 builds absence notices: `GET|POST /absence-notices` for staff and
+  `POST /portal/absence-notices` for parents. D-046 left open what happens to a notice when its
+  session is removed, and D-075 left to TUI-54 whether a notice marks a student `excused`. The
+  owner was asked two questions during the build.
+- **Decision:**
+  - The owner decided on 2026-10-19, asked during the build, and picked the recommended option
+    both times:
+    - What one notice covers: "A child, from a date to a date (Recommended)". Not taken: a
+      child, specific lessons.
+    - What it does to attendance: "Flagged; staff still mark (Recommended)". Not taken: counting
+      as excused until marked.
+  - A notice is one student, away from `startDate` to `endDate`, both included. `endDate`
+    defaults to `startDate`, for one day. It can't be before `startDate`, and a notice runs at
+    most 366 days (400).
+  - Past dates are allowed: a parent may tell the centre afterwards. What counts as notice given
+    ahead is for make-up credits (TUI-55) to decide, from `createdAt`.
+  - `reason` is optional, 1 to 500 characters. `source` is `parent` or `staff`: who gave it.
+    Notices can overlap. There is no edit or delete: only `GET` and `POST` are built.
+  - A notice goes by date, not by session. It holds whatever becomes of a session: moved,
+    generated again, or removed by a holiday. A session generated after the notice is flagged
+    too. This settles D-046's open point for notices.
+  - The roster: each record of `GET` and `PUT /sessions/{sessionId}/attendance` carries
+    `absenceNotice`, the newest notice covering the session's date as `{ id, reason, source }`,
+    or null. Only students with an active enrolment in the class get one. It marks nothing: the
+    status stays what staff set. This settles D-075's open point.
+  - The routes:
+    - `GET /absence-notices` (`attendance:read`, Attendance tag): paged, oldest first. Filters
+      `?studentId`, `?from` and `?to`: a notice is kept when it ends on or after `from` and starts
+      on or before `to`. `to` before `from` is 400. A `studentId` out of reach is 404. Each notice
+      has `id`, `studentId`, `studentFirstName`, `studentLastName`, `startDate`, `endDate`,
+      `reason`, `source`, `createdAt` and `updatedAt`. A student can be deleted while they have
+      notices (only enrolments block it, D-063); their notices are left out.
+    - `POST /absence-notices` (`attendance:write`): the body has `studentId`, `startDate`, and
+      optionally `endDate` and `reason`. 201 with the notice, `source: 'staff'`. A parent gets 403.
+    - `POST /portal/absence-notices` (Parent portal tag): the same body, 201 with
+      `source: 'parent'`. For the parent role alone, as every portal route (D-126), with
+      `absences:report`. Every other role gets 403.
+  - Whose notices a caller gives and reads:
+    - The owner, and staff with no branch limit: every student.
+    - Branch managers and front desk limited to some branches: the students they reach through
+      active enrolments. Those are the students in their branches' classes, children from another
+      branch included, and their branches' students in any class. A student of their branch with
+      no active enrolment is 404 for them.
+    - A teacher: the students with an active enrolment in a class they teach.
+    - A parent: their own children.
+    - An accountant: 403, having no `attendance:read`.
+    - A student out of reach, or one the org doesn't have, is 404.
+  - No new permission. `absences:report` already existed, held by parents.
+  - A new `absence_notices` table: `student_id`, `start_date`, `end_date`, `reason` and `source`.
+    A unique index on `(org_id, id)` for the list (D-101), and an index on
+    `(org_id, student_id, id)`. The id prefix is `abn_`.
+  - One `absence_notice.created` audit row per notice, with the whole row as `after`.
+  - Database trips (D-102, D-104): the list is sign-in and one read stage, at most 3 trips;
+    recording one takes at most 3. The roster reads the notices in its one read stage, with the
+    session's date written into the statement, so `GET` goes from 6 to 7 trips and `PUT` from 7
+    to 8, in the same stages. `apps/api/test/query-plans.test.ts` pins the new reads.
+- **Consequences:**
+  - Nobody is told about a notice yet. Telling staff about a parent's notice is for the automatic
+    messages (TUI-70), which come after the email queue (TUI-65).
+  - A notice given by mistake can't be changed or withdrawn. That is outside TUI-54.
+  - A parent reads their children's notices through `GET /absence-notices`. The portal has no
+    list of its own.
+  - Make-up credits (TUI-55) build on notices.
+  - Assumption: the date range and "flagged, staff still mark" are the owner's decisions. The
+    rest is recorded from the implementation, and the owner hasn't stated it: one day by
+    default, at most 366 days, past dates, the reason's length, overlapping notices, no edit or
+    delete, the newest notice on the roster, who reaches which students, and leaving out a
+    deleted student's notices.
+- **Tasks:** TUI-54 (and TUI-55, TUI-65, TUI-70).
+
+## D-130 · 2026-10-19 · Lesson notes: one homework per lesson and a note per child
+
+- **Context:** TUI-56 builds typed lesson notes, `GET|PUT /sessions/{sessionId}/notes`. Handoff
+  §7 had one `lesson_notes` table with a per-student note and homework text. The owner was asked
+  two questions during the build.
+- **Decision:**
+  - The owner decided on 2026-10-19, asked during the build, and picked the recommended option
+    both times:
+    - Homework: "One per lesson + a note per child (Recommended)". Not taken: a note and homework
+      per child.
+    - What parents see: "Homework and the child's note (Recommended)". Not taken: homework only,
+      or nothing yet.
+  - Two tables:
+    - `lesson_homework`: `session_id` and `homework`, at most one per session (a partial unique
+      index on `(org_id, session_id)` over rows that aren't deleted). Id prefix `lhw_`.
+    - `lesson_notes`: `session_id`, `student_id` and `note`, at most one per session and student
+      (a partial unique index on `(org_id, session_id, student_id)`), and an index on
+      `(org_id, student_id)`. Id prefix `lnt_`.
+    - No row means nothing written. Clearing soft-deletes the row. The API doesn't expose the ids.
+  - The routes, under a new Lesson notes tag:
+    - `GET` returns `{ sessionId, homework, homeworkUpdatedAt, notes }`, not paged. Each note is
+      `{ studentId, studentFirstName, studentLastName, note, updatedAt }`. `homework` and `note`
+      are null when nothing is written.
+    - `notes` lists the students whose active enrolment in the class covers the session's date,
+      plus anyone with a note, by last name, first name, then id: the attendance roster's rule
+      (D-072), with notes in place of marks.
+    - `PUT` body `{ homework?, notes?: [{ studentId, note }] }`. It merges: what is sent is set,
+      null clears it, anything left out keeps what it has. Sending neither is 400. At most 1000
+      notes, each student once (400, `Listed more than once`). Text is trimmed, 1 to 2000
+      characters.
+    - Notes can be written any day: before, on or after the lesson. A `cancelled` session is 422.
+      A `studentId` not on the list is 422 on `notes.N.studentId`
+      (`['Not enrolled for this session']`), and nothing is written.
+    - `PUT` answers as `GET` does, from what it read and what its write stored, not read again
+      (the D-105 rule).
+  - Who: a lesson's notes are reached through the session, as its attendance is (D-073). `GET`
+    needs `attendance:read` and `PUT` `attendance:write`. No new permission.
+    - The owner every session; branch managers and front desk their branches' sessions; a
+      teacher the classes they teach. All read and write.
+    - A parent reads the homework and their own children's notes, never other children's, and
+      `PUT` is 403.
+    - An accountant gets 403. A session outside the caller's reach is 404.
+  - One `lesson_notes.updated` audit row per `PUT` that changes something. Its entity type is
+    `session`. `before` and `after` hold only what changed (D-113): `homework`, and `notes` as
+    `[{ studentId, note }]` for the students whose note changed. A `PUT` that changes nothing
+    writes none.
+  - Database trips (D-102): `GET` is sign-in and one read stage, at most 7 trips. `PUT` is at
+    most 3 stages and 8 trips. `apps/api/test/query-plans.test.ts` pins the new reads.
+- **Consequences:**
+  - Parents have no portal route for notes. They read them through
+    `GET /sessions/{sessionId}/notes`, and find their children's sessions through
+    `GET /portal/sessions`.
+  - This is a lesson's homework text. Homework as its own feature stays in v1.1 (handoff §8).
+  - Assumption: one homework per lesson with a note per child, and what parents see, are the
+    owner's decisions. The rest is recorded from the implementation, and the owner hasn't stated
+    it: two tables, who on the list, writing on any day but not on a cancelled session, the text
+    limits, and the permissions used.
+- **Tasks:** TUI-56.
