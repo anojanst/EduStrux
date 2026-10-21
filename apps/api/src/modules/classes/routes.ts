@@ -9,8 +9,10 @@ import {
   ScheduleResult,
   Session,
   SessionQuery,
+  SessionUpdate,
   SetSchedule,
   UpdateClass,
+  UpdateSession,
   page,
 } from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
@@ -182,7 +184,41 @@ const clashesRoute = createRoute({
   },
 });
 
+const updateSessionRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/sessions/{sessionId}',
+  tags: ['Classes'],
+  summary: 'Move, change or cancel one lesson',
+  description:
+    'A one-off change to a lesson that hasn’t started (422 once it has): a new `date` or ' +
+    '`startTime` (not one that has passed, 422; another of the class’s lessons there is 409), ' +
+    '`endTime`, `roomId` (in the class’s branch, 422), `teacherId` (active staff, 422), or ' +
+    '`status`. A moved lesson keeps `movedFrom`, and saving the weekly schedule again leaves it ' +
+    'alone. The families of the students expected at it are sent a message when it moves, ' +
+    'changes time, is cancelled or is back on, with `note` added, unless `notify` is false or ' +
+    'the notification settings turn lesson changes off. Send the `updatedAt` you last read (409).',
+  middleware: orgAccess('classes:write'),
+  request: { params: SessionParams, body: jsonBody(UpdateSession) },
+  responses: {
+    200: json(SessionUpdate, 'The lesson, and the message families were sent'),
+    ...errors(400, 401, 403, 404, 409, 422),
+  },
+});
+
 export const classRoutes = createRouter()
+  .openapi(updateSessionRoute, async (c) => {
+    const { sessionId } = c.req.valid('param');
+    return c.json(
+      await service.updateSession(
+        orgCtx(c),
+        access(c),
+        sessionId,
+        c.req.valid('json'),
+        c.env.EMAIL_QUEUE,
+      ),
+      200,
+    );
+  })
   .openapi(clashesRoute, async (c) => {
     return c.json({ data: await service.clashes(orgCtx(c), access(c), c.req.valid('query')) }, 200);
   })

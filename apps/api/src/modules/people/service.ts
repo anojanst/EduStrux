@@ -876,3 +876,38 @@ export async function duplicates(
     }),
   };
 }
+
+// ── Who a message goes to (TUI-69) ──────────────────────────────────────────
+
+/** The families of these students, as ids to filter by. */
+export function familiesOfStudentIds(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return repo.familiesOfStudentIds(ctx, studentIds);
+}
+
+/** The students with one of these grade levels in the current academic year. */
+export async function studentsInGrades(ctx: OrgCtx, gradeLevelIds: string[]): Promise<IdQuery> {
+  return repo.studentsInGrades(ctx, gradeLevelIds, await currentAcademicYear(ctx));
+}
+
+/**
+ * The guardians of these families that the caller reaches, with their emails: who a message to
+ * those families goes to. Branch staff reach their branches' families, a teacher their students'.
+ */
+export function guardiansToMessage(ctx: OrgCtx, access: Access, familyIds: Ids) {
+  return repo.guardiansOf(ctx, familyIds, reachOf(ctx, access));
+}
+
+/** The guardians of these families, whoever asks: an automatic message goes to all of them. */
+export function guardiansOfFamilies(ctx: OrgCtx, familyIds: Ids) {
+  return repo.guardiansOf(ctx, familyIds, {});
+}
+
+/** Of these family ids, the ones the caller reaches. */
+export async function familiesReached(ctx: OrgCtx, access: Access, ids: string[]) {
+  return (await repo.familiesFound(ctx, ids, reachOf(ctx, access))).map((row) => row.id);
+}
+
+/** Every family in the org, as ids to filter by. Wide: all of them. */
+export function allFamilies(ctx: OrgCtx): IdQuery {
+  return repo.familiesWithin(ctx, {});
+}

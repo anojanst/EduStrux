@@ -108,3 +108,71 @@ Cancelled lessons are ignored.
 `classes:read` and the class reach: branch staff see their branches' lessons only (so a teacher
 shared with another branch shows no clash to them), a teacher their own classes. A parent gets
 403, as for an accountant.
+
+## TUI-69, TUI-65, TUI-70 Messages, email sending, notification settings
+
+**Q-14 · Which guardians get a message?**
+Options: (a) every guardian of the family; (b) only the billing contact; (c) only guardians with
+`preferredChannel: email`.
+**Built: (a)**, one recipient row per guardian; those without an email address get the portal only
+(`emailStatus: skipped`). `preferredChannel` is still only stored: SMS and WhatsApp are paid
+add-ons, so everyone with an address is emailed.
+
+**Q-15 · What the audiences mean.** Built: `all`; `branch` = families whose home branch it is;
+`grade` = students with that grade level in the current academic year; `subject`, `class`,
+`teacher` = students with an active enrolment in such a class; `custom` = family ids (404 for one
+the caller can't reach). The audience is cut down to the families the sender reaches: branch
+staff their branches', a teacher their students'. Unknown ids reach nobody; an audience that
+reaches nobody is 422.
+
+**Q-16 · Who reads which messages?**
+Built: the owner reads every message, automatic ones included; everyone else reads only the
+announcements they sent themselves. Parents read theirs at `GET /portal/messages` (added, not in
+the endpoint list) and get 403 on `GET /messages`. Templates: anyone who sends can list them;
+only the owner adds, changes or deletes them (`org:write`).
+
+**Q-17 · How email is sent.**
+Built: each email is a queue message; the consumer renders it (plain text body → escaped HTML,
+English catalog in `apps/api/src/email/catalog.ts`, D-015) and posts it to Resend's API with an
+`Idempotency-Key` per recipient, so a retried try never sends twice. 429 and 5xx are retried with
+backoff up to the queue's 5 retries, then marked `failed`; other refusals fail at once.
+Configuration the owner must add before email works (not done: no infra changes this session):
+the `RESEND_API_KEY` secret and an `EMAIL_FROM` value (a sender on a domain verified with
+Resend), and optionally `APP_URL` for links in invitation emails. Without them every email is
+marked `failed` with "Email sending is not set up". Tests force both empty so they can never send.
+
+**Q-18 · Automatic messages and their settings.**
+Built: `GET|PUT /notification-settings` (owner writes; every role reads). Three switches,
+`sessionChanges`, `invoiceIssued`, `overdueReminders` (all on by default), the reminder days
+after the due date (default 1, 7, 14), the local hour reminders go out at (default 9) and a
+reply-to address. `PUT` replaces all of them, the later save winning (no `updatedAt`).
+Automatic messages are stored like announcements (`kind: automatic`, with `event`), so the
+portal shows them and their delivery is tracked.
+
+**Q-19 · Issuing an invoice now sends it.** D-095 said issuing sends no email yet. Built: issuing
+queues an `invoice_issued` message to the family's guardians (total, due date, bank reference),
+unless `invoiceIssued` is off. The PDF isn't attached (see TUI-59).
+
+**Q-20 · Automatic messages are written by the queue, not the request.** To keep requests within
+the D-102 budget, a request only queues a "notice"; the email consumer applies the settings,
+finds the guardians, writes the message (with the requester as the audit actor) and queues its
+emails. So the message appears a moment after the response.
+
+## TUI-49 Session one-off changes
+
+**Q-21 · What can change, and when.**
+Built: `PATCH /sessions/{id}` changes `date`, `startTime`, `endTime`, `roomId`, `teacherId` or
+`status` (cancel, or put back on) of a lesson that hasn't started (422 once it has), never to a
+time that has passed (422). Another of the class's lessons at the new date and time is 409.
+Takes `updatedAt` (409 when stale). `classes:write` with the class reach.
+
+**Q-22 · Moved lessons and the weekly generator.**
+Built: a moved lesson remembers where it was first scheduled (`movedFrom`, new columns
+`sessions.original_date`/`original_start_time`). Saving the weekly schedule again never re-adds
+its first slot, nor moves or removes it. Moving it back clears `movedFrom`.
+
+**Q-23 · Which changes families hear about.** Built: a move to another date, a new start time on
+the same date, a cancellation and a lesson put back on. A new end time, room or teacher alone
+sends nothing. `notify: false` sends nothing; an optional `note` is added to the message. The
+message goes to the families of the students expected at the lesson, on its old date and its new
+one.

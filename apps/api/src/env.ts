@@ -12,6 +12,12 @@ export type Bindings = {
   CLERK_AUTHORIZED_PARTIES: string;
   CLERK_SECRET_KEY?: string;
   CLERK_JWT_KEY?: string;
+  /** Resend's API key, a secret the owner sets. Without it (or EMAIL_FROM) no email is sent. */
+  RESEND_API_KEY?: string;
+  /** The sender of every email, `Name <address>`, on a domain verified with Resend. */
+  EMAIL_FROM?: string;
+  /** The web app's address, for links in emails. Without it, emails carry codes, not links. */
+  APP_URL?: string;
 };
 
 export type AuthUser = {

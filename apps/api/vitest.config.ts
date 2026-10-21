@@ -17,6 +17,9 @@ export default defineConfig(async () => ({
       miniflare: {
         bindings: {
           ENVIRONMENT: 'test',
+          // Never send real email from tests, even when .dev.vars has a key for local work.
+          RESEND_API_KEY: '',
+          EMAIL_FROM: '',
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),

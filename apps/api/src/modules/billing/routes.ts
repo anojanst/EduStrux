@@ -281,8 +281,9 @@ const issueInvoiceRoute = createRoute({
   tags: ['Billing'],
   summary: 'Issue an invoice',
   description:
-    'A draft becomes `issued`, and the family’s parents can see it from then on. Anything but ' +
-    'a draft is 422. Takes an `Idempotency-Key`.',
+    'A draft becomes `issued`, and the family’s parents can see it from then on. Its guardians ' +
+    'are sent it, by email and in the portal, unless the notification settings turn that off. ' +
+    'Anything but a draft is 422. Takes an `Idempotency-Key`.',
   middleware: billingAction,
   request: { params: InvoiceParams },
   responses: {
@@ -441,7 +442,10 @@ export const billingRoutes = router
   })
   .openapi(issueInvoiceRoute, async (c) => {
     const { invoiceId } = c.req.valid('param');
-    return c.json(await service.issueInvoice(orgCtx(c), access(c), invoiceId), 200);
+    return c.json(
+      await service.issueInvoice(orgCtx(c), access(c), invoiceId, c.env.EMAIL_QUEUE),
+      200,
+    );
   })
   .openapi(voidInvoiceRoute, async (c) => {
     const { invoiceId } = c.req.valid('param');

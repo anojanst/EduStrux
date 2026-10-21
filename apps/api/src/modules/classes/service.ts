@@ -2,8 +2,10 @@ import {
   CLASH_RANGE_DAYS,
   OPEN_ENDED_HORIZON_DAYS,
   addDays,
-  type Clash,
+  formatDate,
+  formatTime,
   localNow,
+  type Clash,
   localToUtc,
   newId,
   type Class,
@@ -11,7 +13,9 @@ import {
   type ScheduleResult,
   type ScheduleSlot,
   type Session,
+  type SessionUpdate,
   type SetSchedule,
+  type UpdateSession,
   type UpdateClass,
 } from '@edustrux/shared';
 import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
@@ -34,6 +38,11 @@ import { timetableOf } from '../enrolment/for-classes';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
+import type { EmailMessage } from '../../background/messages';
+import { t } from '../../email/catalog';
+import * as comms from '../comms/service';
+import { studentsExpectedIn } from '../enrolment/for-attendance';
+import { classOfSession } from './for-attendance';
 import * as repo from './repository';
 import {
   notStarted,
@@ -84,9 +93,20 @@ type SessionWithClass = NonNullable<Awaited<ReturnType<typeof repo.findSession>>
 
 /** The UTC instants come from the local date and times in the org's timezone, at read time. */
 export function toSession(row: SessionWithClass, timezone: string): Session {
-  const { orgId: _org, deletedAt: _deleted, teacherMembershipId, ...session } = row.session;
+  const {
+    orgId: _org,
+    deletedAt: _deleted,
+    teacherMembershipId,
+    originalDate,
+    originalStartTime,
+    ...session
+  } = row.session;
   return {
     ...session,
+    movedFrom:
+      originalDate && originalStartTime
+        ? { date: originalDate, startTime: originalStartTime }
+        : null,
     className: row.className,
     courseId: row.courseId,
     branchId: row.branchId,
@@ -471,6 +491,8 @@ function generationRange(klass: repo.ClassRow, term: DateRange | null, today: st
 /**
  * Works out which upcoming sessions to add and remove so they match the weekly slots. Only
  * sessions that haven't started are considered, and only ones still `scheduled` are removed. A
+ * lesson moved by hand (TUI-49) is never added again, moved or removed: its first slot and the one
+ * it moved to are both its own. A
  * session that already matches is kept, so saving the same schedule twice changes nothing, and
  * so does anything attached to it. Dates closed by a holiday get no session.
  */
@@ -488,12 +510,19 @@ function planSessions(
     : [];
 
   const key = (s: { date: string; startTime: string }) => `${s.date} ${s.startTime}`;
-  const current = new Map(existing.map((s) => [key(s), s]));
+  // A lesson moved by hand holds the slot it was first scheduled in, and the one it moved to.
+  const moved = existing.filter((s) => s.originalDate !== null && s.originalStartTime !== null);
+  const heldByMove = new Set([
+    ...moved.map((s) => key({ date: s.originalDate!, startTime: s.originalStartTime! })),
+    ...moved.map(key),
+  ]);
+  const current = new Map(existing.filter((s) => s.originalDate === null).map((s) => [key(s), s]));
   const wantedKeys = new Set(wanted.map(key));
   const plan: repo.SessionPlan = { add: [], removeIds: [] };
   let kept = 0;
 
   for (const lesson of wanted) {
+    if (heldByMove.has(key(lesson))) continue;
     const match = current.get(key(lesson));
     if (match && match.status !== 'scheduled') continue;
     if (match && match.endTime === lesson.endTime) {
@@ -512,6 +541,7 @@ function planSessions(
     });
   }
   for (const session of existing) {
+    if (session.originalDate !== null) continue;
     if (session.status === 'scheduled' && !wantedKeys.has(key(session))) {
       plan.removeIds.push(session.id);
     }
@@ -722,4 +752,158 @@ export async function clashes(
     }
   }
   return found;
+}
+
+/** The classes of these courses, as ids to filter by. */
+export function classesOfCourses(ctx: OrgCtx, courseIds: Ids): IdQuery {
+  return repo.classesOf(ctx, { courseIds });
+}
+
+/** The classes these members teach, as ids to filter by. */
+export function classesTaughtByAny(ctx: OrgCtx, membershipIds: string[]): IdQuery {
+  return repo.classesOf(ctx, { teacherMembershipIds: membershipIds });
+}
+
+// ── One lesson changed by hand (TUI-49) ─────────────────────────────────────
+
+/**
+ * Moves one lesson to another date or time, changes its room or teacher, or cancels it or puts
+ * it back on. A lesson that has started can't change, and can't be moved to a time that has. The
+ * families of the students expected at it are told when it moves, changes time, is cancelled or
+ * is back on, unless the request or the org's notification settings say not to.
+ *
+ * One read stage, then the write. The message to families is queued, and written by the email
+ * queue's consumer, which applies the org's notification settings (TUI-70).
+ */
+export async function updateSession(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  input: UpdateSession,
+  queue: Queue<EmailMessage>,
+): Promise<SessionUpdate> {
+  const reach = reachOf(ctx, access);
+  const [found, room, teacher, expectedOn, clock, org] = await Promise.all([
+    repo.findSession(ctx, id, reach),
+    hold(input.roomId ? branches.getRoom(ctx, input.roomId) : null),
+    input.teacherId ? orgs.findMember(ctx, input.teacherId) : null,
+    studentsExpectedIn(ctx, classOfSession(ctx, id)),
+    orgClock(ctx),
+    orgs.getOrg(ctx),
+  ]);
+  if (!found) throw notFound('Session');
+  const before = found.session;
+  if (before.updatedAt !== input.updatedAt) throw staleData();
+  const { now, timezone } = clock;
+
+  const after = {
+    date: input.date ?? before.date,
+    startTime: input.startTime ?? before.startTime,
+    endTime: input.endTime ?? before.endTime,
+    status: input.status ?? before.status,
+  };
+  const changes: repo.SessionChanges = {};
+  for (const field of ['date', 'startTime', 'endTime', 'status'] as const) {
+    if (after[field] !== before[field]) Object.assign(changes, { [field]: after[field] });
+  }
+  if (input.roomId !== undefined && input.roomId !== before.roomId) changes.roomId = input.roomId;
+  if (input.teacherId !== undefined && input.teacherId !== before.teacherMembershipId) {
+    changes.teacherMembershipId = input.teacherId;
+  }
+  if (Object.keys(changes).length === 0) {
+    return { session: toSession(found, timezone), messageId: null };
+  }
+
+  if (!notStarted(before, now)) {
+    throw unprocessable('This lesson has started, so it can’t be changed.', {
+      date: ['Started'],
+    });
+  }
+  if (after.endTime <= after.startTime)
+    throw validationFailed({ endTime: ['Must be after startTime'] });
+  if ((changes.date || changes.startTime) && !notStarted(after, now)) {
+    throw unprocessable('A lesson can’t be moved to a time that has passed.', {
+      [changes.date ? 'date' : 'startTime']: ['In the past'],
+    });
+  }
+  if (input.roomId) checkRoom(take(room)!, found.branchId);
+  if (input.teacherId) checkTeacher(teacher ?? undefined);
+
+  const movedNow = changes.date !== undefined || changes.startTime !== undefined;
+  if (movedNow) {
+    const first = before.originalDate
+      ? { date: before.originalDate, startTime: before.originalStartTime! }
+      : { date: before.date, startTime: before.startTime };
+    const backHome = first.date === after.date && first.startTime === after.startTime;
+    changes.originalDate = backHome ? null : first.date;
+    changes.originalStartTime = backHome ? null : first.startTime;
+  }
+
+  const action =
+    changes.status === 'cancelled'
+      ? 'session.cancelled'
+      : changes.status === 'scheduled'
+        ? 'session.restored'
+        : movedNow
+          ? 'session.moved'
+          : 'session.updated';
+  let updated: repo.SessionRow | undefined;
+  try {
+    updated = await repo.updateSession(ctx, before, changes, action);
+  } catch (err) {
+    if (repo.sessionTaken(err)) {
+      throw conflict('The class already has a lesson at that date and time.', {
+        startTime: ['Taken'],
+      });
+    }
+    throw err;
+  }
+  if (!updated) throw staleData();
+  const session = toSession({ ...found, session: updated }, timezone);
+
+  // Who to tell: whoever is expected at the lesson, on its old date and its new one.
+  let messageId: string | null = null;
+  const notice = noticeFor(before, session, found.className, org, input.note);
+  if (notice && input.notify !== false) {
+    const students = [...new Set([...expectedOn(before.date), ...expectedOn(after.date)])];
+    if (students.length > 0) {
+      messageId = await comms.queueNotice(ctx, queue, {
+        event: 'session_changed',
+        ...notice,
+        studentIds: students,
+        audience: { type: 'session', ids: [id] },
+      });
+    }
+  }
+  return { session, messageId };
+}
+
+/** What families are told about a lesson's change, or null when it is nothing they need. */
+function noticeFor(
+  before: repo.SessionRow,
+  after: Session,
+  className: string,
+  org: { dateFormat: Parameters<typeof formatDate>[1]; locale: string },
+  note: string | undefined,
+) {
+  const date = (d: string) => formatDate(d, org.dateFormat);
+  const time = (t: string) => formatTime(t, org.locale);
+  const vars = {
+    className,
+    date: date(after.date),
+    time: time(after.startTime),
+    oldDate: date(before.date),
+    oldTime: time(before.startTime),
+  };
+  const extra = note ? t('session.note', { note }) : '';
+  const say = (kind: 'moved' | 'retimed' | 'cancelled' | 'restored') => ({
+    subject: t(`session.${kind}.subject`, vars),
+    body: t(`session.${kind}.body`, vars) + extra,
+  });
+  if (after.status === 'cancelled' && before.status !== 'cancelled') return say('cancelled');
+  if (after.status === 'cancelled') return null;
+  if (before.status === 'cancelled') return say('restored');
+  if (after.date !== before.date) return say('moved');
+  if (after.startTime !== before.startTime) return say('retimed');
+  return null;
 }

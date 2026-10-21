@@ -9,6 +9,7 @@ export * from './schemas/branches';
 export * from './schemas/calendar';
 export * from './schemas/classes';
 export * from './schemas/common';
+export * from './schemas/comms';
 export * from './schemas/curriculum';
 export * from './schemas/enrolment';
 export * from './schemas/invoices';

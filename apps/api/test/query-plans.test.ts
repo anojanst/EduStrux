@@ -10,6 +10,7 @@ import { currentAcademicYear } from '../src/modules/calendar/for-people';
 import { classOfSession, dateOfSession } from '../src/modules/classes/for-attendance';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
+import * as comms from '../src/modules/comms/repository';
 import * as curriculum from '../src/modules/curriculum/repository';
 import { studentsExpectedIn } from '../src/modules/enrolment/for-attendance';
 import * as enrolment from '../src/modules/enrolment/repository';
@@ -1507,5 +1508,29 @@ describe('a clash check reads the dates’ sessions by date (TUI-50)', () => {
     );
     expect(plan).toMatch(searchBy('enrolments', 'class_id'));
     expect(plan).toMatch(searchIn('sessions', 'sessions_org_date_idx'));
+  });
+});
+
+describe('messages are read through their indexes (TUI-69)', () => {
+  it('pages the org’s messages, or a sender’s own, in id order', async () => {
+    const all = await planOf((ctx) => comms.listMessages(ctx, 50, undefined, {}));
+    expect(all).toMatch(searchIn('messages', 'messages_org_id_uq'));
+    expect(all).not.toContain(SORT);
+    const own = await planOf((ctx) =>
+      comms.listMessages(ctx, 50, undefined, { sentByMembershipId: 'mem_a' }),
+    );
+    expect(own).toMatch(searchBy('messages', 'sent_by_membership_id'));
+    expect(own).not.toContain(SORT);
+  });
+
+  it('reads a message’s recipients by the message', async () => {
+    const plan = await planOf((ctx) => comms.listRecipients(ctx, ['msg_a']));
+    expect(plan).toMatch(searchBy('message_recipients', 'message_id'));
+  });
+
+  it('finds a parent’s messages from their families’ recipient rows', async () => {
+    const plan = await planOf((ctx) => comms.messagesToFamilies(ctx, ['fam_a'], 50, undefined));
+    expect(plan).toMatch(searchBy('message_recipients', 'family_id'));
+    expect(plan).not.toMatch(READS_AN_ORG);
   });
 });

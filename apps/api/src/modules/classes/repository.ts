@@ -688,3 +688,85 @@ export function classesToCheck(
     inIds(classes.id, idsFrom(ctx, sessions, sessions.classId, ...ofSession)),
   );
 }
+
+/** The classes of these courses, or taught by these members, as ids to filter by (TUI-69). */
+export function classesOf(
+  ctx: OrgCtx,
+  by: { courseIds?: Ids; teacherMembershipIds?: string[] },
+): IdQuery {
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    by.courseIds ? inIds(classes.courseId, by.courseIds) : undefined,
+    by.teacherMembershipIds
+      ? inIds(classes.teacherMembershipId, by.teacherMembershipIds)
+      : undefined,
+  );
+}
+
+// ── One lesson changed by hand (TUI-49) ─────────────────────────────────────
+
+export type SessionChanges = Partial<
+  Pick<
+    NewSessionRow,
+    | 'date'
+    | 'startTime'
+    | 'endTime'
+    | 'roomId'
+    | 'teacherMembershipId'
+    | 'status'
+    | 'originalDate'
+    | 'originalStartTime'
+  >
+>;
+
+/**
+ * Changes one lesson, with its audit row. It holds only while the lesson is as read, so a second
+ * change racing this one changes nothing and the caller answers 409. Returns the lesson as
+ * changed, from the same batch.
+ */
+export async function updateSession(
+  ctx: OrgCtx,
+  before: SessionRow,
+  changes: SessionChanges,
+  action: string,
+) {
+  const [, updated] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(sessions)
+        .set({ ...changes, updatedAt: now() })
+        .where(
+          inOrg(
+            ctx,
+            sessions,
+            eq(sessions.id, before.id),
+            eq(sessions.updatedAt, before.updatedAt),
+          ),
+        )
+        .returning(),
+    ],
+    {
+      action,
+      entityType: 'session',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
+  );
+  return (updated as SessionRow[])[0];
+}
+
+/** Whether an error is the unique index refusing a second lesson at one date and time. */
+export function sessionTaken(error: unknown): boolean {
+  for (let e: unknown = error; e instanceof Error; e = e.cause) {
+    if (
+      e.message.includes('sessions_org_class_date_start_uq') ||
+      e.message.includes('sessions.start_time')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}

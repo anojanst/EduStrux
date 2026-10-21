@@ -1,6 +1,7 @@
 export * from './attendance';
 export * from './billing';
 export * from './classes';
+export * from './comms';
 export * from './core';
 export * from './enrolment';
 export * from './learning';

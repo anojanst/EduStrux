@@ -930,3 +930,48 @@ export function matchGuardians(ctx: OrgCtx, match: PersonMatch, limit: number, r
     .orderBy(...sortedBy(guardians.lastNameNorm, guardians.firstNameNorm, guardians.id))
     .limit(limit);
 }
+
+// ── Who a message goes to (TUI-69) ──────────────────────────────────────────
+
+/** The families of these students, as ids to filter by. */
+export function familiesOfStudentIds(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return familiesOfStudents(ctx, studentIds);
+}
+
+/** The students with one of these grade levels in this academic year, as ids to filter by. */
+export function studentsInGrades(
+  ctx: OrgCtx,
+  gradeLevelIds: string[],
+  academicYearId: IdQuery,
+): IdQuery {
+  return idsFrom(
+    ctx,
+    studentGrades,
+    studentGrades.studentId,
+    inIds(studentGrades.gradeLevelId, gradeLevelIds),
+    inIds(studentGrades.academicYearId, academicYearId),
+  );
+}
+
+/** The guardians of these families within reach, each with their email, oldest first. */
+export function guardiansOf(ctx: OrgCtx, familyIds: Ids, reach: Reach) {
+  return ctx.db
+    .select({ id: guardians.id, familyId: guardians.familyId, email: guardians.email })
+    .from(guardians)
+    .innerJoin(families, eq(families.id, guardians.familyId))
+    .where(
+      and(
+        inOrg(ctx, guardians, inIds(guardians.familyId, familyIds)),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(asc(guardians.familyId), asc(guardians.id));
+}
+
+/** Of these families, the ones within reach: those a family id given in a request may name. */
+export function familiesFound(ctx: OrgCtx, ids: string[], reach: Reach) {
+  return ctx.db
+    .select({ id: families.id })
+    .from(families)
+    .where(inOrg(ctx, families, inIds(families.id, ids), within(ctx, reach)));
+}

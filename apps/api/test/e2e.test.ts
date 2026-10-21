@@ -310,7 +310,10 @@ describe('end to end', () => {
       action: string;
       actorUserId: string;
     }[];
-    expect(audit.map((row) => `${row.action} by ${name[row.actorUserId]}`).sort()).toEqual(
+    // Issuing the invoice also queues a message to the family (TUI-70), written by the email
+    // queue whenever it gets to it, so its row isn't counted here.
+    const writes = audit.filter((row) => row.action !== 'message.sent');
+    expect(writes.map((row) => `${row.action} by ${name[row.actorUserId]}`).sort()).toEqual(
       [
         'org.created by owner',
         'invitation.created by owner',

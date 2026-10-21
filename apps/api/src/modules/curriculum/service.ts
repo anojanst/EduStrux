@@ -372,3 +372,8 @@ export async function deleteCourse(ctx: OrgCtx, id: string): Promise<void> {
   }
   await repo.softDeleteCourse(ctx, before);
 }
+
+/** The courses of these subjects, as ids to filter by. */
+export function coursesOfSubjects(ctx: OrgCtx, subjectIds: string[]) {
+  return repo.coursesOfSubjects(ctx, subjectIds);
+}

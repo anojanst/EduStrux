@@ -11,6 +11,7 @@ import { billingRoutes } from './modules/billing/routes';
 import { branchRoutes } from './modules/branches/routes';
 import { calendarRoutes } from './modules/calendar/routes';
 import { classRoutes } from './modules/classes/routes';
+import { commsRoutes } from './modules/comms/routes';
 import { curriculumRoutes } from './modules/curriculum/routes';
 import { enrolmentRoutes } from './modules/enrolment/routes';
 import { learningRoutes } from './modules/learning/routes';
@@ -44,6 +45,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', attendanceRoutes);
   app.route('/', learningRoutes);
   app.route('/', billingRoutes);
+  app.route('/', commsRoutes);
   app.route('/', portalRoutes);
 
   // API docs: generated from the route definitions above.

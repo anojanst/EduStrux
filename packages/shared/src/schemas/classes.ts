@@ -193,11 +193,71 @@ export const Session = z
     }),
     endsAt: Timestamp.openapi({ example: '2026-10-14T04:00:00.000Z' }),
     status: z.enum(SESSION_STATUSES),
+    movedFrom: z
+      .object({ date: LocalDate, startTime: LocalTime })
+      .nullable()
+      .openapi({
+        description:
+          'Where the lesson was first scheduled, if it was moved by hand. A moved lesson is ' +
+          'left alone when the weekly schedule is saved again.',
+      }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
   .openapi('Session');
 export type Session = z.infer<typeof Session>;
+
+export const UpdateSession = z
+  .object({
+    updatedAt: Timestamp.openapi({
+      description: 'The updatedAt you last read. A newer value on the server returns 409.',
+    }),
+    date: LocalDate.openapi({ description: 'Move the lesson to this date.' }),
+    startTime: LocalTime,
+    endTime: LocalTime,
+    roomId: z.string().nullable().openapi({ description: 'A room in the class’s branch.' }),
+    teacherId: z.string().nullable().openapi({ description: 'An active member of staff.' }),
+    status: z.enum(SESSION_STATUSES).openapi({
+      description: '`cancelled` cancels the lesson; `scheduled` puts a cancelled one back on.',
+    }),
+    note: z.string().trim().min(1).max(500).optional().openapi({
+      description: 'Added to the message families get, e.g. why it changed.',
+    }),
+    notify: z
+      .boolean()
+      .default(true)
+      .openapi({
+        description:
+          'Tell the families of the students expected at the lesson when it moves, changes time, ' +
+          'is cancelled or is back on. The notification settings can turn this off for everyone.',
+      }),
+  })
+  .partial()
+  .required({ updatedAt: true })
+  .refine(
+    (v) =>
+      v.startTime === undefined ||
+      v.endTime === undefined ||
+      !LocalTime.safeParse(v.startTime).success ||
+      !LocalTime.safeParse(v.endTime).success ||
+      v.endTime > v.startTime,
+    { message: 'Must be after startTime', path: ['endTime'] },
+  )
+  .openapi('UpdateSession');
+export type UpdateSession = z.infer<typeof UpdateSession>;
+
+export const SessionUpdate = z
+  .object({
+    session: Session,
+    messageId: z.string().nullable().openapi({
+      description:
+        'The id the message to families gets once the queue sends it, moments later. None is ' +
+        'sent when the notification settings turn lesson changes off. null when nothing was ' +
+        'queued: a change families needn’t hear of, `notify: false`, or nobody expected.',
+    }),
+  })
+  .openapi('SessionUpdate');
+export type SessionUpdate = z.infer<typeof SessionUpdate>;
 
 export const SessionQuery = PageQuery.extend({
   from: LocalDate.openapi({ description: 'The first date to include', example: '2026-10-12' }),

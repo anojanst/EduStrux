@@ -1,5 +1,7 @@
 import {
   basisFitsClass,
+  formatDate,
+  formatMoney,
   localNow,
   newId,
   type CreatePayment,
@@ -34,6 +36,9 @@ import * as orgs from '../orgs/service';
 import { familyLabelWithinReach, familyWithinReach } from '../people/for-billing';
 import * as people from '../people/service';
 import { priceResolver } from './pricing';
+import type { EmailMessage } from '../../background/messages';
+import { t } from '../../email/catalog';
+import * as comms from '../comms/service';
 import { chargeAgain } from './invoicing';
 import * as repo from './repository';
 
@@ -554,8 +559,16 @@ export async function updateInvoice(
   return as(updated);
 }
 
-/** A draft becomes issued: from then on its family's parents can see it. */
-export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
+/**
+ * A draft becomes issued: from then on its family's parents can see it, and, when the org's
+ * notification settings say so, its guardians are sent it (TUI-70).
+ */
+export async function issueInvoice(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  queue?: Queue<EmailMessage>,
+): Promise<Invoice> {
   const { row: before, as } = await readInvoice(ctx, access, id);
   if (before.status !== 'draft') {
     throw unprocessable('Only a draft invoice can be issued.', { status: ['Not a draft'] });
@@ -563,7 +576,30 @@ export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Pro
   const issued = await repo.issueInvoice(ctx, before);
   // No row came back: another request issued it between the read and the write. The answer is
   // still the invoice as it now is, which takes a read.
-  return issued ? as(issued) : getInvoice(ctx, access, id);
+  if (!issued) return getInvoice(ctx, access, id);
+  const invoice = as(issued);
+  if (queue) await tellFamily(ctx, queue, invoice);
+  return invoice;
+}
+
+/** Queues the automatic message for an issued invoice. It costs the request no database call. */
+async function tellFamily(ctx: OrgCtx, queue: Queue<EmailMessage>, invoice: Invoice) {
+  const org = await orgs.getOrg(ctx);
+  const total = formatMoney(invoice.total, org.locale);
+  await comms.queueNotice(ctx, queue, {
+    event: 'invoice_issued',
+    subject: t('invoice.issued.subject', { orgName: org.name, total }),
+    body: t('invoice.issued.body', {
+      familyName: invoice.familyName,
+      total,
+      due: invoice.dueDate
+        ? t('invoice.issued.due', { dueDate: formatDate(invoice.dueDate, org.dateFormat) })
+        : '',
+      bankReference: invoice.bankReference ?? '',
+    }),
+    familyIds: [invoice.familyId],
+    audience: { type: 'custom', ids: [invoice.familyId] },
+  });
 }
 
 /**
