@@ -99,7 +99,8 @@ describe('file uploads', () => {
         size: 5,
       })
     ).body;
-    const tampered = link.uploadUrl.replace(/sig=./, 'sig=0');
+    const url = link.uploadUrl as string;
+    const tampered = url.slice(0, -1) + (url.endsWith('0') ? '1' : '0');
     expect((await raw('PUT', tampered, 'a')).status).toBe(404);
     const otherFile = link.uploadUrl.replace(link.file.id, 'fil_other');
     expect((await raw('PUT', otherFile, 'a')).status).toBe(404);

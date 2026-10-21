@@ -1,20 +1,25 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   AuditEntry,
+  CreateImport,
   CreateUpload,
+  Import,
+  JobStarted,
+  MapImport,
   FileWithLink,
   Job,
   PageQuery,
   UploadLink,
   page,
 } from '@edustrux/shared';
-import { orgCtx } from '../../db/scope';
+import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as repo from './repository';
 import * as files from './files';
+import * as imports from './imports';
 import * as service from './service';
 
 const healthRoute = createRoute({
@@ -126,9 +131,85 @@ const getContentRoute = createRoute({
   },
 });
 
+const ImportParams = OrgParams.extend({
+  importId: z.string().openapi({ param: { name: 'importId', in: 'path' } }),
+});
+
+const createImportRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/imports',
+  tags: ['Platform'],
+  summary: 'Start a spreadsheet import',
+  description:
+    'From an uploaded CSV (`POST /files/upload-url`, then PUT): its first row is the headers. ' +
+    'Answers with the headers, the row count and the first 5 rows, to map. One row is one ' +
+    'student, with their family and a guardian. At most 1000 rows (422).',
+  middleware: orgAccess('people:write'),
+  request: { params: OrgParams, body: jsonBody(CreateImport) },
+  responses: { 201: json(Import, 'The import'), ...errors(400, 401, 403, 404, 422) },
+});
+
+const getImportRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/imports/{importId}',
+  tags: ['Platform'],
+  summary: 'Get an import',
+  description: 'For whoever started it and the owner; anyone else gets 404.',
+  middleware: orgAccess('people:write'),
+  request: { params: ImportParams },
+  responses: { 200: json(Import, 'The import'), ...errors(401, 403, 404) },
+});
+
+const mapImportRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/imports/{importId}',
+  tags: ['Platform'],
+  summary: 'Map an import’s columns, and check every row',
+  description:
+    'Column header → field, and a default home branch for rows with none. Every row is checked: ' +
+    'names, dates (`YYYY-MM-DD`, or day/month/year in the organisation’s date format), branch ' +
+    'and grade level names, emails and phones. `problems` lists the first 100; with none the ' +
+    'import is `ready`. Branch staff can only import into their own branches.',
+  middleware: orgAccess('people:write'),
+  request: { params: ImportParams, body: jsonBody(MapImport) },
+  responses: { 200: json(Import, 'The import, checked'), ...errors(400, 401, 403, 404, 409, 422) },
+});
+
+const commitImportRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/imports/{importId}/commit',
+  tags: ['Platform'],
+  summary: 'Add an import’s families and students (job)',
+  description:
+    'For a `ready` import (422 otherwise). Rows with the same family name, branch and guardian ' +
+    'email are one family. Everything is added in one go, or nothing. Returns `202 { jobId }`.',
+  middleware: orgAccess('people:write'),
+  request: { params: ImportParams },
+  responses: { 202: json(JobStarted, 'The commit is running'), ...errors(401, 403, 404, 409, 422) },
+});
+
 const originOf = (url: string) => new URL(url).origin;
 
 export const platformRoutes = createRouter()
+  .openapi(createImportRoute, async (c) => {
+    return c.json(await imports.createImport(orgCtx(c), c.env, c.req.valid('json').fileId), 201);
+  })
+  .openapi(getImportRoute, async (c) => {
+    const { importId } = c.req.valid('param');
+    return c.json(await imports.getImport(orgCtx(c), c.env, access(c), importId), 200);
+  })
+  .openapi(mapImportRoute, async (c) => {
+    const { importId } = c.req.valid('param');
+    return c.json(
+      await imports.mapImport(orgCtx(c), c.env, access(c), importId, c.req.valid('json')),
+      200,
+    );
+  })
+  .openapi(commitImportRoute, async (c) => {
+    const { importId } = c.req.valid('param');
+    const jobId = await imports.commitImport(orgCtx(c), access(c), c.env.JOBS_QUEUE, importId);
+    return c.json({ jobId }, 202);
+  })
   .openapi(uploadUrlRoute, async (c) => {
     const link = await files.createUpload(
       orgCtx(c),

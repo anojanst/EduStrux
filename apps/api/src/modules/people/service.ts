@@ -1025,3 +1025,121 @@ export async function promoteStudents(ctx: JobContext): Promise<PromotionResult>
   }
   return result;
 }
+
+// ── Spreadsheet import (TUI-60) ─────────────────────────────────────────────
+
+/** One row of an import, checked and resolved to ids. */
+export type ImportedRow = {
+  familyName: string;
+  branchId: string;
+  address: string | null;
+  guardian: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    relationship: string | null;
+  } | null;
+  student: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string | null;
+    notes: string | null;
+  };
+  gradeLevelId: string | null;
+};
+
+/**
+ * Adds an import's rows as families, guardians and students, in one batch with one audit row.
+ * Rows of the same family name and home branch whose guardian has the same email (or the same
+ * name, with no email) are one family; a family's first guardian is its billing contact.
+ */
+export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: string) {
+  const { current } = await calendar.academicYears(ctx);
+  const familyRows: (repo.NewFamilyRow & { id: string })[] = [];
+  const guardianRows: (repo.NewGuardianRow & { id: string })[] = [];
+  const studentRows: (repo.NewStudentRow & { id: string })[] = [];
+  const gradeRows: (repo.NewGradeRow & { id: string })[] = [];
+  const familyOf = new Map<string, repo.NewFamilyRow & { id: string }>();
+  const guardianOf = new Map<string, string>();
+
+  for (const row of rows) {
+    const who = row.guardian
+      ? (row.guardian.email ?? normaliseName(`${row.guardian.firstName} ${row.guardian.lastName}`))
+      : '';
+    const familyKey = `${normaliseName(row.familyName)}|${row.branchId}|${who}`;
+    let family = familyOf.get(familyKey);
+    if (!family) {
+      const id = newId('family');
+      family = {
+        id,
+        orgId: ctx.orgId,
+        name: row.familyName,
+        nameNorm: normaliseName(row.familyName),
+        branchId: row.branchId,
+        address: row.address,
+        billingGuardianId: null,
+        bankReference: bankReferenceFor(id),
+      };
+      familyOf.set(familyKey, family);
+      familyRows.push(family);
+    }
+    if (row.guardian) {
+      const guardianKey = `${family.id}|${who}`;
+      if (!guardianOf.has(guardianKey)) {
+        const id = newId('guardian');
+        guardianOf.set(guardianKey, id);
+        guardianRows.push({
+          id,
+          orgId: ctx.orgId,
+          familyId: family.id,
+          firstName: row.guardian.firstName,
+          lastName: row.guardian.lastName,
+          firstNameNorm: normaliseName(row.guardian.firstName),
+          lastNameNorm: normaliseName(row.guardian.lastName),
+          relationship: row.guardian.relationship,
+          email: row.guardian.email,
+          phone: row.guardian.phone,
+          phoneNorm: normalisePhone(row.guardian.phone),
+          preferredChannel: 'email',
+          language: null,
+          emergencyContact: true,
+          membershipId: null,
+        });
+        family.billingGuardianId ??= id;
+      }
+    }
+    const studentId = newId('student');
+    studentRows.push({
+      id: studentId,
+      orgId: ctx.orgId,
+      familyId: family.id,
+      firstName: row.student.firstName,
+      lastName: row.student.lastName,
+      firstNameNorm: normaliseName(row.student.firstName),
+      lastNameNorm: normaliseName(row.student.lastName),
+      dateOfBirth: row.student.dateOfBirth,
+      notes: row.student.notes,
+    });
+    if (row.gradeLevelId && current) {
+      gradeRows.push({
+        id: newId('studentGrade'),
+        orgId: ctx.orgId,
+        studentId,
+        academicYearId: current.id,
+        gradeLevelId: row.gradeLevelId,
+      });
+    }
+  }
+  const counts = {
+    families: familyRows.length,
+    guardians: guardianRows.length,
+    students: studentRows.length,
+  };
+  await repo.insertImported(
+    ctx,
+    { families: familyRows, guardians: guardianRows, students: studentRows, grades: gradeRows },
+    { entityId: importId, after: counts },
+  );
+  return counts;
+}

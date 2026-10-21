@@ -1048,3 +1048,50 @@ export async function studentsAmong(ctx: OrgCtx, ids: string[], reach: Reach) {
     );
   return rows.map((row) => row.id);
 }
+
+// ── Spreadsheet import (TUI-60) ─────────────────────────────────────────────
+
+// Bound values per row: a family 11, a guardian 18, a student 12, a grade 7.
+const PER_INSERT = { families: 9, guardians: 5, students: 8, grades: 14 } as const;
+
+/**
+ * Writes an import's families, guardians, students and grades as one batch with one audit row
+ * for the import (D-045): all of them or none.
+ */
+export async function insertImported(
+  ctx: OrgCtx,
+  rows: {
+    families: (NewFamilyRow & { id: string })[];
+    guardians: (NewGuardianRow & { id: string })[];
+    students: (NewStudentRow & { id: string })[];
+    grades: (NewGradeRow & { id: string })[];
+  },
+  audit: { entityId: string; after: Record<string, unknown> },
+) {
+  const insert = <T extends object>(
+    table: Parameters<typeof ctx.db.insert>[0],
+    list: T[],
+    size: number,
+  ) => {
+    const out = [];
+    for (let i = 0; i < list.length; i += size) {
+      out.push(ctx.db.insert(table).values(list.slice(i, i + size) as never));
+    }
+    return out;
+  };
+  await writeWithAudit(
+    ctx,
+    [
+      ...insert(families, rows.families, PER_INSERT.families),
+      ...insert(guardians, rows.guardians, PER_INSERT.guardians),
+      ...insert(students, rows.students, PER_INSERT.students),
+      ...insert(studentGrades, rows.grades, PER_INSERT.grades),
+    ],
+    {
+      action: 'import.committed',
+      entityType: 'import',
+      entityId: audit.entityId,
+      after: audit.after,
+    },
+  );
+}

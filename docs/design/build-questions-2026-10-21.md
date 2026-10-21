@@ -318,3 +318,25 @@ Files stream through the Worker, so they're kept small: CSV, PDF, PNG or JPEG, a
 **Q-41 · Who.** Uploading needs `people:write` (owner, branch managers, front desk: imports are
 the main use). A file is read by the member who uploaded it and the owner; anyone else 404, as
 for jobs (D-018). Files for an import are removed by the daily clean-up after a week.
+
+## TUI-60 Spreadsheet import
+
+**Q-42 · CSV only.** Built: imports read **CSV** (RFC 4180: quotes, commas and newlines in
+fields, a BOM). Excel `.xlsx` would need a parsing library in the Worker; staff save the sheet
+as CSV. At most 1000 rows per import.
+
+**Q-43 · What a row is.** Built: one row is one **student** with their **family** and one
+**guardian**. Fields: student first and last name (required), date of birth (`YYYY-MM-DD`, or
+day/month/year in the org's date format), notes, grade (a grade level's name, for the current
+academic year), family name (default: the guardian's or student's last name), branch (a branch's
+name, or a default branch), address, guardian first and last name, email, phone, relationship.
+Rows with the same family name, branch and guardian email (or guardian name, with no email) are
+one family; its first guardian is the billing contact.
+
+**Q-44 · Flow and duplicates.** Built: `POST /imports` (from an uploaded file) → headers, row
+count, first 5 rows; `PATCH /imports/{id}` sets the mapping and checks every row (the first 100
+problems, with spreadsheet row numbers; `ready` with none); `POST /imports/{id}/commit` runs a
+job that adds everything in one batch with one `import.committed` audit row, or nothing.
+Records already in the org are **not** matched: an import adds new families even when a name
+is on record. Run the duplicate check (TUI-43) or search first. Branch staff can only import
+into their own branches. An import is seen by whoever started it and the owner.

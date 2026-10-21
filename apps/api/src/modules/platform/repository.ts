@@ -1,5 +1,5 @@
-import { auditLog, files, jobs, type Db } from '@edustrux/db';
-import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { auditLog, files, imports, jobs, type Db } from '@edustrux/db';
+import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -109,4 +109,44 @@ export async function softDeleteFiles(db: Db, ids: string[]) {
     .update(files)
     .set({ deletedAt: new Date().toISOString() })
     .where(sql`${files.id} in (select value from json_each(${JSON.stringify(ids)}))`);
+}
+
+// ── Imports (TUI-60) ────────────────────────────────────────────────────────
+
+export type ImportRow = typeof imports.$inferSelect;
+export type NewImportRow = typeof imports.$inferInsert;
+
+export async function insertImport(ctx: OrgCtx, row: NewImportRow & { id: string }) {
+  const [, inserted] = await writeWithAudit(ctx, [ctx.db.insert(imports).values(row).returning()], {
+    action: 'import.created',
+    entityType: 'import',
+    entityId: row.id,
+    after: { fileId: row.fileId, rowCount: row.rowCount },
+  });
+  return (inserted as ImportRow[])[0]!;
+}
+
+export function findImport(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(imports)
+    .where(inOrg(ctx, imports, eq(imports.id, id)))
+    .get();
+}
+
+/** Changes an import; with `from`, only while its status is one of those. */
+export async function updateImport(
+  ctx: OrgCtx,
+  id: string,
+  change: Partial<NewImportRow>,
+  from?: ImportRow['status'][],
+) {
+  const rows = await ctx.db
+    .update(imports)
+    .set({ ...change, updatedAt: new Date().toISOString() })
+    .where(
+      inOrg(ctx, imports, eq(imports.id, id), from ? inArray(imports.status, from) : undefined),
+    )
+    .returning();
+  return rows[0];
 }
