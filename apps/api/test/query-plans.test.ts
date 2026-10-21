@@ -19,6 +19,7 @@ import { termDates } from '../src/modules/calendar/for-classes';
 import { lessonLengths } from '../src/modules/curriculum/for-classes';
 import { timetableOf } from '../src/modules/enrolment/for-classes';
 import * as people from '../src/modules/people/repository';
+import * as staff from '../src/modules/staff/repository';
 import * as peopleService from '../src/modules/people/service';
 import { classDatesOf } from '../src/modules/classes/for-enrolment';
 import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './query-plans';
@@ -988,6 +989,22 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
       'tax_rates_org_id_uq',
       (ctx) => billing.listTaxRates(ctx, 50, 'id_a'),
     ],
+    [
+      'GET /staff',
+      'memberships',
+      'memberships_org_id_uq',
+      (ctx) => staff.listStaff(ctx, 50, undefined, {}),
+    ],
+    [
+      'GET /staff, a later page, for a branch manager of some branches',
+      'memberships',
+      'memberships_org_id_uq',
+      (ctx) =>
+        staff.listStaff(ctx, 50, 'id_a', {
+          roles: ['branch_manager', 'front_desk', 'teacher'],
+          branchIds: IDS,
+        }),
+    ],
   ];
 
   it.each(lists)('%s', async (_what, table, index, send) => {
@@ -1392,5 +1409,24 @@ describe('a payment is read with its allocations by a query for it (TUI-38)', ()
     );
     // The allocations are sorted by payment for the answer. Nothing else is: the page is in order.
     if (table !== 'payment_allocations') expect(plan).not.toContain(SORT);
+  });
+});
+
+describe('staff and invitations (D-131)', () => {
+  it('checks an invite’s email against the org’s members, looking each user up by id', async () => {
+    const plan = await planOf((ctx) => staff.emailIsMember(ctx, 'x@example.com'));
+    expect(plan).toMatch(searchIn('memberships', 'memberships_org_id_uq'));
+    expect(plan).toMatch(searchBy('users', 'id'));
+    expect(plan).not.toMatch(/^SCAN users/m);
+  });
+
+  it('finds an invite by its token’s hash in the unique index', async () => {
+    const plan = await planOf((ctx) => staff.findInvitationByHash(ctx.db, 'hash'));
+    expect(plan).toMatch(searchIn('invitations', 'invitations_token_hash_uq'));
+  });
+
+  it('finds a user’s membership in the (org, user) index', async () => {
+    const plan = await planOf((ctx) => staff.findMembershipOfUser(ctx, 'usr_a'));
+    expect(plan).toMatch(searchIn('memberships', 'memberships_org_user_uq'));
   });
 });

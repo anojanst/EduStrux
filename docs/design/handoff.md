@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-19 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-21 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -207,7 +207,7 @@ Roles are stored in the `memberships` table, not in Clerk. "Branch" means only t
 | Org settings, plan | Full | — | — | — | — | Read |
 | Branches, rooms, grade levels, subjects, academic years, terms, holidays (D-033, D-040) | Full | Read | Read | Read | Read | Read |
 | Tax rates (D-039) | Full | Read | Read | Read | Read | Read |
-| Staff and roles | Full | Branch | — | — | — | — |
+| Staff and roles (D-131) | Full | Branch roles, own branches | — | — | — | — |
 | Families and students (D-051, D-053, D-060, D-126) | Full | Branch | Branch | Own classes, read | Own family, read, no student notes | — |
 | Courses (D-041, D-110) | Full | Full, org-wide | Full, org-wide | Read, no default price | Read, no default price | Read |
 | Classes and timetable (D-048, D-060) | Full | Branch | Branch | Own classes, read | Own children, read | — |
@@ -301,9 +301,17 @@ Parent portal (D-126):
 - Each route needs the permission the parent already reads the same data with: `people:read`, `classes:read` or `billing:read`. Reporting an absence needs `absences:report`, which parents already held (D-129). No new permission.
 - The portal reads with the parent's own reach, so it shows nothing the other routes don't already let them read.
 
+Staff (D-131):
+
+- The staff routes use `staff:read` and `staff:write`. The owner reaches every member. Front desk, teachers, parents and accountants get 403.
+- A branch manager limited to some branches reaches only branch managers, front desk and teachers whose branch list is set and lies entirely inside their own branches; one with no branch list reaches those three roles everywhere. Owners, accountants, parents and staff with no branch limit are 404 to a branch-limited manager.
+- A branch manager invites and assigns only those three roles, and only with branches they have. An owner or accountant role, a branch outside theirs, or no branch list is 403 (the D-033 pattern).
+- Owners and accountants never carry a branch list. Only owners reach owners, and nobody changes or removes their own membership (422), so an org always keeps an owner.
+- Parent memberships are reached by the owner only, through `PATCH` and `DELETE /staff/{membershipId}`, and change only `status`. A parent is invited through their guardian, with `people:write` and the family reach above (`POST /guardians/{guardianId}/invitation`).
+
 Background jobs are visible only to the person who started them and the owner; others get 404 (D-018).
 
-Parents are Clerk users, signing in passwordless by email code or magic link. Accepting an invite links them to a `parent` membership (D-021). A guardian row points at that membership, which is what "own family" means. Nothing sets that link yet: invites will (TUI-42, TUI-72) (D-053).
+Parents are Clerk users, signing in passwordless by email code or magic link. Accepting an invite links them to a `parent` membership (D-021). A guardian row points at that membership, which is what "own family" means (D-053). Staff invite a parent through their guardian, and accepting the invite sets the link; a parent who already has a membership in the org keeps it and gains the family. Deleting the membership clears the link (D-131).
 
 Student logins come later (v1.1+). The super-admin console sits outside org routes, and every access is logged, including impersonation.
 
@@ -316,7 +324,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 | Area | Tables | Key columns |
 |---|---|---|
 | Org and setup | `orgs`, `branches`, `rooms`, `tax_rates` | currency, timezone, locale (formatting region, `en-*` only, D-015), date format (overrides the locale's default), plan, status, slug, single-tutor mode (one branch only, D-032); branch name, address (every org starts with "Main", D-031); room → branch, capacity; tax rate name, rate in basis points (`rate_bps`, 1500 = 15%), inclusive flag (D-039), default flag (at most one default per org, D-080, D-084) |
-| People and access | `users`, `memberships`, `invitations` | `clerk_user_id`; role, branch ids, status |
+| People and access | `users`, `memberships`, `invitations` | `clerk_user_id`; role, branch ids (always null for owners and accountants), status (`active`, `suspended`); invitation email, role, branch ids, optional guardian (a parent's invite), SHA-256 hash of the token (unique; the token itself isn't stored), expiry (7 days), accepted at (D-131) |
 | Calendar | `academic_years`, `terms`, `holidays` | name, start/end dates; academic years never overlap; term → academic year, inside it, no overlapping terms (D-037); holiday date range, optional branch (null = org-wide) (D-038) |
 | Curriculum | `grade_levels`, `subjects`, `courses` | grade name, sort order (from 1, gaps allowed, at most 100 grades per org, D-035); subject name; **course = subject × grade**, with no name of its own; optional curriculum and teaching medium (free text), default price (minor units + currency, in the org's currency; for one billing period of a class: a term, or a month with no term, D-077), usual lesson length in minutes; unique on subject + grade + curriculum + medium (D-041, D-043) |
 | Classes | `classes`, `class_schedules`, `sessions` | class → course (with the course's grade level copied on), term (optional: no term = open-ended from its start date, billed monthly, D-036), branch; name (unique per course, term and branch); optional room, teacher (a membership), capacity and start/end dates (D-049); one row per weekly slot: ISO weekday, local start and end time (D-050); session → class, with its own room and teacher (copied from the class when generated), local date, start and end time, status (`scheduled`, `cancelled`), no UTC columns (D-047) |
@@ -388,17 +396,19 @@ Branches, rooms, grade levels, subjects, the calendar and tax rates: every role 
 - `GET|POST /subjects` · `PATCH|DELETE /subjects/{subjectId}`: `DELETE` is refused (422) while a course uses the subject (D-043)
 
 ### Staff
-- `GET /staff`
-- `POST /staff/invitations`
-- `POST /api/v1/invitations/{token}/accept`
-- `PATCH /staff/{membershipId}`
-- `DELETE /staff/{membershipId}`
+The owner reaches every member; a branch manager limited to some branches reaches branch managers, front desk and teachers within their branches (D-131, §6). Front desk, teachers, parents and accountants get 403. A member out of reach is 404.
+- `GET /staff`: every member but parents, paged by id, with the user's name and email
+- `POST /staff/invitations`: `{ email, role, branchIds? }` for any role but parent. Answers 201 with `{ invitation, token }`; the token is shown only here, and only its hash is stored. The invite also goes on the email queue (template `invitation`) for TUI-65 to send. Valid 7 days; a new invite to the same email withdraws the pending one. A `branchIds` for an owner or accountant is 400 (D-131)
+- `POST /api/v1/invitations/{token}/accept`: signed in, no org yet. The token alone is the proof; the signed-in email isn't checked. Unknown or withdrawn 404; used or expired 422; already a member 409. A removed member gets their old membership back; a parent invite links the guardian, or adds the family to the parent's existing membership. Answers with the membership as `GET /api/v1/me` lists it (D-131)
+- `PATCH /staff/{membershipId}`: `role`, `branchIds` and `status` (`active`, `suspended`), with `updatedAt` (409 when stale). Changing the role to owner or accountant clears the branch list. A parent membership changes only `status` (422). Your own membership is 422 (D-131)
+- `DELETE /staff/{membershipId}`: refused (422) while the member teaches a class (suspend them instead) and for your own membership. Deleting a parent clears their guardians' link (D-131)
 
 ### Families and students
 The owner reaches every family; branch managers and front desk the families whose home branch is one of theirs (read and write); a parent the families they are a signed-in guardian of (read only), without the students' `notes` (D-126, D-127); a teacher the students who hold an active enrolment in a class they teach, with those students' families and guardians but not their siblings (read only). An accountant gets 403. Guardians and students are reached through their family. Anything outside the caller's reach is 404 (D-051, D-053, D-060).
 
 - `GET|POST /families` (`GET` filter `?branchId`) · `GET|PATCH|DELETE /families/{familyId}`: in name order. Every response carries the family's `guardians` and `students`. `branchId`, the home branch, is required, and `PATCH` can move the family to another branch; branch-limited staff adding or moving a family to a branch outside theirs get 403. `billingGuardianId` must be one of the family's guardians (422) and can't be set to null. `bankReference` is read-only: what the family quotes on a bank transfer, set when the family is added and shown on its invoices (D-097). `DELETE` is refused (422) while the family has students; otherwise it also deletes the guardians (D-051, D-054, D-057)
 - `POST /families/{familyId}/guardians` · `PATCH|DELETE /guardians/{guardianId}`: any contact person, with an `emergencyContact` flag (default true). The family's first guardian becomes its billing contact. `email` and `phone` are optional; `preferredChannel` is `email` (default), `sms` or `whatsapp`; `membershipId` is read-only. `PATCH` can't move a guardian to another family. `DELETE` is refused (422) for the billing contact (D-053, D-054)
+- `POST /guardians/{guardianId}/invitation` (added, D-131): invites a parent to sign in as this guardian. `people:write` with the family reach; a teacher, parent or accountant gets 403. The email defaults to the guardian's (neither is 422); a guardian already linked is 409. Answers as `POST /staff/invitations` does, and a new invite withdraws the guardian's pending one
 - `GET|POST /students` (`GET` filters `?familyId`, `?branchId`, `?gradeLevelId` with optional `?academicYearId`) · `GET|PATCH|DELETE /students/{studentId}`: by last name, then first name. `gradeLevelId`, with an optional `academicYearId`, sets the student's grade for that academic year, or for the current one; `PATCH` with `gradeLevelId: null` removes it; with no academic year in the org it is 422. Each student carries `gradeLevelId` (the current year's grade), `grades` (every year on record) and `branchId` (the family's home branch). `dateOfBirth` can't be in the future (400). `PATCH` can't move a student to another family. `DELETE` is refused (422) while the student has enrolments; otherwise it also deletes the student's grade records (D-055, D-057, D-063)
 - `GET /students/{id}/timeline` (v1.1, D-022)
 - `POST /students/promote` (job)

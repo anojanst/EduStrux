@@ -56,6 +56,13 @@ export async function getBranch(ctx: OrgCtx, id: string): Promise<Branch> {
   return toBranch(row);
 }
 
+/** The ids among these that aren't one of the org's branches. */
+export async function unknownBranchIds(ctx: OrgCtx, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const found = new Set((await repo.existingBranchIds(ctx, ids)).map((row) => row.id));
+  return ids.filter((id) => !found.has(id));
+}
+
 export function countBranches(ctx: OrgCtx) {
   return repo.countBranches(ctx);
 }

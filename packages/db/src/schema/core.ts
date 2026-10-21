@@ -55,8 +55,11 @@ export const memberships = sqliteTable(
       .notNull()
       .default('active'),
   },
+  // A removed member's row stays (soft-deleted), so the (org, user) index still holds it:
+  // accepting a new invite brings that row back rather than adding another.
   (t) => [
     uniqueIndex('memberships_org_user_uq').on(t.orgId, t.userId),
+    uniqueIndex('memberships_org_id_uq').on(t.orgId, t.id),
     index('memberships_user_idx').on(t.userId),
   ],
 );
@@ -68,6 +71,9 @@ export const invitations = sqliteTable(
     email: text('email').notNull(),
     role: text('role', { enum: ROLES }).notNull(),
     branchIds: text('branch_ids', { mode: 'json' }).$type<string[] | null>(),
+    // A parent's invite names the guardian that accepting it signs in as (D-053).
+    guardianId: text('guardian_id'),
+    // SHA-256 of the token, hex. The token itself is only ever in the invite's link.
     tokenHash: text('token_hash').notNull(),
     invitedByUserId: text('invited_by_user_id').notNull(),
     expiresAt: text('expires_at').notNull(),
@@ -75,6 +81,7 @@ export const invitations = sqliteTable(
   },
   (t) => [
     index('invitations_org_email_idx').on(t.orgId, t.email),
+    index('invitations_org_guardian_idx').on(t.orgId, t.guardianId),
     uniqueIndex('invitations_token_hash_uq').on(t.tokenHash),
   ],
 );
