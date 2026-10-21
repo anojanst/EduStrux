@@ -1,5 +1,5 @@
 import { createDb, idempotencyKeys, type Db } from '@edustrux/db';
-import { localNow } from '@edustrux/shared';
+import { localNow, orgCanWrite } from '@edustrux/shared';
 import { lt } from 'drizzle-orm';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
@@ -46,7 +46,7 @@ export async function handleScheduled(
  * that fails is logged and the rest carry on.
  */
 export async function runHourly(db: Db, env: Bindings, at: Date) {
-  const list = await orgs.orgsForCron(db);
+  const list = (await orgs.orgsForCron(db)).filter((org) => orgCanWrite(org, at));
   const settingsOf = await comms.settingsOf(
     db,
     list.map((org) => org.id),
@@ -93,7 +93,7 @@ export async function runDaily(db: Db, env: Bindings, at: Date) {
   } catch (err) {
     console.error('daily cron: cleaning expired files failed', err);
   }
-  for (const org of await orgs.orgsForCron(db)) {
+  for (const org of (await orgs.orgsForCron(db)).filter((o) => orgCanWrite(o, at))) {
     const ctx: OrgCtx = { db, orgId: org.id, actorUserId: null };
     try {
       done.sessionsAdded += await classes.extendOpenEnded(ctx, at);

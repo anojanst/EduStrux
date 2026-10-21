@@ -78,7 +78,11 @@ export const MapImport = z
       description:
         'Column header → field. Columns left out are ignored. `studentFirstName` and ' +
         '`studentLastName` are required; each field once.',
-      example: { First: 'studentFirstName', Surname: 'studentLastName', 'Parent email': 'guardianEmail' },
+      example: {
+        First: 'studentFirstName',
+        Surname: 'studentLastName',
+        'Parent email': 'guardianEmail',
+      },
     }),
     defaults: z.object({ branchId: z.string().optional() }).default({}),
   })

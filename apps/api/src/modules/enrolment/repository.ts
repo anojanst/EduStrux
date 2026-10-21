@@ -1,5 +1,17 @@
 import { enrolments } from '@edustrux/db';
-import { asc, count, eq, gt, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import {
+  asc,
+  count,
+  countDistinct,
+  eq,
+  gt,
+  gte,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
   changedFields,
@@ -125,6 +137,29 @@ export async function placesIn(ctx: OrgCtx, classId: string, studentId: string) 
         .filter((row) => row.endDate === null || row.endDate >= date)
         .reduce((taken, row) => taken + row.n, 0),
   };
+}
+
+/**
+ * The students a plan's cap counts: those with an active enrolment that hasn't ended by `today`
+ * (TUI-74). With `studentId`, also whether they are one of them already.
+ */
+export async function planUsage(ctx: OrgCtx, today: string, studentId = '') {
+  const row = await ctx.db
+    .select({
+      n: countDistinct(enrolments.studentId),
+      theirs: sql<number>`coalesce(max(${enrolments.studentId} = ${studentId}), 0)`,
+    })
+    .from(enrolments)
+    .where(
+      inOrg(
+        ctx,
+        enrolments,
+        active,
+        or(isNull(enrolments.endDate), gte(enrolments.endDate, today)),
+      ),
+    )
+    .get();
+  return { count: row?.n ?? 0, counted: row?.theirs === 1 };
 }
 
 /** How many enrolments a class or a student has, whatever their status. */

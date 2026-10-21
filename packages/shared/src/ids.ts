@@ -43,6 +43,7 @@ export const ID_PREFIXES = {
   messageTemplate: 'mtp',
   notificationSettings: 'nts',
   webhookEvent: 'whe',
+  orgSubscription: 'osb',
   file: 'fil',
   import: 'imp',
   export: 'exp',

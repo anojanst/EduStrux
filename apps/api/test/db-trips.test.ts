@@ -345,7 +345,8 @@ describe('the org is read once per request', () => {
     expect(addStudent.db.trips, 'POST /students: 12 → 8').toBeLessThanOrEqual(8);
     expect(changeStudent.db.trips, 'PATCH /students/{id}: 13 → 9').toBeLessThanOrEqual(9);
     expect(listStudents.db.trips, 'GET /students: 6 → 4').toBeLessThanOrEqual(4);
-    expect(enrol.db.trips, 'POST /enrolments: 12 → 9').toBeLessThanOrEqual(9);
+    // 9 until the plan's cap of active students added a read to the same stage (TUI-74).
+    expect(enrol.db.trips, 'POST /enrolments: 12 → 9 → 10').toBeLessThanOrEqual(10);
     expect(listSessions.db.trips, 'GET /sessions: 9 → 6').toBeLessThanOrEqual(6);
     // 8 until make-ups added three reads to the same stage (TUI-55).
     expect(markAttendance.db.trips, 'PUT /attendance: 11 → 8 → 11').toBeLessThanOrEqual(11);

@@ -46,9 +46,7 @@ export const PublicForm = z
     ),
     subjects: z.array(z.object({ id: z.string(), name: z.string() })),
     gradeLevels: z.array(z.object({ id: z.string(), name: z.string() })),
-    courses: z.array(
-      z.object({ id: z.string(), subjectId: z.string(), gradeLevelId: z.string() }),
-    ),
+    courses: z.array(z.object({ id: z.string(), subjectId: z.string(), gradeLevelId: z.string() })),
   })
   .openapi('PublicForm');
 export type PublicForm = z.infer<typeof PublicForm>;
@@ -150,7 +148,9 @@ export const EnrolmentRequest = z
         guardianId: z.string().nullable(),
         studentIds: z.array(z.string()),
         enrolmentIds: z.array(z.string()),
-        skipped: z.array(z.object({ studentIndex: z.number().int(), classId: z.string(), reason: z.string() })),
+        skipped: z.array(
+          z.object({ studentIndex: z.number().int(), classId: z.string(), reason: z.string() }),
+        ),
       })
       .nullable()
       .openapi({ description: 'What approving it made. null until approved.' }),
@@ -166,11 +166,14 @@ export const EnrolmentRequestQuery = PageQuery.extend({
 
 export const ApproveEnrolmentRequest = z
   .object({
-    familyId: z.string().optional().openapi({
-      description:
-        'Add the children to this family, already on record, instead of a new one. Its guardian ' +
-        'with the same email is used, or one is added.',
-    }),
+    familyId: z
+      .string()
+      .optional()
+      .openapi({
+        description:
+          'Add the children to this family, already on record, instead of a new one. Its guardian ' +
+          'with the same email is used, or one is added.',
+      }),
     branchId: z.string().optional().openapi({
       description:
         'The new family’s home branch. Defaults to the request’s, else the first class’s branch.',

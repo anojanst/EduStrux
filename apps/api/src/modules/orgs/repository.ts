@@ -110,7 +110,26 @@ export function findBySlug(db: Db, slug: string) {
  */
 export function orgsForCron(db: Db) {
   return db
-    .select({ id: orgs.id, timezone: orgs.timezone })
+    .select({
+      id: orgs.id,
+      timezone: orgs.timezone,
+      status: orgs.status,
+      trialEndsAt: orgs.trialEndsAt,
+    })
     .from(orgs)
     .where(and(isNull(orgs.deletedAt), notInArray(orgs.status, ['suspended', 'cancelled'])));
+}
+
+/** The statement that sets the org's plan and status, for the subscription's own batch. */
+export function setPlanStatement(
+  db: Db,
+  orgId: string,
+  changes: Pick<OrgChanges, 'plan' | 'status'>,
+) {
+  return db.update(orgs).set(changes).where(eq(orgs.id, orgId));
+}
+
+/** The org's row by id, where there is no request (webhooks). Deleted orgs too. */
+export function findOrgById(db: Db, orgId: string) {
+  return db.select().from(orgs).where(eq(orgs.id, orgId)).get();
 }

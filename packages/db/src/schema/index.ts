@@ -8,3 +8,4 @@ export * from './files';
 export * from './learning';
 export * from './people';
 export * from './setup';
+export * from './subscriptions';

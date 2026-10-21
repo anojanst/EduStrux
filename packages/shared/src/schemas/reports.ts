@@ -73,7 +73,10 @@ export const Dashboard = z
     today: z.object({
       lessons: z.number().int(),
       cancelled: z.number().int(),
-      marked: z.number().int().openapi({ description: 'Lessons today with any attendance marked.' }),
+      marked: z
+        .number()
+        .int()
+        .openapi({ description: 'Lessons today with any attendance marked.' }),
       absenceNotices: z.number().int().openapi({ description: 'Students away today.' }),
     }),
     unmarkedLessons: z.number().int().openapi({
@@ -89,7 +92,9 @@ export const Dashboard = z
         draftInvoices: z.number().int(),
       })
       .optional()
-      .openapi({ description: 'Left out for roles that don’t see money: teachers and front desk.' }),
+      .openapi({
+        description: 'Left out for roles that don’t see money: teachers and front desk.',
+      }),
   })
   .openapi('Dashboard');
 export type Dashboard = z.infer<typeof Dashboard>;

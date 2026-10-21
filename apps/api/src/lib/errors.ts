@@ -41,3 +41,15 @@ export const unprocessable = (message: string, fields?: FieldErrors) =>
 
 /** A service the request needs isn't set up, or isn't answering: PDFs without Browser Rendering. */
 export const unavailable = (message: string) => new ApiError(503, 'unavailable', message);
+
+/** The org's plan holds no more of something: active students (TUI-74). */
+export const planLimit = (message: string, fields?: FieldErrors) =>
+  new ApiError(402, 'plan_limit', message, fields);
+
+/** The trial has ended with no subscription, or the org is suspended or cancelled (TUI-74). */
+export const subscriptionRequired = () =>
+  new ApiError(
+    402,
+    'subscription_required',
+    'This organisation is read-only until it has a subscription. The owner can subscribe under Billing.',
+  );

@@ -28,4 +28,5 @@ export * from './schemas/pricing';
 export * from './schemas/reports';
 export * from './schemas/search';
 export * from './schemas/staff';
+export * from './schemas/subscriptions';
 export * from './schemas/tax';

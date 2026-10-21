@@ -46,12 +46,14 @@ const createEnrolmentRoute = createRoute({
     'class’s first day when that is still to come. A student can hold one active enrolment in ' +
     'a class (409), and a class with a `capacity` refuses once its places are taken (422). ' +
     'Staff limited to some branches can only enrol their own branches’ students in their own ' +
-    'branches’ classes: a student or class outside those is 404.',
+    'branches’ classes: a student or class outside those is 404. A student who isn’t yet ' +
+    'actively enrolled anywhere counts towards the plan’s cap of active students: past it is ' +
+    '402 `plan_limit`.',
   middleware: orgAccess('classes:write'),
   request: { params: OrgParams, body: jsonBody(CreateEnrolment) },
   responses: {
     201: json(Enrolment, 'The new enrolment'),
-    ...errors(400, 401, 403, 404, 409, 422),
+    ...errors(400, 401, 402, 403, 404, 409, 422),
   },
 });
 

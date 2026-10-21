@@ -10,12 +10,7 @@ export type FilePurpose = (typeof FILE_PURPOSES)[number];
 /** The largest file that can be uploaded: 10 MB. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-export const UPLOAD_TYPES = [
-  'text/csv',
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-] as const;
+export const UPLOAD_TYPES = ['text/csv', 'application/pdf', 'image/png', 'image/jpeg'] as const;
 
 export const CreateUpload = z
   .object({

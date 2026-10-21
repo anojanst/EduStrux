@@ -197,8 +197,8 @@ const startExportRoute = createRoute({
   summary: 'Export all the organisation’s data (job)',
   description:
     'Every table, as one JSON file, kept a week. Poll `GET /exports/{id}` for the download ' +
-    'link. Owner only.',
-  middleware: orgAccess('org:write'),
+    'link. Owner only. Works while the org is read-only, so its data can always be taken.',
+  middleware: orgAccess('org:write', { whileReadOnly: true }),
   request: { params: OrgParams },
   responses: {
     202: json(

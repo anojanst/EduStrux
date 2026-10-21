@@ -45,6 +45,7 @@ export function jsonBody<T extends z.ZodType>(schema: T) {
 const ERROR_DESCRIPTIONS = {
   400: 'Validation failed',
   401: 'Missing, invalid or expired session token',
+  402: 'The plan holds no more (`plan_limit`), or the org is read-only without a subscription (`subscription_required`)',
   403: 'Your role does not allow this',
   404: 'Not found. Also returned for orgs you are not a member of, so org ids are never confirmed.',
   409: 'Conflict, stale `updatedAt`, or a request with this Idempotency-Key still in progress',

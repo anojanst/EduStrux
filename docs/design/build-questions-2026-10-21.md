@@ -411,6 +411,64 @@ or failed can follow a delivery and aren't undone by a late "delivered". Invitat
 no recipient tag, so their events are ignored. A bounce doesn't (yet) flag the guardian's email
 address as bad.
 
+## TUI-72 Parent portal sign-in
+
+**Q-54 · Nothing to build in the API.** Parents already sign in through Clerk and are linked to
+their family by accepting a guardian invitation (TUI-42, D-131); every `/portal/*` route works
+off that link. What is left is the owner's: turn on email code (or magic link) sign-in in the
+Clerk dashboard, and confirm. Not built: linking a signed-in parent to a guardian by matching
+email without an invitation (it would change D-053's "linked by invite" rule), and inviting
+many guardians at once (one call per guardian today). Say if you want either.
+
+## TUI-73 Paddle subscription billing
+
+**Q-55 · Shape.** Built: `GET /billing/subscription` (the plan, status, `canWrite`, the cap and
+use of active students, and the subscription), `POST /billing/checkout { plan, interval }`
+(creates a Paddle **transaction** with the org's id in `custom_data`, for the web app to open
+with Paddle.js; `checkoutUrl` too when the account has a default payment link) and
+`POST /billing/portal` (a Paddle customer-portal link for changing plan or card, receipts and
+cancelling). All three are **owner only** (`org:write`). An org with a live subscription
+(active, trialing, past due or paused) can't start a second checkout (422): plan changes go
+through the portal. Plain fetch, no Paddle SDK.
+
+**Q-56 · Configuration (owner).** Secrets/vars: `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`,
+`PADDLE_ENVIRONMENT` (`sandbox` by default, `production` for live), and `PADDLE_PRICE_IDS` as
+JSON: `{"solo_month","solo_year","small_month","small_year"}` → Paddle price ids. The hand-set
+NZD/AUD/GBP prices (D-027) live on those prices in Paddle. Without them checkout and the portal
+are 503. `POST /api/v1/webhooks/paddle` needs the Access bypass too.
+
+**Q-57 · Webhook.** Built: Paddle's own signature (`Paddle-Signature: ts=…;h1=…`, HMAC-SHA256 of
+`ts:body`, 5-minute tolerance), deduplicated by `event_id` in `webhook_events`. Every
+`subscription.*` event stores the whole subscription in `org_subscriptions` (migration 0030):
+plan (from the price id; a price not in `PADDLE_PRICE_IDS` is `custom`), interval, status,
+period end and a scheduled cancellation. Events older than the last one applied are ignored.
+The org's plan and status follow its **newest** subscription: active/trialing → `active`,
+past_due → `past_due`, paused → `suspended`, canceled → `cancelled`. A subscription whose org
+can't be found is logged and ignored. One `subscription.created`/`.updated` audit row by no one.
+Transaction events (receipts) aren't stored: Paddle's portal shows them.
+
+## TUI-74 Sign-up, trial and plan limits
+
+**Q-58 · Trial.** Sign-up is Clerk then `POST /orgs` (already built): 14-day trial, plan
+`trial`. The trial ending is worked out on the fly (status `trialing` and `trialEndsAt` passed),
+not by a cron. A trial has the Small plan's room (150).
+
+**Q-59 · Read-only, not locked out.** Built: once a trial ends with no subscription, or while
+the org is `suspended` or `cancelled`, every **write** to the org is **402
+`subscription_required`**; reads still work, and so do subscribing (`/billing/*`) and
+`POST /exports`, so an org can always take its data. `past_due` keeps working while Paddle
+retries. The hourly and daily crons skip read-only orgs (no reminders sent, no sessions extended,
+no nightly backup). New error codes: `subscription_required` and `plan_limit`, both HTTP 402.
+
+**Q-60 · The cap counts active students.** Built: the cap (Solo 30, Small 150, custom none)
+counts students with an **active enrolment that hasn't ended** (today or later), not every
+student on record, so past students don't use up the plan. It is checked when enrolling: a
+student not yet counted, past the cap, is **402 `plan_limit`**; enrolling an already-counted
+student in another class is fine. An enrolment request's approval reports a capped enrolment in
+`skipped`. Adding students and families isn't capped. Changing to a smaller plan doesn't remove
+anyone: further enrolments are refused until the count is under the cap. POST /enrolments now
+makes 10 D1 calls in the same stage (was 9).
+
 ---
 
 ## Where the session stopped (usage limit)

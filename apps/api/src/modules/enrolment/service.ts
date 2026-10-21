@@ -1,4 +1,5 @@
 import {
+  PLAN_STUDENT_LIMITS,
   addDays,
   localNow,
   newId,
@@ -8,7 +9,14 @@ import {
   type UpdateEnrolment,
 } from '@edustrux/shared';
 import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
-import { conflict, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
+import {
+  conflict,
+  notFound,
+  planLimit,
+  staleData,
+  unprocessable,
+  validationFailed,
+} from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as billing from '../billing/service';
 import { classDatesOf, classOfEnrolment } from '../classes/for-enrolment';
@@ -189,15 +197,18 @@ export async function createEnrolment(
   access: Access,
   input: CreateEnrolment,
 ): Promise<Enrolment> {
-  const [studentRead, classRead, datesOf, places] = await Promise.all([
+  // In a request the org is already loaded, so this costs no D1 call.
+  const org = await orgs.getOrg(ctx);
+  const limit = PLAN_STUDENT_LIMITS[org.plan];
+  const [studentRead, classRead, datesOf, places, usage] = await Promise.all([
     hold(people.getStudent(ctx, access, input.studentId)),
     hold(classes.getClass(ctx, access, input.classId)),
     classDatesOf(ctx, input.classId),
     repo.placesIn(ctx, input.classId, input.studentId),
+    limit === null ? null : repo.planUsage(ctx, localNow(org.timezone).date, input.studentId),
   ]);
   const student = take(studentRead);
   const klass = take(classRead);
-  const org = await orgs.getOrg(ctx);
 
   const price = input.priceOverride ?? null;
   if (price && price.currency !== org.currency) {
@@ -236,6 +247,13 @@ export async function createEnrolment(
     throw unprocessable(`This class is full: all ${klass.capacity} place(s) are taken.`, {
       classId: ['Full'],
     });
+  }
+  if (limit !== null && usage && !usage.counted && usage.count >= limit) {
+    throw planLimit(
+      `The ${org.plan} plan holds ${limit} active students, and all are taken. Upgrade the ` +
+        'plan to enrol more.',
+      { studentId: ['Plan limit'] },
+    );
   }
 
   const stored = await repo.insertEnrolment(ctx, {
@@ -557,4 +575,9 @@ export async function enrolmentsToInvoice(
 /** How many students the caller reaches hold an active enrolment, for the dashboard. */
 export function countStudentsEnrolled(ctx: OrgCtx, access: Access) {
   return repo.countActiveStudents(ctx, reachOf(ctx, access));
+}
+
+/** How many students the plan's cap counts now (TUI-74), for the billing overview. */
+export function planUsage(ctx: OrgCtx, today: string) {
+  return repo.planUsage(ctx, today);
 }

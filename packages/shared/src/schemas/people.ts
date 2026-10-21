@@ -274,11 +274,14 @@ export const PromoteStudents = z
       .array(
         z.object({
           studentId: z.string(),
-          gradeLevelId: z.string().nullable().openapi({
-            description:
-              'The grade for the new year instead of the next one: the same grade to repeat ' +
-              'it, any other, or null for none (the student has left).',
-          }),
+          gradeLevelId: z
+            .string()
+            .nullable()
+            .openapi({
+              description:
+                'The grade for the new year instead of the next one: the same grade to repeat ' +
+                'it, any other, or null for none (the student has left).',
+            }),
         }),
       )
       .max(1000)

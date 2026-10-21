@@ -298,7 +298,8 @@ describe('POST /enrolments', () => {
       // student and the class, and no deeper: 3 stages in all.
       expect(res.db.stages).toBe(1 + Math.max(deep.student, deep.klass) + 1);
       expect(res.db.stages).toBeLessThanOrEqual(3);
-      expect(res.db.trips).toBeLessThanOrEqual(9);
+      // 9 until the plan's cap of active students added a read to the first stage (TUI-74).
+      expect(res.db.trips).toBeLessThanOrEqual(10);
     }
   });
 

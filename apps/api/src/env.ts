@@ -41,6 +41,16 @@ export type Bindings = {
    */
   CLERK_WEBHOOK_SECRET?: string;
   RESEND_WEBHOOK_SECRET?: string;
+  /**
+   * Paddle Billing (TUI-73): an API key, the webhook's secret key, `sandbox` (the default) or
+   * `production`, and the price ids as JSON by `{plan}_{interval}`:
+   * `{"solo_month":"pri_…","solo_year":"pri_…","small_month":"pri_…","small_year":"pri_…"}`.
+   * Without them, checkout and the portal are 503 and the webhook refuses.
+   */
+  PADDLE_API_KEY?: string;
+  PADDLE_WEBHOOK_SECRET?: string;
+  PADDLE_ENVIRONMENT?: string;
+  PADDLE_PRICE_IDS?: string;
 };
 
 export type AuthUser = {

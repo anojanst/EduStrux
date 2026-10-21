@@ -1,4 +1,4 @@
-import { jobs, sessions } from '@edustrux/db';
+import { jobs, orgs, sessions } from '@edustrux/db';
 import { OPEN_ENDED_HORIZON_DAYS, addDays, localNow, localToUtc } from '@edustrux/shared';
 import { env } from 'cloudflare:workers';
 import { and, eq, isNull, max } from 'drizzle-orm';
@@ -19,6 +19,8 @@ type Row = { id: string; updatedAt: string };
 async function setup() {
   const owner = await newUser('owner');
   const org = await newOrg(owner.token);
+  // A paying org: the crons skip one whose trial has ended, and these run weeks ahead.
+  await db().update(orgs).set({ plan: 'small', status: 'active' }).where(eq(orgs.id, org.id));
   const base = `/api/v1/orgs/${org.id}`;
   const api = (method: string, path: string, body?: unknown) =>
     call(method, `${base}${path}`, { token: owner.token, body });

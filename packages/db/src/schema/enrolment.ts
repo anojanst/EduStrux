@@ -1,8 +1,4 @@
-import {
-  ENQUIRY_STATUSES,
-  ENROLMENT_REQUEST_STATUSES,
-  ENROLMENT_STATUSES,
-} from '@edustrux/shared';
+import { ENQUIRY_STATUSES, ENROLMENT_REQUEST_STATUSES, ENROLMENT_STATUSES } from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';

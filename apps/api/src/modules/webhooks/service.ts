@@ -2,13 +2,15 @@ import type { Db } from '@edustrux/db';
 import { z } from '@hono/zod-openapi';
 import type { Bindings } from '../../env';
 import { unauthenticated, unavailable, validationFailed } from '../../lib/errors';
+import * as paddle from '../../lib/paddle';
 import { verifySvix } from '../../lib/svix';
 import * as comms from '../comms/service';
 import * as staff from '../staff/service';
+import * as subscriptions from '../subscriptions/service';
 import * as users from '../users/repository';
 import * as repo from './repository';
 
-// Webhooks from Clerk and Resend (TUI-71). Both sign the Svix way. A delivery is checked, handled
+// Webhooks from Clerk and Resend (TUI-71), and Paddle (TUI-73). Both sign the Svix way. A delivery is checked, handled
 // and then recorded by its `svix-id`, so one sent again is answered without being handled twice;
 // two at once may both be handled, which is harmless as each step is idempotent.
 
@@ -149,6 +151,60 @@ export async function resendWebhook(
     });
   }
   await repo.record(db, 'resend', id, type);
+  return { received: true, duplicate: false };
+}
+
+// ── Paddle ──────────────────────────────────────────────────────────────────
+
+const PaddleEvent = z.object({
+  event_id: z.string(),
+  event_type: z.string(),
+  occurred_at: z.string(),
+  data: z.record(z.string(), z.unknown()),
+});
+
+/**
+ * Keeps the org's subscription, plan and status in step with Paddle (TUI-73): every
+ * `subscription.*` event carries the whole subscription, which is stored. Paddle signs with its
+ * own scheme (`Paddle-Signature: ts=…;h1=…`) and names each delivery by `event_id`.
+ */
+export async function paddleWebhook(
+  db: Db,
+  env: Bindings,
+  headers: Headers,
+  body: string,
+): Promise<WebhookAnswer> {
+  if (!env.PADDLE_WEBHOOK_SECRET) throw unavailable('The paddle webhook isn’t set up.');
+  if (
+    !(await paddle.verifyPaddle(env.PADDLE_WEBHOOK_SECRET, headers.get('paddle-signature'), body))
+  ) {
+    throw unauthenticated('Bad or stale webhook signature');
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    throw validationFailed({ body: ['Not JSON'] });
+  }
+  const parsed = PaddleEvent.safeParse(json);
+  if (!parsed.success) throw validationFailed({ body: ['Not a Paddle event'] });
+  const event = parsed.data;
+  if (await repo.seen(db, 'paddle', event.event_id)) return { received: true, duplicate: true };
+
+  if (event.event_type.startsWith('subscription.')) {
+    const subscription = subscriptions.PaddleSubscription.safeParse(event.data);
+    if (!subscription.success) throw validationFailed({ data: ['Not a Paddle subscription'] });
+    const outcome = await subscriptions.applyPaddleSubscription(
+      db,
+      env,
+      subscription.data,
+      event.occurred_at,
+    );
+    if (outcome === 'no_org') {
+      console.warn(`paddle ${event.event_id}: subscription ${subscription.data.id} has no org`);
+    }
+  }
+  await repo.record(db, 'paddle', event.event_id, event.event_type);
   return { received: true, duplicate: false };
 }
 

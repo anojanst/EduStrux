@@ -133,3 +133,11 @@ export async function publicOrg(db: Db, slug: string) {
 export function orgsForCron(db: Db) {
   return repo.orgsForCron(db);
 }
+
+export function setPlanStatement(...args: Parameters<typeof repo.setPlanStatement>) {
+  return repo.setPlanStatement(...args);
+}
+
+export function findOrgById(db: Db, orgId: string) {
+  return repo.findOrgById(db, orgId);
+}
