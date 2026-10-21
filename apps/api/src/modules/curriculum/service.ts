@@ -377,3 +377,19 @@ export async function deleteCourse(ctx: OrgCtx, id: string): Promise<void> {
 export function coursesOfSubjects(ctx: OrgCtx, subjectIds: string[]) {
   return repo.coursesOfSubjects(ctx, subjectIds);
 }
+
+/** Every subject and course, with ids and names only, for the public forms (TUI-47). */
+export async function catalogue(ctx: OrgCtx) {
+  const [subjects, courses] = await Promise.all([
+    repo.listSubjects(ctx, 500),
+    repo.listCourses(ctx, 1000, undefined, {}),
+  ]);
+  return {
+    subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
+    courses: courses.map((c) => ({
+      id: c.id,
+      subjectId: c.subjectId,
+      gradeLevelId: c.gradeLevelId,
+    })),
+  };
+}

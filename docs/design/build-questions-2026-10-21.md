@@ -278,3 +278,29 @@ order in the new year; the last grade gets none (they have finished). A student 
 a grade in the new year keeps it, so a second run changes nothing. Branch staff promote only
 their branches' students. One `students.promoted` audit row for the run (D-045). Enrolments
 aren't touched: classes are per term, and roll-over is v1.1.
+
+## TUI-47 Public enquiry and enrolment forms
+
+**Q-37 · What the public routes are.** Built, with no sign-in, by the org's slug (D-020):
+`GET /api/v1/public/{orgSlug}/form` (the org's name, branches, running classes with their weekly
+times, subjects, grade levels and courses: what the form offers), `POST …/enquiries` and
+`POST …/enrolment-requests`. An org that is suspended or cancelled is 404. Added for staff, not
+in the endpoint list: `GET /enquiries` and `PATCH /enquiries/{id}` (`new` / `handled`), with
+`people:write`. A lead pipeline is v1.1.
+
+**Q-38 · Bot protection and rate limits without infrastructure.** Built in the app: a hidden
+`website` field (filled in = a bot, answered as if received, nothing stored); at most 10 forms
+an hour from one address to one org (429), counted from a SHA-256 of the IP (the address itself
+isn't stored); and **Cloudflare Turnstile** once the owner sets the `TURNSTILE_SECRET_KEY`
+secret (then a form without a valid `turnstileToken` is 400). Cloudflare rate-limit rules
+(TUI-81) would sit in front of this; they are an infra change and weren't made.
+
+**Q-39 · Approving.** Built: `POST /enrolment-requests/{id}/approve` (`classes:write`, takes an
+`Idempotency-Key`) adds a new family in `branchId` (default: the request's, else the first
+class's branch) or joins `familyId` (one on record, against duplicates; its guardian with the
+same email is reused), then the guardian, each child and their enrolments, with the usual rules
+and the approver's reach. A class that refuses (full, outside its dates) is listed in
+`result.skipped` and the rest goes ahead. These are separate writes, each with its own audit
+row, not one batch: a failure halfway leaves what was made and the request still pending.
+Branch staff see requests naming one of their branches, or none. Nobody is emailed about a new
+request or the decision yet.

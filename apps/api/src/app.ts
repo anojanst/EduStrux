@@ -6,6 +6,7 @@ import type { AppEnv } from './env';
 import { ApiError, errorBody } from './lib/errors';
 import { createRouter } from './lib/openapi';
 import { withDb } from './middleware/db';
+import { admissionRoutes } from './modules/admissions/routes';
 import { attendanceRoutes } from './modules/attendance/routes';
 import { billingRoutes } from './modules/billing/routes';
 import { branchRoutes } from './modules/branches/routes';
@@ -43,6 +44,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', classRoutes);
   app.route('/', peopleRoutes);
   app.route('/', enrolmentRoutes);
+  app.route('/', admissionRoutes);
   app.route('/', attendanceRoutes);
   app.route('/', learningRoutes);
   app.route('/', billingRoutes);

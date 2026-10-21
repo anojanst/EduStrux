@@ -22,6 +22,7 @@ export default defineConfig(async () => ({
           EMAIL_FROM: '',
           BROWSER_RENDERING_ACCOUNT_ID: '',
           BROWSER_RENDERING_TOKEN: '',
+          TURNSTILE_SECRET_KEY: '',
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),

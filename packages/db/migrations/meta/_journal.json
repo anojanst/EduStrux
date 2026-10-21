@@ -176,6 +176,13 @@
       "when": 1792576168177,
       "tag": "0024_discounts",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792577016254,
+      "tag": "0025_admissions",
+      "breakpoints": true
     }
   ]
 }

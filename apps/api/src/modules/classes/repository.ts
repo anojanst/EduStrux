@@ -827,3 +827,39 @@ export function scheduledBetween(ctx: OrgCtx, range: DateRange, reach: Reach): I
     reach.branchIds ? inIds(sessions.classId, classesWithin(ctx, reach)) : undefined,
   );
 }
+
+/** The classes running on or after a date, with what a public form shows of them (TUI-47). */
+export function runningClasses(ctx: OrgCtx, date: string, terms: IdQuery) {
+  const running = or(
+    gte(classes.endDate, date),
+    and(isNull(classes.endDate), isNull(classes.termId)),
+    and(isNull(classes.endDate), inIds(classes.termId, terms)),
+  );
+  return ctx.db
+    .select({
+      id: classes.id,
+      name: classes.name,
+      branchId: classes.branchId,
+      courseId: classes.courseId,
+      gradeLevelId: classes.gradeLevelId,
+      startDate: classes.startDate,
+      endDate: classes.endDate,
+    })
+    .from(classes)
+    .where(inOrg(ctx, classes, running))
+    .orderBy(asc(classes.id));
+}
+
+/** Those classes, as ids: their weekly slots are read beside them. */
+export function runningClassIds(ctx: OrgCtx, date: string, terms: IdQuery): IdQuery {
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    or(
+      gte(classes.endDate, date),
+      and(isNull(classes.endDate), isNull(classes.termId)),
+      and(isNull(classes.endDate), inIds(classes.termId, terms)),
+    ),
+  );
+}

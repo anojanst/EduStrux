@@ -4,6 +4,7 @@ export * from './ids';
 export * from './money';
 export * from './names';
 export * from './permissions';
+export * from './schemas/admissions';
 export * from './schemas/attendance';
 export * from './schemas/branches';
 export * from './schemas/calendar';

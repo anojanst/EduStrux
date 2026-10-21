@@ -94,3 +94,12 @@ export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges
   if (!row) throw new Error('Org missing after update');
   return row;
 }
+
+/** An org by its slug, for the public forms. */
+export function findBySlug(db: Db, slug: string) {
+  return db
+    .select()
+    .from(orgs)
+    .where(and(eq(orgs.slug, slug), isNull(orgs.deletedAt)))
+    .get();
+}

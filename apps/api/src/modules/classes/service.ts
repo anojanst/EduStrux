@@ -933,3 +933,16 @@ export function recentLessons(ctx: OrgCtx, access: Access, today: string): IdQue
     reachOf(ctx, access),
   );
 }
+
+/** The classes still running, each with its weekly schedule, for the public forms (TUI-47). */
+export async function openClasses(ctx: OrgCtx, today: string) {
+  const terms = termsRunningFrom(ctx, today);
+  const [rows, slots] = await Promise.all([
+    repo.runningClasses(ctx, today, terms),
+    repo.listSlots(ctx, repo.runningClassIds(ctx, today, terms)),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    schedule: slots.filter((slot) => slot.classId === row.id).map(toSlot),
+  }));
+}

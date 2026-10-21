@@ -25,6 +25,11 @@ export type Bindings = {
    */
   BROWSER_RENDERING_ACCOUNT_ID?: string;
   BROWSER_RENDERING_TOKEN?: string;
+  /**
+   * Cloudflare Turnstile's secret, for the public forms (TUI-47). With it, a form must carry a
+   * valid `turnstileToken`; without it, only the hidden field and the hourly limit guard them.
+   */
+  TURNSTILE_SECRET_KEY?: string;
 };
 
 export type AuthUser = {

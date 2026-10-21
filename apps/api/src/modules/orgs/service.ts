@@ -118,3 +118,13 @@ export function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
 export function findMember(ctx: OrgCtx, membershipId: string) {
   return repo.findMembership(ctx, membershipId);
 }
+
+/**
+ * The org a public form names by its slug, while it takes sign-ups: not suspended or cancelled.
+ * undefined otherwise, so a public route answers 404 and says nothing more.
+ */
+export async function publicOrg(db: Db, slug: string) {
+  const row = await repo.findBySlug(db, slug);
+  if (!row || row.status === 'suspended' || row.status === 'cancelled') return undefined;
+  return row;
+}
