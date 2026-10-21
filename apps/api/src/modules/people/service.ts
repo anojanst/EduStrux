@@ -14,6 +14,8 @@ import {
   type Family,
   type Guardian,
   type Org,
+  type PromoteStudents,
+  type PromotionResult,
   type SearchQuery,
   type SearchResults,
   type Student,
@@ -31,6 +33,9 @@ import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
+import type { JobContext } from '../../background/jobs';
+import type { JobMessage } from '../../background/messages';
+import { startJob } from '../platform/service';
 import * as repo from './repository';
 
 // Every function here waits for D1 once to read and, if it writes, once more to write (D-102).
@@ -915,4 +920,108 @@ export function allFamilies(ctx: OrgCtx): IdQuery {
 /** How many families the caller reaches, for the dashboard. */
 export function countFamiliesReached(ctx: OrgCtx, access: Access) {
   return repo.countFamiliesWithin(ctx, reachOf(ctx, access));
+}
+
+// ── Year-end promotion (TUI-45) ─────────────────────────────────────────────
+
+/** The job type of a year-end promotion. */
+export const PROMOTION = 'students.promote';
+
+type PromotionInput = PromoteStudents & { branchIds: string[] | null };
+
+/**
+ * Checks a promotion and queues it as a job: both years must be the org's (404), the new one
+ * starting after the old, and an exception's student must be one the caller reaches (404) and its
+ * grade one of the org's (404). Branch staff promote their branches' students only.
+ */
+export async function startPromotion(
+  ctx: OrgCtx,
+  access: Access,
+  queue: Queue<JobMessage>,
+  input: PromoteStudents,
+): Promise<string> {
+  const reach = reachOf(ctx, access);
+  const named = input.exceptions.map((e) => e.studentId);
+  const [from, to, grades, reached] = await Promise.all([
+    held(calendar.getAcademicYear(ctx, input.fromAcademicYearId)),
+    held(calendar.getAcademicYear(ctx, input.toAcademicYearId)),
+    curriculum.listGradeLevels(ctx),
+    named.length > 0 ? repo.studentsAmong(ctx, named, reach) : [],
+  ]);
+  const fromYear = orThrow(from);
+  const toYear = orThrow(to);
+  if (toYear.startDate <= fromYear.startDate) {
+    throw unprocessable('The new academic year must start after the one being promoted from.', {
+      toAcademicYearId: ['Not after fromAcademicYearId'],
+    });
+  }
+  const gradeIds = new Set(grades.data.map((g) => g.id));
+  for (const e of input.exceptions) {
+    if (e.gradeLevelId && !gradeIds.has(e.gradeLevelId)) throw notFound('Grade level');
+  }
+  if (reached.length < named.length) throw notFound('Student');
+  const jobInput: PromotionInput = {
+    ...input,
+    branchIds: access.scope === 'branch' ? access.branchIds : null,
+  };
+  return startJob(ctx, queue, PROMOTION, jobInput);
+}
+
+/**
+ * The job behind a promotion. Every student with a grade in the old year, within the reach of
+ * whoever started it, gets the next grade in the org's order in the new year, or what their
+ * exception says; one in the last grade gets none. A student who already has a grade in the new
+ * year keeps it, so the job can run again safely (D-017).
+ */
+export async function promoteStudents(ctx: JobContext): Promise<PromotionResult> {
+  const input = ctx.input as PromotionInput;
+  const reach: repo.Reach = input.branchIds ? { branchIds: input.branchIds } : {};
+  const [current, next, grades] = await Promise.all([
+    repo.gradesInYear(ctx, input.fromAcademicYearId, reach),
+    repo.gradesInYear(ctx, input.toAcademicYearId, {}),
+    curriculum.listGradeLevels(ctx),
+  ]);
+  const order = grades.data.toSorted((a, b) => a.sortOrder - b.sortOrder).map((g) => g.id);
+  const exceptionOf = new Map(input.exceptions.map((e) => [e.studentId, e.gradeLevelId]));
+  const already = new Set(next.map((g) => g.studentId));
+  const result: PromotionResult = {
+    fromAcademicYearId: input.fromAcademicYearId,
+    toAcademicYearId: input.toAcademicYearId,
+    promoted: 0,
+    exceptions: 0,
+    finished: 0,
+    alreadySet: 0,
+  };
+  const rows: (repo.NewGradeRow & { id: string })[] = [];
+  for (const { studentId, gradeLevelId } of current) {
+    if (already.has(studentId)) {
+      result.alreadySet++;
+      continue;
+    }
+    let target: string | null;
+    if (exceptionOf.has(studentId)) {
+      target = exceptionOf.get(studentId) ?? null;
+      if (target) result.exceptions++;
+    } else {
+      const at = order.indexOf(gradeLevelId);
+      target = at >= 0 && at + 1 < order.length ? order[at + 1]! : null;
+      if (target) result.promoted++;
+    }
+    if (!target) {
+      result.finished++;
+      continue;
+    }
+    rows.push({
+      id: newId('studentGrade'),
+      orgId: ctx.orgId,
+      studentId,
+      academicYearId: input.toAcademicYearId,
+      gradeLevelId: target,
+    });
+  }
+  await ctx.setProgress(50);
+  if (rows.length > 0) {
+    await repo.insertGrades(ctx, rows, { entityId: ctx.jobId, after: { ...result } });
+  }
+  return result;
 }

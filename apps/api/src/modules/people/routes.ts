@@ -6,6 +6,8 @@ import {
   DuplicateMatches,
   DuplicateQuery,
   Family,
+  JobStarted,
+  PromoteStudents,
   FamilyQuery,
   Guardian,
   SearchQuery,
@@ -19,6 +21,7 @@ import {
 } from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
+import { byOrg, idempotent } from '../../middleware/idempotency';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as service from './service';
@@ -282,7 +285,36 @@ const duplicatesRoute = createRoute({
   },
 });
 
+const promoteRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/students/promote',
+  tags: ['People'],
+  summary: 'Move students up a grade for a new academic year (job)',
+  description:
+    'Every student with a grade in `fromAcademicYearId` gets the next grade in the org’s ' +
+    'order in `toAcademicYearId`, which must start after it (422); one in the last grade gets ' +
+    'none. `exceptions` give a student another grade (the same to repeat) or none. A student ' +
+    'who already has a grade in the new year keeps it, so running it again is safe. Branch ' +
+    'staff promote their branches’ students. Returns `202 { jobId }`; the job’s `result` is a ' +
+    '`PromotionResult`. Takes an `Idempotency-Key`.',
+  middleware: [...orgAccess('people:write'), idempotent(byOrg)],
+  request: { params: OrgParams, body: jsonBody(PromoteStudents) },
+  responses: {
+    202: json(JobStarted, 'The promotion is running'),
+    ...errors(400, 401, 403, 404, 409, 422),
+  },
+});
+
 export const peopleRoutes = createRouter()
+  .openapi(promoteRoute, async (c) => {
+    const jobId = await service.startPromotion(
+      orgCtx(c),
+      access(c),
+      c.env.JOBS_QUEUE,
+      c.req.valid('json'),
+    );
+    return c.json({ jobId }, 202);
+  })
   .openapi(searchRoute, async (c) => {
     return c.json(await service.search(orgCtx(c), access(c), c.req.valid('query')), 200);
   })

@@ -214,7 +214,7 @@ describe('GET /portal/invoices/{id}/pdf', () => {
 
 describe('renderPdf', () => {
   it('posts the page to Browser Rendering and gives back the PDF', async () => {
-    const pdf = new TextEncoder().encode('%PDF-1.7 test').buffer;
+    const pdf = new TextEncoder().encode('%PDF-1.7 test');
     const fetchFn = vi.fn(
       async () => new Response(pdf, { headers: { 'Content-Type': 'application/pdf' } }),
     );

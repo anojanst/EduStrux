@@ -985,3 +985,66 @@ export async function countFamiliesWithin(ctx: OrgCtx, reach: Reach) {
     .get();
   return row?.n ?? 0;
 }
+
+// ── Year-end promotion (TUI-45) ─────────────────────────────────────────────
+
+/** The grades in one academic year of the students within reach. */
+export function gradesInYear(ctx: OrgCtx, academicYearId: string, reach: Reach) {
+  return ctx.db
+    .select({ studentId: studentGrades.studentId, gradeLevelId: studentGrades.gradeLevelId })
+    .from(studentGrades)
+    .innerJoin(students, eq(students.id, studentGrades.studentId))
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(ctx, studentGrades, eq(studentGrades.academicYearId, academicYearId)),
+        inOrg(ctx, students),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    );
+}
+
+// A student grade row binds 7 values.
+const GRADES_PER_INSERT = 14;
+
+/**
+ * Gives students their grades for a year, as one batch with one audit row for the whole run
+ * (D-045). A student who has a grade for that year by then keeps it: the unique index skips them,
+ * so running it again changes nothing.
+ */
+export async function insertGrades(
+  ctx: OrgCtx,
+  rows: (NewGradeRow & { id: string })[],
+  audit: { entityId: string; after: Record<string, unknown> },
+) {
+  const inserts = [];
+  for (let i = 0; i < rows.length; i += GRADES_PER_INSERT) {
+    inserts.push(
+      ctx.db
+        .insert(studentGrades)
+        .values(rows.slice(i, i + GRADES_PER_INSERT))
+        .onConflictDoNothing(),
+    );
+  }
+  await writeWithAudit(ctx, inserts, {
+    action: 'students.promoted',
+    entityType: 'job',
+    entityId: audit.entityId,
+    after: audit.after,
+  });
+}
+
+/** Of these students, the ones within reach. */
+export async function studentsAmong(ctx: OrgCtx, ids: string[], reach: Reach) {
+  const rows = await ctx.db
+    .select({ id: students.id })
+    .from(students)
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(ctx, students, inIds(students.id, ids), studentWithin(reach)),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    );
+  return rows.map((row) => row.id);
+}

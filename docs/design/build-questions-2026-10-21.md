@@ -267,3 +267,14 @@ migration: say if you want it.
 
 **Q-35 · Not built here.** Batch PDF jobs (all invoices of a run as one file), and attaching the
 PDF to the invoice email: the email links to nothing yet and carries the amounts in its text.
+
+## TUI-45 Year-end promotion
+
+**Q-36 · How promotion works.** Built: `POST /students/promote` (`people:write`, a job, takes
+an `Idempotency-Key`) with `fromAcademicYearId`, `toAcademicYearId` (must start after, 422) and
+optional `exceptions` (`{ studentId, gradeLevelId | null }`: repeat a grade, skip to any grade,
+or none). Every student with a grade in the old year gets the next grade in the org's grade
+order in the new year; the last grade gets none (they have finished). A student who already has
+a grade in the new year keeps it, so a second run changes nothing. Branch staff promote only
+their branches' students. One `students.promoted` audit row for the run (D-045). Enrolments
+aren't touched: classes are per term, and roll-over is v1.1.
