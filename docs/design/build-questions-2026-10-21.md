@@ -350,3 +350,23 @@ hashes, token hashes and R2 keys left out; members' names and emails from `users
 kept a week; `GET /exports/{id}` gives a 5-minute download link once done. Per-table CSVs in a
 zip would need a zip library: say if you want CSV. The export reads every module's tables
 directly (a documented exception to "a repository reads only its own module's tables").
+
+---
+
+## Where the session stopped (usage limit)
+
+Built on this branch, each committed with tests (964+ passing at the last full run):
+TUI-43, 46, 50, 69, 65, 70, 49, 55, 58, 62, 63, 59, 45, 47, 61, 60, 78.
+
+Not built yet, in the order planned:
+- TUI-67 hourly cron: overdue reminders (needs an `invoices.reminded_days` column) and make-up
+  credit expiry (`attendance.expireCredits` exists, not yet called from the cron).
+- TUI-68 daily cron: extend open-ended classes' sessions, `cleanExpired` files (exists, not yet
+  wired into the cron), nightly per-org backup (`exportDocument` exists).
+- TUI-71 Clerk and Resend webhooks (a `webhook_events` table already exists for idempotency).
+- TUI-72 parent portal sign-in (mostly Clerk dashboard set-up; invitations already link parents).
+- TUI-73 Paddle, TUI-74 sign-up/trial/plan limits, TUI-75 super-admin console.
+- TUI-79 privacy controls, TUI-82 cross-org test sweep. TUI-80, 81, 83, 85 and 86 need the
+  owner or infrastructure.
+- The design docs (`handoff.md`, `decisions.md`) and the task files haven't been updated for
+  this session's work: this file holds the decisions to confirm first.
