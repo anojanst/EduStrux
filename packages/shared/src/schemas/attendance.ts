@@ -190,3 +190,97 @@ export const AbsenceNoticeQuery = PageQuery.extend({
     description: 'Only notices that start on or before this day',
   }),
 });
+
+// ── Make-ups (TUI-55) ───────────────────────────────────────────────────────
+
+/**
+ * `available` until used or lapsed. `used`: booked into a make-up lesson. `expired`: past its
+ * last day unused. A credit whose mark changes while unused is withdrawn and no longer listed.
+ */
+export const MAKEUP_CREDIT_STATUSES = ['available', 'used', 'expired'] as const;
+export type MakeupCreditStatus = (typeof MAKEUP_CREDIT_STATUSES)[number];
+
+export const MakeupPolicy = z
+  .object({
+    enabled: z.boolean().openapi({ description: 'Whether missed lessons earn make-up credits.' }),
+    creditForExcused: z.boolean().openapi({ description: 'An `excused` mark earns a credit.' }),
+    creditForAbsent: z.boolean().openapi({ description: 'An `absent` mark earns a credit.' }),
+    requireNotice: z.boolean().openapi({
+      description:
+        'Only when an absence notice covering the lesson was given before it started (D-129).',
+    }),
+    expiryDays: z.number().int().min(1).max(730).nullable().openapi({
+      description: 'A credit lapses this many days after the missed lesson. null = never.',
+      example: 60,
+    }),
+    sameCourseOnly: z.boolean().openapi({
+      description: 'A make-up must be a lesson of the same course as the one missed.',
+    }),
+    updatedAt: Timestamp.nullable().openapi({ description: 'null while the defaults apply.' }),
+  })
+  .openapi('MakeupPolicy');
+export type MakeupPolicy = z.infer<typeof MakeupPolicy>;
+
+export const UpdateMakeupPolicy = MakeupPolicy.omit({ updatedAt: true }).openapi(
+  'UpdateMakeupPolicy',
+);
+export type UpdateMakeupPolicy = z.infer<typeof UpdateMakeupPolicy>;
+
+export const DEFAULT_MAKEUP_POLICY: Omit<MakeupPolicy, 'updatedAt'> = {
+  enabled: false,
+  creditForExcused: true,
+  creditForAbsent: false,
+  requireNotice: true,
+  expiryDays: 60,
+  sameCourseOnly: true,
+};
+
+export const MakeupBooking = z
+  .object({
+    id: z.string().openapi({ example: 'mkb_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    creditId: z.string(),
+    studentId: z.string(),
+    sessionId: z.string().openapi({ description: 'The make-up lesson.' }),
+    date: LocalDate,
+    startTime: z.string(),
+    classId: z.string(),
+    className: z.string(),
+    createdAt: Timestamp,
+  })
+  .openapi('MakeupBooking');
+export type MakeupBooking = z.infer<typeof MakeupBooking>;
+
+export const MakeupCredit = z
+  .object({
+    id: z.string().openapi({ example: 'mkc_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    studentId: z.string(),
+    studentFirstName: z.string(),
+    studentLastName: z.string(),
+    sessionId: z.string().openapi({ description: 'The lesson missed.' }),
+    classId: z.string(),
+    courseId: z.string(),
+    missedOn: LocalDate,
+    expiresOn: LocalDate.nullable(),
+    status: z.enum(MAKEUP_CREDIT_STATUSES).openapi({
+      description: 'An unused credit past `expiresOn` is `expired`, even before the hourly sweep.',
+    }),
+    booking: z.union([MakeupBooking, z.null()]).openapi({
+      description: 'The make-up booked with it. null while unused.',
+    }),
+    createdAt: Timestamp,
+  })
+  .openapi('MakeupCredit');
+export type MakeupCredit = z.infer<typeof MakeupCredit>;
+
+export const MakeupCreditQuery = PageQuery.extend({
+  studentId: z.string().optional().openapi({ description: 'Only this student’s credits' }),
+  status: z.enum(MAKEUP_CREDIT_STATUSES).optional(),
+});
+
+export const CreateMakeupBooking = z
+  .object({
+    creditId: z.string().openapi({ example: 'mkc_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    sessionId: z.string().openapi({ description: 'The lesson to make up in.' }),
+  })
+  .openapi('CreateMakeupBooking');
+export type CreateMakeupBooking = z.infer<typeof CreateMakeupBooking>;

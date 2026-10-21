@@ -176,3 +176,27 @@ the same date, a cancellation and a lesson put back on. A new end time, room or 
 sends nothing. `notify: false` sends nothing; an optional `note` is added to the message. The
 message goes to the families of the students expected at the lesson, on its old date and its new
 one.
+
+## TUI-55 Make-up policy, credits and booking
+
+**Q-24 · What earns a credit?**
+Built, as an owner-set policy (`GET|PUT /makeup-policy`), off until saved: an `excused` mark
+(on by default) and/or an `absent` mark (off by default) earns one credit per student and missed
+lesson, and with `requireNotice` (on by default) only when an absence notice covering the date
+was given before the lesson started. Only students enrolled for the lesson earn one, not those
+making one up. A credit lapses `expiryDays` after the missed lesson (default 60; null = never).
+Changing the mark while the credit is unused takes it back; a used credit stays.
+Centre-cancelled lessons earn nothing automatically (bulk credits are v1.1).
+
+**Q-25 · Booking rules.** Built: staff with `classes:write` book a credit into a scheduled lesson
+still to come, on or before the credit's last day, of the same course when `sameCourseOnly` (on
+by default), that the student isn't already in, with a place free (enrolled students covering
+the date plus bookings, against the class's capacity). The student then shows on that lesson's
+attendance roster and can be marked there. Cancelling a booking before the lesson gives the
+credit back. Parents see credits (`GET /portal/makeup-credits`) but can't book (parent make-up
+booking is v1.1). A unique index stops one credit being booked twice at once.
+
+**Q-26 · Cost.** Marking attendance now reads the policy, the lesson's credits and who is
+booked in, in the same read stage: still 3 stages, but 3 more trips (11 instead of 8). Reading a
+roster costs one more trip. Folding the policy into the org row (read at sign-in for free) would
+save one; not done.

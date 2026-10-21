@@ -347,6 +347,7 @@ describe('the org is read once per request', () => {
     expect(listStudents.db.trips, 'GET /students: 6 → 4').toBeLessThanOrEqual(4);
     expect(enrol.db.trips, 'POST /enrolments: 12 → 9').toBeLessThanOrEqual(9);
     expect(listSessions.db.trips, 'GET /sessions: 9 → 6').toBeLessThanOrEqual(6);
-    expect(markAttendance.db.trips, 'PUT /attendance: 11 → 8').toBeLessThanOrEqual(8);
+    // 8 until make-ups added three reads to the same stage (TUI-55).
+    expect(markAttendance.db.trips, 'PUT /attendance: 11 → 8 → 11').toBeLessThanOrEqual(11);
   });
 });
