@@ -1,8 +1,6 @@
-import { guardians, memberships } from '@edustrux/db';
-import { addDays, localNow, localToUtc, newId, weekday, type Role } from '@edustrux/shared';
-import { eq } from 'drizzle-orm';
+import { addDays, localNow, localToUtc, weekday, type Role } from '@edustrux/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { call, db, sampleOrg, tokenFor } from './helpers';
+import { call, sampleOrg, tokenFor } from './helpers';
 
 // End-to-end tests run a whole flow through the API, the way the web app will (D-001, D-114).
 // Each step uses what the steps before it made; the module tests cover the edge cases.
@@ -70,19 +68,21 @@ describe('end to end', () => {
     expect(branches).toHaveLength(1);
     const main = branches[0]!;
 
-    // A teacher and a parent sign up and join the centre. Invitations aren't built yet (TUI-42,
-    // TUI-72), so their memberships go straight into the database.
-    const join = async (person: { userId: string }, role: Role) => {
-      const id = newId('membership');
-      await db()
-        .insert(memberships)
-        .values({ id, orgId: org.id, userId: person.userId, role, branchIds: null });
-      return id;
-    };
+    // ── Staff: the owner invites a teacher, who signs up and accepts with the invite's token.
+    const teacherInvite = await make<{ token: string }>('/staff/invitations', {
+      email: 'teacher@example.com',
+      role: 'teacher',
+    });
     const teacher = await signUp('teacher');
-    const teacherId = await join(teacher, 'teacher');
-    const parent = await signUp('parent');
-    const parentId = await join(parent, 'parent');
+    const joined = await teacher.send('POST', `/api/v1/invitations/${teacherInvite.token}/accept`);
+    expect(joined.status).toBe(200);
+    expect(joined.body).toMatchObject({ role: 'teacher', org: { id: org.id } });
+    const teacherId = joined.body.id as string;
+    const staff = (await api('GET', '/staff')).body.data as { role: Role; email: string }[];
+    expect(staff.map((m) => `${m.role} ${m.email}`)).toEqual([
+      'owner owner@example.com',
+      'teacher teacher@example.com',
+    ]);
 
     // ── Class setup: a ten-week term from next Monday, and a class with a lesson every Monday.
     const today = localNow(TZ).date;
@@ -154,10 +154,15 @@ describe('end to end', () => {
       relationship: 'Mother',
       email: 'parent@example.com',
     });
-    await db()
-      .update(guardians)
-      .set({ membershipId: parentId })
-      .where(eq(guardians.id, guardian.id));
+    // The owner invites Mere to sign in; accepting links her to the family.
+    const parentInvite = await make<{ token: string }>(`/guardians/${guardian.id}/invitation`, {});
+    const parent = await signUp('parent');
+    const parentJoined = await parent.send(
+      'POST',
+      `/api/v1/invitations/${parentInvite.token}/accept`,
+    );
+    expect(parentJoined.status).toBe(200);
+    expect(parentJoined.body.role).toBe('parent');
     const child = (firstName: string) =>
       make('/students', {
         familyId: family.id,
@@ -296,7 +301,11 @@ describe('end to end', () => {
     ]);
 
     // ── Every write along the way left an audit row, under the person who made it.
-    const name = { [owner.userId]: 'owner', [teacher.userId]: 'teacher' };
+    const name = {
+      [owner.userId]: 'owner',
+      [teacher.userId]: 'teacher',
+      [parent.userId]: 'parent',
+    };
     const audit = (await api('GET', '/audit-log?limit=100')).body.data as {
       action: string;
       actorUserId: string;
@@ -304,6 +313,10 @@ describe('end to end', () => {
     expect(audit.map((row) => `${row.action} by ${name[row.actorUserId]}`).sort()).toEqual(
       [
         'org.created by owner',
+        'invitation.created by owner',
+        'invitation.accepted by teacher',
+        'invitation.created by owner',
+        'invitation.accepted by parent',
         'academic_year.created by owner',
         'term.created by owner',
         'room.created by owner',

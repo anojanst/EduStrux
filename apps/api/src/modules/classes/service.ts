@@ -277,10 +277,13 @@ export async function classDates(
   };
 }
 
-/** How many classes use a course, term, branch or room. None can be deleted while any do. */
+/**
+ * How many classes use a course, term, branch or room, or have this teacher. None can be deleted
+ * while any do.
+ */
 export function countClasses(
   ctx: OrgCtx,
-  filter: Pick<repo.ClassFilter, 'courseId' | 'termId' | 'branchId' | 'roomId'>,
+  filter: Pick<repo.ClassFilter, 'courseId' | 'termId' | 'branchId' | 'roomId' | 'teacherId'>,
 ) {
   return repo.countClasses(ctx, filter);
 }

@@ -272,6 +272,9 @@ is the only deployed environment).
 - **Update 2026-10-11:** The link to a family is `guardians.membership_id`: a guardian row points
   at the parent's membership (D-053). Nothing sets it yet; accepting an invite will (TUI-42,
   TUI-72).
+- **Update 2026-10-21 (TUI-42):** Parents are now invited through their guardian
+  (`POST /guardians/{guardianId}/invitation`), and accepting the invite sets
+  `guardians.membership_id` (D-131).
 
 ## D-022 · 2026-10-07 · MVP cut: four P2 Could items move to v1.1
 
@@ -999,6 +1002,10 @@ get them without the default price).
 - **Tasks:** TUI-32 (and TUI-33, TUI-42, TUI-72).
 - **Update 2026-10-12 (TUI-33):** A teacher now reads the students who hold an active enrolment
   in a class they teach, with those students' families and guardians (D-060).
+- **Update 2026-10-21 (TUI-42):** Accepting a parent invite now sets `membershipId`, and deleting
+  a parent's membership clears it on their guardians in the same batch. A user with an active
+  parent membership who accepts another family's invite keeps the one membership, which then
+  reaches both families (D-131).
 
 ## D-054 · 2026-10-11 · Guardians: contact fields, the billing contact and emergency contacts
 
@@ -3440,6 +3447,9 @@ under "Not changed here" for a reach that is a subquery.
   - When the parent portal is built (TUI-39), its view joins the test.
   - Assumption: recorded from the implementation; the owner hasn't stated these rules.
 - **Tasks:** TUI-41 (and TUI-38, TUI-39, TUI-42, TUI-72).
+- **Update 2026-10-21 (TUI-42):** The direct inserts are gone. The test now joins the teacher and
+  the parent through the real invite flow, and its audit-trail check includes the four
+  invitation rows (D-131).
 
 ## D-124 · 2026-10-14 · How the pull-request checks run
 
@@ -3791,3 +3801,91 @@ under "Not changed here" for a reach that is a subquery.
     it: two tables, who on the list, writing on any day but not on a cancelled session, the text
     limits, and the permissions used.
 - **Tasks:** TUI-56.
+
+## D-131 · 2026-10-21 · Staff and parent invitations, and who manages staff
+
+- **Context:** TUI-42 builds staff invitations and staff management: `GET /staff`,
+  `POST /staff/invitations`, `POST /api/v1/invitations/{token}/accept` and
+  `PATCH|DELETE /staff/{membershipId}`. D-021 and D-053 left open how a parent is linked to their
+  family ("nothing sets `membershipId` yet"), and D-123 had the end-to-end test insert the
+  teacher's and parent's memberships until invites existed. The owner was asked four questions
+  during the build.
+- **Decision:**
+  - The owner decided on 2026-10-21, asked during the build:
+    - How an invite reaches the person: the token comes back in the API's answer and the invite
+      also goes on the email queue for TUI-65 to send.
+    - How a parent is invited: through their guardian, with a route of its own.
+    - Removing a teacher who still teaches classes: refused; suspending them still works.
+    - What a branch manager may do with staff: only the branch-level roles, and only within
+      their own branches.
+  - Invite delivery (owner's decision):
+    - `POST` answers 201 with `{ invitation, token }`. The token is shown only in that answer.
+      Only its SHA-256 hash (hex) is stored, in `invitations.token_hash`, unique.
+    - The invite is also put on `EMAIL_QUEUE` with the template `invitation` (data: the token,
+      role, org name and expiry) for TUI-65 to send. A queue failure is logged and doesn't undo
+      the invite.
+    - An invite is valid for 7 days. A new invite for the same email (staff) or the same guardian
+      (parent) withdraws the pending one (soft-deletes it).
+  - Parent invites (owner's decision):
+    - A new route, `POST /guardians/{guardianId}/invitation`, with `people:write` and the people
+      reach (D-053): the owner, and branch managers and front desk of the family's home branch. A
+      teacher, parent or accountant gets 403; a guardian out of reach is 404.
+    - The email defaults to the guardian's. With neither, it is 422 on `email` (`['Required']`).
+      A guardian already linked to a membership is 409.
+    - Accepting sets `guardians.membership_id`. A user who already has an active parent
+      membership in the org keeps it and gains the family, so one parent membership reaches
+      several families (D-053).
+  - Removing a teacher (owner's decision): `DELETE` is 422 while the member is the teacher of any
+    class. Suspending them (`PATCH` `status`) still works and keeps them on their classes.
+  - Branch managers (owner's decision):
+    - A branch manager limited to some branches reaches only branch managers, front desk and
+      teachers whose branch list is set and lies entirely inside their own branches. A branch
+      manager with no branch list reaches those three roles everywhere. Owners, accountants,
+      parents and staff with no branch limit are 404 to a branch-limited manager.
+    - They invite and assign only those three roles, and only with branches they have. An owner
+      or accountant role, a branch outside theirs, or no branch list is 403 (the D-033 pattern:
+      they can see the branch exists).
+  - Owners and accountants never carry a branch list: sending one is 400, and changing a member's
+    role to one of them clears it.
+  - Accepting an invite:
+    - The token alone is the proof: the signed-in user's email isn't checked against the
+      invite's.
+    - An unknown or withdrawn token is 404. A used one is 422 on `token` (`['Used']`), an expired
+      one 422 (`['Expired']`). Someone already a member is 409, a staff member accepting a parent
+      invite included: one role per membership.
+    - A removed member's membership row is restored with the same id, since the unique
+      `(org_id, user_id)` index still holds the soft-deleted row.
+    - A parent invite whose guardian was deleted is 422 (`['Guardian removed']`); one whose
+      guardian is now linked to someone else is 409.
+  - Nobody changes or removes their own membership (422). Only owners reach owners, so an org
+    always keeps the owner making the change, and there is no separate last-owner check.
+  - `GET /staff` lists every member but parents, paged by id, with the user's name and email.
+    `PATCH` and `DELETE` also reach parent memberships, for the owner only. A parent membership
+    changes only `status`; `role` or `branchIds` is 422. Deleting a parent clears their guardians'
+    `membership_id` in the same batch, as D-053 required. `PATCH` takes the `updatedAt` last read
+    and is 409 when the server's is newer.
+  - Audit rows: `invitation.created` (without the token hash), `invitation.accepted` (actor: the
+    accepting user; `after` holds the membership id, whether it was inserted, restored or
+    existing, the role, branch ids and guardian id), `membership.updated` (changed fields only,
+    D-113) and `membership.deleted`.
+  - Schema (migration `0018_staff_invitations`): `invitations.guardian_id` with an index on
+    `(org_id, guardian_id)`, and a unique index on `memberships (org_id, id)` for the paged list
+    (D-101).
+  - Database trips (D-102): `GET /staff` is 2 stages; a staff invite 3; accepting up to 4
+    (sign-in, the invitation, then the org, membership and guardian together, then the write).
+    Accepting is one over the usual 3 because the org isn't known until the invitation is read.
+- **Consequences:**
+  - D-053's open point is settled: parent invites set `guardians.membership_id`, and removing a
+    parent's membership clears it.
+  - The end-to-end test (D-123) now joins the teacher and the parent through the real invite
+    flow, and its audit-trail check includes the four invitation rows.
+  - Known limits: two different users accepting the same token at the same instant could both
+    join (the write can't be conditioned on "not yet accepted"). Pending invites can't be listed
+    or withdrawn by hand yet. The web app needs an accept page. Staff profile fields beyond the
+    user's name and email aren't built. TUI-65 sends the `invitation` email.
+  - Assumption: the four points above marked as the owner's decision are theirs. The rest is
+    recorded from the implementation, and the owner hasn't stated it: no branch list for owners
+    and accountants, the accept rules (token-only proof, the refusals, restoring a removed
+    member), nobody changing their own membership, who `GET /staff` lists and what a parent
+    membership may change, the audit rows, and the trip count.
+- **Tasks:** TUI-42 (and TUI-65, TUI-72).

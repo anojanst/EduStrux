@@ -379,6 +379,22 @@ export async function softDeleteGuardian(ctx: OrgCtx, before: GuardianRow) {
   );
 }
 
+/** Links a guardian to the parent membership they sign in with (D-053), as a statement to batch. */
+export function linkGuardianStatement(ctx: OrgCtx, guardianId: string, membershipId: string) {
+  return ctx.db
+    .update(guardians)
+    .set({ membershipId })
+    .where(inOrg(ctx, guardians, eq(guardians.id, guardianId)));
+}
+
+/** Unlinks every guardian signed in with this membership, as a statement to batch. */
+export function unlinkMembershipStatement(ctx: OrgCtx, membershipId: string) {
+  return ctx.db
+    .update(guardians)
+    .set({ membershipId: null })
+    .where(inOrg(ctx, guardians, eq(guardians.membershipId, membershipId)));
+}
+
 // ── Students ────────────────────────────────────────────────────────────────
 
 // A student is read with their family's home branch.

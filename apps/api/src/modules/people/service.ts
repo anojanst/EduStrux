@@ -381,6 +381,26 @@ export async function deleteGuardian(ctx: OrgCtx, access: Access, id: string): P
   await repo.softDeleteGuardian(ctx, guardian);
 }
 
+/** A guardian within the caller's reach, to invite to sign in. 404 outside it. */
+export async function guardianToInvite(ctx: OrgCtx, access: Access, id: string) {
+  return (await findGuardianOr404(ctx, id, reachOf(ctx, access))).guardian;
+}
+
+/** A guardian of the org, whoever asks: an invite being accepted names one. */
+export async function findGuardian(ctx: OrgCtx, id: string) {
+  return (await repo.findGuardian(ctx, id, {}))?.guardian;
+}
+
+/** Signs a guardian in as a parent membership, as a statement for the caller's batch (D-053). */
+export function linkGuardianStatement(ctx: OrgCtx, guardianId: string, membershipId: string) {
+  return repo.linkGuardianStatement(ctx, guardianId, membershipId);
+}
+
+/** Unlinks the guardians a removed parent membership signed in as (D-053), for the caller's batch. */
+export function unlinkMembershipStatement(ctx: OrgCtx, membershipId: string) {
+  return repo.unlinkMembershipStatement(ctx, membershipId);
+}
+
 // ── Students ────────────────────────────────────────────────────────────────
 
 /** A birth date can't be after today, in the org's timezone. */

@@ -1,7 +1,7 @@
 import { branches, now, rooms, type Db } from '@edustrux/db';
 import { and, asc, count, eq, gt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
-import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type BranchRow = typeof branches.$inferSelect;
 export type NewBranchRow = typeof branches.$inferInsert;
@@ -28,6 +28,14 @@ export function findBranch(ctx: OrgCtx, id: string) {
     .from(branches)
     .where(inOrg(ctx, branches, eq(branches.id, id)))
     .get();
+}
+
+/** Which of these branch ids the org has. */
+export function existingBranchIds(ctx: OrgCtx, ids: string[]) {
+  return ctx.db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(inOrg(ctx, branches, inIds(branches.id, ids)));
 }
 
 export async function countBranches(ctx: OrgCtx) {

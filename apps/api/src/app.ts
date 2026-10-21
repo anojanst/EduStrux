@@ -19,6 +19,7 @@ import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { portalRoutes } from './modules/portal/routes';
+import { staffRoutes } from './modules/staff/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
   if (c.env.ENABLE_DOCS !== 'true') return c.json(errorBody('not_found', 'Route not found'), 404);
@@ -33,6 +34,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', platformRoutes);
   app.route('/', meRoutes);
   app.route('/', orgRoutes);
+  app.route('/', staffRoutes);
   app.route('/', branchRoutes);
   app.route('/', curriculumRoutes);
   app.route('/', calendarRoutes);

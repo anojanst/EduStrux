@@ -127,6 +127,13 @@
       "when": 1792385436161,
       "tag": "0017_absence_notices_lesson_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792569457231,
+      "tag": "0018_staff_invitations",
+      "breakpoints": true
     }
   ]
 }
