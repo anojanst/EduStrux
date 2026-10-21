@@ -51,6 +51,11 @@ export type Bindings = {
   PADDLE_WEBHOOK_SECRET?: string;
   PADDLE_ENVIRONMENT?: string;
   PADDLE_PRICE_IDS?: string;
+  /**
+   * The Clerk user ids of the super-admins (TUI-75), comma-separated. Only they reach
+   * `/api/v1/admin/*`; with none set, nobody does.
+   */
+  SUPER_ADMIN_CLERK_USER_IDS?: string;
 };
 
 export type AuthUser = {
@@ -81,6 +86,8 @@ export type Variables = {
   org: OrgRow;
   /** Set by requirePermission: how far this role's permission reaches. */
   scope: Scope;
+  /** The Clerk id of the super-admin signed in as this user, when one is (TUI-75). */
+  impersonatedBy?: string;
 };
 
 export type AppEnv = { Bindings: Bindings; Variables: Variables };

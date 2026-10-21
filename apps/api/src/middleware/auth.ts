@@ -4,6 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv, Bindings } from '../env';
 import { unauthenticated } from '../lib/errors';
+import { logImpersonated } from '../modules/admin/log';
 import { findOrCreateUser, type ClerkIdentity } from '../modules/users/repository';
 
 function readToken(authorization: string | undefined, cookie: string | undefined) {
@@ -42,6 +43,13 @@ export async function signedInAs(c: Context<AppEnv>): Promise<ClerkIdentity> {
 
   const sub = claims.sub;
   if (typeof sub !== 'string') throw unauthenticated('Token has no subject');
+  // A super-admin signed in as this user through a Clerk actor token (TUI-75): the session names
+  // the admin in `act`. Every such request is logged.
+  const act = claims.act as { sub?: unknown } | undefined;
+  if (act && typeof act.sub === 'string') {
+    c.set('impersonatedBy', act.sub);
+    await logImpersonated(c, act.sub);
+  }
 
   return {
     clerkUserId: sub,

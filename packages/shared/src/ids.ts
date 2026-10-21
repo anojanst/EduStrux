@@ -49,6 +49,7 @@ export const ID_PREFIXES = {
   export: 'exp',
   job: 'job',
   audit: 'aud',
+  adminAccess: 'adm',
   idempotency: 'idem',
 } as const;
 

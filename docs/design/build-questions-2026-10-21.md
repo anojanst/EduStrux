@@ -469,6 +469,28 @@ student in another class is fine. An enrolment request's approval reports a capp
 anyone: further enrolments are refused until the count is under the cap. POST /enrolments now
 makes 10 D1 calls in the same stage (was 9).
 
+## TUI-75 Super-admin console
+
+**Q-61 · Who is a super-admin.** Built: the Clerk user ids in a secret,
+`SUPER_ADMIN_CLERK_USER_IDS` (comma-separated), not a role or a column, so nothing in the
+database can grant it. Anyone else, including an admin while impersonating, gets the 404 of a
+route that isn't there.
+
+**Q-62 · What it does.** Built: `GET /api/v1/admin/orgs` (newest first, with owners; `?q` by
+the start of name or slug, `?status`), `GET /admin/orgs/{id}` (adds the billing overview, active
+members, families and students), `PATCH /admin/orgs/{id}` (plan, status, trial end, with
+`updatedAt`; recorded in the org's own audit log as `org.admin_updated`). A later Paddle event
+sets plan and status again. Deleting an org isn't offered (that is TUI-79's privacy work).
+
+**Q-63 · Impersonation.** Built on **Clerk actor tokens**: `POST /admin/orgs/{id}/impersonate
+{ userId?, reason }` asks Clerk for a one-time link (10 minutes; the session lasts at most an
+hour) that signs the admin in as the member, the org's first owner by default. It needs
+`CLERK_SECRET_KEY` (503 without). The org's audit log gets `org.impersonated` with the reason,
+so its owner can see support came in. The session carries Clerk's `act` claim; **every
+request** made in it is written to a new platform-wide `admin_access_log` (migration 0031)
+before it runs, as is every admin request. The impersonated session can do anything the member
+can. There is no endpoint to read `admin_access_log` yet (read it in D1); say if you want one.
+
 ---
 
 ## Where the session stopped (usage limit)

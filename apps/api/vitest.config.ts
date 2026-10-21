@@ -26,6 +26,9 @@ export default defineConfig(async () => ({
           FILES_SIGNING_SECRET: 'test-files-signing-secret',
           CLERK_WEBHOOK_SECRET: 'whsec_dGVzdC1jbGVyay13ZWJob29rLXNlY3JldA==',
           RESEND_WEBHOOK_SECRET: 'whsec_dGVzdC1yZXNlbmQtd2ViaG9vay1zZWNyZXQ=',
+          // Never call Clerk's Backend API from tests (impersonation), even with a key in .dev.vars.
+          CLERK_SECRET_KEY: '',
+          SUPER_ADMIN_CLERK_USER_IDS: 'user_super_admin, user_super_admin_2',
           PADDLE_API_KEY: '',
           PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_test_secret',
           PADDLE_ENVIRONMENT: 'sandbox',
