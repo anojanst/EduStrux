@@ -129,3 +129,51 @@ export function monthRange(month: string): DateRange {
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   return { startDate: `${month}-01`, endDate: `${month}-${String(lastDay).padStart(2, '0')}` };
 }
+
+/** What an invoice line holds that charging it again for other dates needs. */
+export type ChargedLine = {
+  basis: PriceBasis;
+  unitAmount: number;
+  lessons: number;
+  periodLessons: number | null;
+  freeLessons: number;
+  periodStart: string;
+  periodEnd: string;
+  taxRateBps: number | null;
+  taxInclusive: boolean | null;
+};
+
+/**
+ * A per-term, per-month or per-lesson line charged again for an enrolment's new dates, at the
+ * price and tax it was charged at (D-093): pro rata by the lessons the dates now cover in the
+ * line's period. The free-trial lessons it gave stay free, up to the lessons left. null when no
+ * lesson is left to charge. A pack line isn't charged again: packs are bought up front.
+ */
+export function chargeAgain(
+  line: ChargedLine,
+  enrolment: { startDate: string; endDate: string | null },
+  lessonDates: string[],
+) {
+  const period = { startDate: line.periodStart, endDate: line.periodEnd };
+  const covered = lessonDates.filter(
+    (date) =>
+      within(date, period) &&
+      date >= enrolment.startDate &&
+      (enrolment.endDate === null || date <= enrolment.endDate),
+  ).length;
+  const freeLessons = Math.min(line.freeLessons, covered);
+  const charged = covered - freeLessons;
+  if (charged === 0) return null;
+  const perLesson = line.basis === 'per_lesson';
+  const amount = perLesson
+    ? charged * line.unitAmount
+    : divRound(line.unitAmount * charged, line.periodLessons ?? charged);
+  const tax =
+    line.taxRateBps === null ? null : { rateBps: line.taxRateBps, inclusive: !!line.taxInclusive };
+  return {
+    quantity: perLesson ? charged : 1,
+    lessons: charged,
+    freeLessons,
+    ...withTax(amount, tax),
+  };
+}

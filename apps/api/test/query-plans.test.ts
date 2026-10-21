@@ -1476,3 +1476,20 @@ describe('search reads name ranges and exact values from their indexes (TUI-43)'
     expect(found).not.toMatch(READS_AN_ORG);
   });
 });
+
+describe('changing an enrolment reads it and its invoice lines by id (TUI-46)', () => {
+  it('finds the enrolment by its id, and its lines by the enrolment', async () => {
+    const one = await planOf((ctx) => enrolment.findEnrolment(ctx, 'enr_a', {}));
+    expect(one).toMatch(searchBy('enrolments', 'id'));
+    const lines = await planOf((ctx) => billing.linesOfEnrolment(ctx, 'enr_a'));
+    expect(lines).toMatch(searchBy('invoice_lines', 'enrolment_id'));
+    expect(lines).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds a lesson’s roll from the class’s enrolments, withdrawn ones too', async () => {
+    const roll = await planOf((ctx) =>
+      people.studentNames(ctx, enrolment.rollStudents(ctx, ['cls_a'])),
+    );
+    expect(roll).toMatch(searchBy('enrolments', 'class_id'));
+  });
+});

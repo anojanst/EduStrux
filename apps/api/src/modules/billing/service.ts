@@ -6,6 +6,7 @@ import {
   type CreatePriceRule,
   type CreateTaxRate,
   type Invoice,
+  type InvoiceAdjustment,
   type InvoiceLine,
   type InvoiceStatus,
   type Payment,
@@ -33,6 +34,7 @@ import * as orgs from '../orgs/service';
 import { familyLabelWithinReach, familyWithinReach } from '../people/for-billing';
 import * as people from '../people/service';
 import { priceResolver } from './pricing';
+import { chargeAgain } from './invoicing';
 import * as repo from './repository';
 
 // Every function here waits for D1 once to read and, if it writes, once more to write (D-102).
@@ -763,4 +765,57 @@ export async function deletePayment(ctx: OrgCtx, access: Access, id: string): Pr
   ]);
   if (!before) throw notFound('Payment');
   await repo.softDeletePayment(ctx, before, allocations);
+}
+
+// ── An enrolment's new dates (TUI-46) ───────────────────────────────────────
+
+/** An enrolment's lines on invoices that aren't void, each with its invoice. */
+export function linesOfEnrolment(ctx: OrgCtx, enrolmentId: string) {
+  return repo.linesOfEnrolment(ctx, enrolmentId);
+}
+export type EnrolmentLine = Awaited<ReturnType<typeof linesOfEnrolment>>[number];
+
+/**
+ * What an enrolment's new dates do to its invoices, pro rata by lessons (D-086), at the price
+ * each line was charged at (D-093). A draft's line is charged again, or taken off when no lesson
+ * is left, with statements for the caller's batch; a draft left with no lines is voided. An
+ * issued invoice's lines are fixed (D-095), so they are only reported, with what they would
+ * charge now. Pack lines are left alone: packs are bought up front. `lessonDates` are the class's
+ * lessons in every period the lines cover.
+ */
+export function adjustForDates(
+  ctx: OrgCtx,
+  lines: EnrolmentLine[],
+  enrolment: { startDate: string; endDate: string | null },
+  lessonDates: string[],
+) {
+  const statements: ReturnType<typeof repo.rechargeDraftLine> = [];
+  const adjustments: InvoiceAdjustment[] = [];
+  const left = new Map(lines.map(({ invoice }) => [invoice.id, invoice.lines]));
+  for (const { line, invoice } of lines) {
+    if (line.basis === 'pack') continue;
+    const charge = chargeAgain(line, enrolment, lessonDates);
+    const lessonsAfter = charge?.lessons ?? 0;
+    const totalAfter = charge?.total ?? 0;
+    if (lessonsAfter === line.lessons && totalAfter === line.totalAmount) continue;
+    const draft = invoice.status === 'draft';
+    let status = invoice.status;
+    if (draft) {
+      const remaining = (left.get(invoice.id) ?? 1) - (charge ? 0 : 1);
+      left.set(invoice.id, remaining);
+      if (remaining === 0) status = 'void';
+      statements.push(...repo.rechargeDraftLine(ctx, line, charge, remaining === 0));
+    }
+    adjustments.push({
+      invoiceId: invoice.id,
+      invoiceLineId: line.id,
+      invoiceStatus: status,
+      adjusted: draft,
+      lessonsBefore: line.lessons,
+      lessonsAfter,
+      before: { amount: line.totalAmount, currency: invoice.currency },
+      after: { amount: totalAfter, currency: invoice.currency },
+    });
+  }
+  return { statements, adjustments };
 }

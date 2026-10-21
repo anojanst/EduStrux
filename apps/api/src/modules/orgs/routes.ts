@@ -14,13 +14,9 @@ export const OrgParams = z.object({
 });
 
 const IdempotencyHeader = z.object({
-  'idempotency-key': z
-    .string()
-    .max(255)
-    .optional()
-    .openapi({
-      description: 'Retry-safe key. The first successful response is replayed for retries.',
-    }),
+  'idempotency-key': z.string().max(255).optional().openapi({
+    description: 'Retry-safe key. The first successful response is replayed for retries.',
+  }),
 });
 
 const createOrgRoute = createRoute({

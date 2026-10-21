@@ -1,6 +1,6 @@
 import { attendance, enrolments, guardians, memberships, sessions } from '@edustrux/db';
 import { addDays, localNow, newId, type Role } from '@edustrux/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { call, db, newOrg, newUser } from './helpers';
 
@@ -743,10 +743,11 @@ describe('what a mark answers with', () => {
   it('a student who was marked and has since withdrawn, by name, until their mark is cleared', async () => {
     const { api, org, klass, session, aroha } = await classOfTwo();
     await mark(api, session, [{ studentId: aroha.id, status: 'absent' }]);
-    // What a withdrawal will do: the enrolment is no longer active.
+    // What withdrawing her before the lesson does: the enrolment is no longer active, and ends
+    // before the lesson's date (TUI-46). Here, the day before it started.
     await db()
       .update(enrolments)
-      .set({ status: 'withdrawn' })
+      .set({ status: 'withdrawn', endDate: sql`date(${enrolments.startDate}, '-1 day')` })
       .where(
         and(
           eq(enrolments.orgId, org.id),

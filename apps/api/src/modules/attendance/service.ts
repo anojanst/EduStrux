@@ -38,7 +38,7 @@ function namesFor(ctx: OrgCtx, access: Access, sessionId: string): Promise<Stude
     return [people.studentNames(ctx, people.studentsOfGuardian(ctx, access.membershipId))];
   }
   return [
-    people.studentNames(ctx, enrolment.studentsEnrolledIn(ctx, classOfSession(ctx, sessionId))),
+    people.studentNames(ctx, enrolment.studentsOnRollOf(ctx, classOfSession(ctx, sessionId))),
     people.studentNames(ctx, repo.studentsMarkedAt(ctx, sessionId)),
   ];
 }
@@ -51,7 +51,7 @@ function namesFor(ctx: OrgCtx, access: Access, sessionId: string): Promise<Stude
  * session itself, and nothing the other reads found is used.
  */
 async function readSession(ctx: OrgCtx, access: Access, sessionId: string) {
-  const enrolled = enrolment.studentsEnrolledIn(ctx, classOfSession(ctx, sessionId));
+  const enrolled = enrolment.studentsOnRollOf(ctx, classOfSession(ctx, sessionId));
   const [session, roster] = await Promise.allSettled([
     classes.getSession(ctx, access, sessionId),
     Promise.all([

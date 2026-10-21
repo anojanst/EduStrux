@@ -33,7 +33,7 @@ function namesFor(ctx: OrgCtx, access: Access, sessionId: string): Promise<Stude
     return [people.studentNames(ctx, people.studentsOfGuardian(ctx, access.membershipId))];
   }
   return [
-    people.studentNames(ctx, enrolment.studentsEnrolledIn(ctx, classOfSession(ctx, sessionId))),
+    people.studentNames(ctx, enrolment.studentsOnRollOf(ctx, classOfSession(ctx, sessionId))),
     people.studentNames(ctx, repo.studentsNotedAt(ctx, sessionId)),
   ];
 }

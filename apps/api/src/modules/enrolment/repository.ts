@@ -1,6 +1,8 @@
 import { enrolments } from '@edustrux/db';
 import { asc, count, eq, gt, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import {
+  changedFields,
   firstIds,
   idsFrom,
   inIds,
@@ -179,6 +181,14 @@ export function activeOf(ctx: OrgCtx, studentIds: Ids) {
     .orderBy(asc(enrolments.id));
 }
 
+/**
+ * The students who hold or held an enrolment in any of these classes, active or withdrawn, as
+ * ids to filter by: whoever a past lesson's roster can show (TUI-46).
+ */
+export function rollStudents(ctx: OrgCtx, classIds: Ids): IdQuery {
+  return idsFrom(ctx, enrolments, enrolments.studentId, inIds(enrolments.classId, classIds));
+}
+
 /** The students who hold an active enrolment in any of these classes, as ids to filter by. */
 export function activeStudents(ctx: OrgCtx, classIds: Ids): IdQuery {
   return idsFrom(
@@ -224,7 +234,10 @@ export function activeSpans(ctx: OrgCtx, studentId: string) {
     .where(inOrg(ctx, enrolments, eq(enrolments.studentId, studentId), active));
 }
 
-/** The active enrolments in these classes that cover some part of the dates, both included. */
+/**
+ * The enrolments in these classes that cover some part of the dates, both included: active ones,
+ * and withdrawn ones for the lessons before the student left (TUI-46). Their dates bound both.
+ */
 export function activeDuring(
   ctx: OrgCtx,
   classIds: Ids,
@@ -238,10 +251,68 @@ export function activeDuring(
         ctx,
         enrolments,
         inIds(enrolments.classId, classIds),
-        active,
         lte(enrolments.startDate, range.endDate),
         or(isNull(enrolments.endDate), gte(enrolments.endDate, range.startDate)),
       ),
     )
     .orderBy(asc(enrolments.id));
+}
+
+// ── Changing, withdrawing and transferring (TUI-46) ─────────────────────────
+
+export type EnrolmentChanges = Partial<
+  Pick<
+    NewEnrolmentRow,
+    'startDate' | 'endDate' | 'priceOverrideAmount' | 'priceOverrideCurrency' | 'status'
+  >
+>;
+
+/** One enrolment, if it is within reach: through its class or its student. */
+export function findEnrolment(ctx: OrgCtx, id: string, reach: Reach) {
+  return ctx.db
+    .select()
+    .from(enrolments)
+    .where(inOrg(ctx, enrolments, eq(enrolments.id, id), within(reach)))
+    .get();
+}
+
+/**
+ * Changes the enrolment, and with a transfer adds the new one, in one batch with the caller's
+ * other statements (its invoice lines) and one audit row. Returns the enrolment as changed and
+ * the new one, from that batch, so nothing is read back. The update holds only while the
+ * enrolment is still as read, so a second change racing this one changes nothing.
+ */
+export async function changeEnrolment(
+  ctx: OrgCtx,
+  before: EnrolmentRow,
+  changes: EnrolmentChanges,
+  other: BatchItem<'sqlite'>[],
+  audit: { action: string; extra: Record<string, unknown> },
+  added?: NewEnrolmentRow & { id: string },
+) {
+  const update = ctx.db
+    .update(enrolments)
+    .set({ ...changes, updatedAt: new Date().toISOString() })
+    .where(
+      inOrg(
+        ctx,
+        enrolments,
+        eq(enrolments.id, before.id),
+        eq(enrolments.updatedAt, before.updatedAt),
+      ),
+    )
+    .returning();
+  const insert = added ? [ctx.db.insert(enrolments).values(added).returning()] : [];
+  const fields = changedFields(before, changes);
+  const [, updated, ...rest] = await writeWithAudit(ctx, [update, ...insert, ...other], {
+    action: audit.action,
+    entityType: 'enrolment',
+    entityId: before.id,
+    before: fields.before,
+    after: { ...fields.after, ...audit.extra, ...(added ? { transferredTo: added } : {}) },
+  });
+  return {
+    updated: (updated as EnrolmentRow[])[0],
+    inserted: added ? (rest[0] as EnrolmentRow[])[0] : undefined,
+  };
 }

@@ -1,8 +1,17 @@
-import { localNow, newId, type CreateEnrolment, type Enrolment } from '@edustrux/shared';
+import {
+  addDays,
+  localNow,
+  newId,
+  type CreateEnrolment,
+  type Enrolment,
+  type EnrolmentUpdate,
+  type UpdateEnrolment,
+} from '@edustrux/shared';
 import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
-import { conflict, unprocessable, validationFailed } from '../../lib/errors';
+import { conflict, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
-import { classDatesOf } from '../classes/for-enrolment';
+import * as billing from '../billing/service';
+import { classDatesOf, classOfEnrolment } from '../classes/for-enrolment';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
@@ -243,6 +252,201 @@ export async function createEnrolment(
   return toEnrolment(stored, student, klass);
 }
 
+// ── Changing, withdrawing and transferring (TUI-46) ─────────────────────────
+
+/** The first and last day a class runs, as `classDatesOf` and `classOfEnrolment` give them. */
+type Span = { startDate: string | null; endDate: string | null };
+
+/** The fields of `dates` that fall outside the class's, for a 422. */
+function outsideClass(span: Span, dates: Record<string, string | null | undefined>) {
+  const fields: Record<string, string[]> = {};
+  for (const [field, date] of Object.entries(dates)) {
+    if (!date) continue;
+    if (
+      (span.startDate !== null && date < span.startDate) ||
+      (span.endDate !== null && date > span.endDate)
+    ) {
+      fields[field] = ['Outside the class dates'];
+    }
+  }
+  if (Object.keys(fields).length === 0) return;
+  const runs = span.endDate ? `${span.startDate} to ${span.endDate}` : `from ${span.startDate} on`;
+  throw unprocessable(`An enrolment's dates must fall inside the class's: ${runs}.`, fields);
+}
+
+function checkCurrency(
+  currency: string,
+  price: { currency: string } | null | undefined,
+  field: string,
+) {
+  if (price && price.currency !== currency) {
+    throw validationFailed({ [field]: [`Must be the organisation's currency, ${currency}`] });
+  }
+}
+
+/**
+ * Changes an enrolment's dates or price override, withdraws the student, or transfers them to
+ * another class. The caller must reach the enrolment, through its class or its student, and for
+ * a transfer the new class too.
+ *
+ * New dates change what the enrolment owes, pro rata by lessons (D-086): a draft invoice's line
+ * for it is charged again in the same batch, and an issued one's is reported with what it would
+ * charge now (D-095). A price override applies from the next invoice run.
+ *
+ * Two read stages, then the write: the enrolment and its invoice lines; then its class, its
+ * student's name, the class's lessons, and for a transfer the new class and its places.
+ */
+export async function updateEnrolment(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  input: UpdateEnrolment,
+): Promise<EnrolmentUpdate> {
+  const [before, lines, org] = await Promise.all([
+    repo.findEnrolment(ctx, id, reachOf(ctx, access)),
+    billing.linesOfEnrolment(ctx, id),
+    orgs.getOrg(ctx),
+  ]);
+  if (!before) throw notFound('Enrolment');
+  if (before.updatedAt !== input.updatedAt) throw staleData();
+  const { transfer } = input;
+  const withdraw = input.status === 'withdrawn';
+  const edits =
+    input.startDate !== undefined ||
+    input.endDate !== undefined ||
+    input.priceOverride !== undefined;
+  if (before.status === 'withdrawn' && (transfer || withdraw || edits)) {
+    throw unprocessable('This enrolment was withdrawn, so it can’t be changed.', {
+      status: ['Withdrawn'],
+    });
+  }
+  checkCurrency(org.currency, input.priceOverride, 'priceOverride.currency');
+  checkCurrency(org.currency, transfer?.priceOverride, 'transfer.priceOverride.currency');
+
+  const today = localNow(org.timezone).date;
+  const needsLessons = lines.some(({ line }) => line.basis !== 'pack');
+  const [klass, names, lessons, newClassRead, newDatesOf, places] = await Promise.all([
+    classOfEnrolment(ctx, before.classId),
+    people.studentNames(ctx, [before.studentId]),
+    needsLessons
+      ? classes.lessonDates(ctx, [before.classId], {
+          startDate: '0000-01-01',
+          endDate: '9999-12-31',
+        })
+      : undefined,
+    transfer ? hold(classes.getClass(ctx, access, transfer.classId)) : undefined,
+    transfer ? classDatesOf(ctx, transfer.classId) : undefined,
+    transfer ? repo.placesIn(ctx, transfer.classId, before.studentId) : undefined,
+  ]);
+  const student = names.get(before.studentId);
+  if (!klass || !student) throw notFound('Enrolment');
+
+  // The enrolment's dates once changed.
+  let startDate = input.startDate ?? before.startDate;
+  let endDate = input.endDate !== undefined ? input.endDate : before.endDate;
+  let added: (repo.NewEnrolmentRow & { id: string }) | undefined;
+  let newClass: Awaited<ReturnType<typeof classes.getClass>> | undefined;
+
+  if (transfer) {
+    newClass = take(newClassRead!);
+    if (newClass.id === before.classId) {
+      throw unprocessable('The student is already in this class.', {
+        'transfer.classId': ['Same class'],
+      });
+    }
+    const span = newDatesOf!(newClass);
+    const newStart =
+      transfer.startDate ??
+      (span.startDate !== null && span.startDate > today ? span.startDate : today);
+    if (newStart < before.startDate) {
+      throw unprocessable('A transfer can’t start before the enrolment it ends.', {
+        'transfer.startDate': ['Before the enrolment started'],
+      });
+    }
+    outsideClass(span, { 'transfer.startDate': newStart });
+    if (places!.alreadyEnrolled) {
+      throw conflict('This student is already enrolled in that class.', {
+        'transfer.classId': ['Already enrolled'],
+      });
+    }
+    if (newClass.capacity !== null && places!.takenOn(newStart) >= newClass.capacity) {
+      throw unprocessable(`That class is full: all ${newClass.capacity} place(s) are taken.`, {
+        'transfer.classId': ['Full'],
+      });
+    }
+    endDate = addDays(newStart, -1);
+    const price = transfer.priceOverride ?? null;
+    added = {
+      id: newId('enrolment'),
+      orgId: ctx.orgId,
+      studentId: before.studentId,
+      classId: newClass.id,
+      startDate: newStart,
+      endDate: null,
+      priceOverrideAmount: price?.amount ?? null,
+      priceOverrideCurrency: price?.currency ?? null,
+      status: 'active',
+    };
+  } else if (withdraw) {
+    // Withdrawn before starting: the day before the start, so no lesson is covered.
+    const dayBefore = addDays(startDate, -1);
+    endDate = input.endDate ?? (today < dayBefore ? dayBefore : today);
+    if (endDate < addDays(startDate, -1)) {
+      throw validationFailed({ endDate: ['Before startDate'] });
+    }
+    outsideClass(klass, { endDate: endDate >= startDate ? endDate : null });
+  } else {
+    if (endDate !== null && endDate < startDate) {
+      throw validationFailed({ endDate: ['Must be on or after startDate'] });
+    }
+    outsideClass(klass, {
+      startDate: input.startDate,
+      endDate: input.endDate,
+    });
+  }
+
+  const changes: repo.EnrolmentChanges = {};
+  if (startDate !== before.startDate) changes.startDate = startDate;
+  if (endDate !== before.endDate) changes.endDate = endDate;
+  if (input.priceOverride !== undefined) {
+    changes.priceOverrideAmount = input.priceOverride?.amount ?? null;
+    changes.priceOverrideCurrency = input.priceOverride?.currency ?? null;
+  }
+  if (withdraw || transfer) changes.status = 'withdrawn';
+  if (Object.keys(changes).length === 0) {
+    return {
+      enrolment: forReader(toEnrolment(before, student, klass), access),
+      transferredTo: null,
+      invoices: [],
+    };
+  }
+
+  const datesChanged = changes.startDate !== undefined || changes.endDate !== undefined;
+  const { statements, adjustments } = datesChanged
+    ? billing.adjustForDates(ctx, lines, { startDate, endDate }, lessons?.get(before.classId) ?? [])
+    : { statements: [], adjustments: [] };
+  const action = transfer
+    ? 'enrolment.transferred'
+    : withdraw
+      ? 'enrolment.withdrawn'
+      : 'enrolment.updated';
+  const { updated, inserted } = await repo.changeEnrolment(
+    ctx,
+    before,
+    changes,
+    statements,
+    { action, extra: adjustments.length > 0 ? { invoices: adjustments } : {} },
+    added,
+  );
+  if (!updated) throw staleData();
+  return {
+    enrolment: forReader(toEnrolment(updated, student, klass), access),
+    transferredTo:
+      inserted && newClass ? forReader(toEnrolment(inserted, student, newClass), access) : null,
+    invoices: adjustments,
+  };
+}
+
 // ── What other modules ask about enrolments ─────────────────────────────────
 
 /** How many enrolments a class or a student has. Neither can be deleted while it has any. */
@@ -287,6 +491,14 @@ export function studentsEnrolledIn(ctx: OrgCtx, classIds: Ids): IdQuery {
   return repo.activeStudents(ctx, classIds);
 }
 
+/**
+ * The students on these classes' rolls: an active enrolment, or a withdrawn one, whose dates
+ * end when they left. A lesson's roster is drawn from them (TUI-46).
+ */
+export function studentsOnRollOf(ctx: OrgCtx, classIds: Ids): IdQuery {
+  return repo.rollStudents(ctx, classIds);
+}
+
 /** The classes any of these students holds an active enrolment in. */
 export function classesOfStudents(ctx: OrgCtx, studentIds: Ids): IdQuery {
   return repo.activeClasses(ctx, studentIds);
@@ -313,8 +525,9 @@ export function spansOf(ctx: OrgCtx, studentId: string) {
 }
 
 /**
- * What an invoice run bills in these classes: the active enrolments that cover some part of the
- * dates, each with the dates it covers and its price override.
+ * What an invoice run bills in these classes: the enrolments that cover some part of the dates,
+ * active or withdrawn (for the lessons before the student left), each with the dates it covers
+ * and its price override.
  */
 export async function enrolmentsToInvoice(
   ctx: OrgCtx,

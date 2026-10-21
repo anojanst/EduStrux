@@ -1,5 +1,12 @@
-import { createRoute } from '@hono/zod-openapi';
-import { CreateEnrolment, Enrolment, EnrolmentQuery, page } from '@edustrux/shared';
+import { createRoute, z } from '@hono/zod-openapi';
+import {
+  CreateEnrolment,
+  Enrolment,
+  EnrolmentQuery,
+  EnrolmentUpdate,
+  UpdateEnrolment,
+  page,
+} from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { orgAccess } from '../../middleware/permission';
@@ -48,6 +55,37 @@ const createEnrolmentRoute = createRoute({
   },
 });
 
+const updateEnrolmentRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/enrolments/{enrolmentId}',
+  tags: ['Enrolment'],
+  summary: 'Change, withdraw or transfer an enrolment',
+  description:
+    'One of three, with the `updatedAt` you last read (409 when stale):\n\n' +
+    '- **Change** `startDate`, `endDate` or `priceOverride`. The dates stay inside the class’s ' +
+    '(422).\n' +
+    '- **Withdraw** with `status: "withdrawn"` and `endDate`, the last day in the class (today ' +
+    'when left out). The place is freed, and lessons up to `endDate` are still billed.\n' +
+    '- **Transfer** with `transfer: { classId, startDate?, priceOverride? }`. The enrolment is ' +
+    'withdrawn the day before `startDate` and a new one made in the class, which the caller ' +
+    'must reach (404). Refused as for a new enrolment: already enrolled (409), full (422).\n\n' +
+    'New dates change what is owed, pro rata by lessons. A draft invoice’s line for the ' +
+    'enrolment is charged again (taken off with no lesson left), and an issued invoice’s is ' +
+    'listed in `invoices` with what it would charge now: void and generate again to bill that. ' +
+    'A withdrawn enrolment can’t be changed (422). Teachers and parents get 403.',
+  middleware: orgAccess('classes:write'),
+  request: {
+    params: OrgParams.extend({
+      enrolmentId: z.string().openapi({ param: { name: 'enrolmentId', in: 'path' } }),
+    }),
+    body: jsonBody(UpdateEnrolment),
+  },
+  responses: {
+    200: json(EnrolmentUpdate, 'The enrolment, any new one, and the invoices the change touched'),
+    ...errors(400, 401, 403, 404, 409, 422),
+  },
+});
+
 export const enrolmentRoutes = createRouter()
   .openapi(listEnrolmentsRoute, async (c) => {
     const { limit, cursor, ...filter } = c.req.valid('query');
@@ -55,4 +93,11 @@ export const enrolmentRoutes = createRouter()
   })
   .openapi(createEnrolmentRoute, async (c) => {
     return c.json(await service.createEnrolment(orgCtx(c), access(c), c.req.valid('json')), 201);
+  })
+  .openapi(updateEnrolmentRoute, async (c) => {
+    const { enrolmentId } = c.req.valid('param');
+    return c.json(
+      await service.updateEnrolment(orgCtx(c), access(c), enrolmentId, c.req.valid('json')),
+      200,
+    );
   });

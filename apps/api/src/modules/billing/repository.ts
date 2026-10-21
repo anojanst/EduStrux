@@ -9,6 +9,7 @@ import {
 } from '@edustrux/db';
 import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
 import {
+  and,
   asc,
   count,
   desc,
@@ -559,6 +560,99 @@ export function linesInvoiced(ctx: OrgCtx, enrolmentIds: Ids) {
         isNull(invoiceLines.voidedAt),
       ),
     );
+}
+
+/**
+ * An enrolment's lines on invoices that aren't void, each with its invoice's status, totals and
+ * how many lines it has, oldest first.
+ */
+export function linesOfEnrolment(ctx: OrgCtx, enrolmentId: string) {
+  const others = sql<number>`(select count(*) from ${invoiceLines} as l where l.org_id = ${ctx.orgId} and l.invoice_id = ${invoices.id} and l.deleted_at is null)`;
+  return ctx.db
+    .select({
+      line: invoiceLines,
+      invoice: {
+        id: invoices.id,
+        status: invoices.status,
+        currency: invoices.currency,
+        lines: others,
+      },
+    })
+    .from(invoiceLines)
+    .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          invoiceLines,
+          eq(invoiceLines.enrolmentId, enrolmentId),
+          isNull(invoiceLines.voidedAt),
+        ),
+        inOrg(ctx, invoices),
+      ),
+    )
+    .orderBy(asc(invoiceLines.id));
+}
+
+/** A line's new charge: the columns `chargeAgain` works out. */
+export type LineCharge = {
+  quantity: number;
+  lessons: number;
+  freeLessons: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+};
+
+/**
+ * Statements that charge a draft's line again, or take it off the draft when `charge` is null,
+ * and move the draft's totals by the difference. A draft left with no lines is voided. Each
+ * statement holds only while the invoice is still a draft, so one issued since it was read keeps
+ * its lines.
+ */
+export function rechargeDraftLine(
+  ctx: OrgCtx,
+  line: InvoiceLineRow,
+  charge: LineCharge | null,
+  emptied: boolean,
+) {
+  const stillDraft = inIds(
+    invoiceLines.invoiceId,
+    idsFrom(
+      ctx,
+      invoices,
+      invoices.id,
+      eq(invoices.id, line.invoiceId),
+      eq(invoices.status, 'draft'),
+    ),
+  );
+  const lineChange = charge
+    ? {
+        quantity: charge.quantity,
+        lessons: charge.lessons,
+        freeLessons: charge.freeLessons,
+        subtotalAmount: charge.subtotal,
+        taxAmount: charge.tax,
+        totalAmount: charge.total,
+      }
+    : { deletedAt: now() };
+  const delta = (before: number, after: number) => after - before;
+  const draft = and(eq(invoices.id, line.invoiceId), eq(invoices.status, 'draft'));
+  return [
+    ctx.db
+      .update(invoiceLines)
+      .set(lineChange)
+      .where(and(inOrg(ctx, invoiceLines, eq(invoiceLines.id, line.id)), stillDraft)),
+    ctx.db
+      .update(invoices)
+      .set({
+        subtotalAmount: sql`${invoices.subtotalAmount} + ${delta(line.subtotalAmount, charge?.subtotal ?? 0)}`,
+        taxAmount: sql`${invoices.taxAmount} + ${delta(line.taxAmount, charge?.tax ?? 0)}`,
+        totalAmount: sql`${invoices.totalAmount} + ${delta(line.totalAmount, charge?.total ?? 0)}`,
+        ...(emptied ? { status: 'void' as const, voidedAt: now() } : {}),
+      })
+      .where(inOrg(ctx, invoices, draft)),
+  ];
 }
 
 /**

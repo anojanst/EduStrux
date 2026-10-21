@@ -44,3 +44,48 @@ check needs `people:write`. An accountant gets 403 on both.
 
 Also built, not a question: a search for an 8-character code also finds the family with that
 bank reference, so a bank transfer can be matched to a family from the search box.
+
+## TUI-46 Enrolment transfer and withdraw with pro-rata
+
+**Q-5 · One route or three?**
+Options: (a) `PATCH /enrolments/{id}` for all of it, as the handoff lists: plain changes,
+`status: "withdrawn"`, or `transfer: {...}`; (b) `POST /enrolments/{id}/withdraw` and
+`/transfer` actions, as §5's "Actions" convention would have it.
+**Built: (a)**, to match the endpoint list. The answer isn't the bare enrolment but
+`{ enrolment, transferredTo, invoices }`, since a transfer makes a second enrolment and both
+can change invoices.
+
+**Q-6 · What does "pro-rata" do to invoices already made?**
+Options: (a) charge a **draft** invoice's line again for the new dates, pro rata by lessons, at
+the price it was charged at (D-093), and only **report** an issued invoice's line with what it
+would charge now; (b) also change issued invoices; (c) only report, change nothing.
+**Built: (a).** Issued invoices stay fixed (D-095) and credits are v1.1, so staff void and
+generate again while nothing is paid. A draft left with no lines is voided. Pack lines are left
+alone: packs are bought up front and carry over. A change of `priceOverride` touches no invoice:
+it applies from the next run.
+
+**Q-7 · Is a withdrawn student still billed and on past rosters?**
+Built: yes, up to the last day. A withdrawal sets `endDate` and `status: withdrawn`. Invoice runs
+now bill withdrawn enrolments for the lessons before the student left (otherwise withdrawing
+before a run would make those lessons free), and a lesson's attendance and notes rosters show
+them on lessons up to their last day. Only an active enrolment still gives a teacher or a parent
+their reach (D-060), and only an active one holds a place.
+
+**Q-8 · Withdrawing before the enrolment starts.**
+Built: with no `endDate`, a withdrawal ends today, or the day before the start when that is still
+to come, so no lesson is covered. An `endDate` before the day before the start is 400.
+
+**Q-9 · Transfer details.**
+Built: the new enrolment starts on `transfer.startDate` (default today, or the new class's first
+day when later); the old one ends the day before. The caller must reach the new class (404); the
+same rules as a new enrolment apply (already enrolled 409, full 422, dates inside the class 422).
+The price override is not carried over; send `transfer.priceOverride` to set one. One audit row,
+`enrolment.transferred`, holds both.
+
+**Q-10 · Who may change an enrolment?**
+Built: `classes:write`, reaching the enrolment through its class or its student, as reads do.
+So the class's branch can withdraw a child from another home branch. Teachers, parents and
+accountants get 403.
+
+Known limit: the change reads in two stages before its write (four with sign-in), one over the
+D-102 budget, because the class and its lessons are known only once the enrolment is read.
