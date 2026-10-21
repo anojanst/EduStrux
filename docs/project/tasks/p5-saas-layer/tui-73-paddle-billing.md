@@ -12,7 +12,7 @@ endpoints:
   - POST /billing/portal
   - POST /api/v1/webhooks/paddle
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-73 Paddle subscription billing + webhook

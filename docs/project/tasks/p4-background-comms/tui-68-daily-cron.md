@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-68 Daily cron: extend sessions, clean expired files, nightly per-org export

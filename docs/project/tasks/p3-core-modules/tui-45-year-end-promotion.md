@@ -9,7 +9,7 @@ size: M
 endpoints:
   - POST /students/promote
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-45 Year-end promotion (job)

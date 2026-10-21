@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET /timetable/clashes
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-50 Clash detection (room, teacher, student, grade)

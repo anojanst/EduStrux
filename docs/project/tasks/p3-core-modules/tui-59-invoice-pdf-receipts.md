@@ -11,7 +11,7 @@ endpoints:
   - GET /payments/{id}/receipt
   - GET /portal/invoices/{id}/pdf
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-59 Invoice PDF + payment receipts

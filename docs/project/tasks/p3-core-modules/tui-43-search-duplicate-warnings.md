@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET /search?q=
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-43 Search with duplicate warnings

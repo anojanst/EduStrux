@@ -13,7 +13,7 @@ endpoints:
   - DELETE /makeup-bookings/{id}
   - GET /portal/makeup-credits
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-55 Make-up policy, automatic credits and staff booking

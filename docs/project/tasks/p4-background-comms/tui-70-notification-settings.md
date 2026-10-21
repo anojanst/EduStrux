@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET|PUT /notification-settings
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-70 Automatic messages + notification settings

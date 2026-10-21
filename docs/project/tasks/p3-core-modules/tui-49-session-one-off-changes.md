@@ -9,7 +9,7 @@ size: M
 endpoints:
   - PATCH /sessions/{id}
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-49 Session one-off changes: move/cancel with family notices

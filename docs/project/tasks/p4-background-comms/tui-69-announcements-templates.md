@@ -12,7 +12,7 @@ endpoints:
   - GET|POST /message-templates
   - PATCH|DELETE /message-templates/{id}
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-69 Announcements + message templates

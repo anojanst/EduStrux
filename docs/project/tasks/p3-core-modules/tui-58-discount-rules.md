@@ -10,7 +10,7 @@ endpoints:
   - GET|POST /discount-rules
   - PATCH|DELETE /discount-rules/{id}
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-58 Discount rules (sibling, multi-class, early-bird, scholarship, manual)

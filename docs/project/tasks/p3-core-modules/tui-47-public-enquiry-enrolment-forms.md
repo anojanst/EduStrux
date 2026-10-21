@@ -13,7 +13,7 @@ endpoints:
   - POST /enrolment-requests/{id}/approve
   - POST /enrolment-requests/{id}/reject
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-47 Public enquiry form + online enrolment requests with approval

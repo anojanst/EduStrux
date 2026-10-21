@@ -9,7 +9,7 @@ size: M
 endpoints:
   - GET /reports/dashboard
 branch: task/tui-43-82-remaining-mvp-api
-pr:
+pr: 51
 ---
 
 # TUI-62 Home dashboard report
