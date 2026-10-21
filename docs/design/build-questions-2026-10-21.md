@@ -205,6 +205,7 @@ save one; not done.
 
 **Q-27 · How the kinds work.** Built (one rule type, six kinds, each a percentage or an amount off
 a line's charge before tax, or for a bundle a fixed total):
+
 - `sibling`: in a family with `minCount` (default 2) or more children billed in the run, every
   child but the one charged most gets it (ties: the earliest student).
 - `multi_class`: a student with `minCount` or more lines in the run gets it on all but their
@@ -238,7 +239,7 @@ drafts) only for roles with money reports: the owner and branch managers. Front 
 in §6) and teachers get the counts without money. An accountant has no `reports:read`, so 403.
 
 **Q-31 · Money report definitions.** Built (`GET /reports/money?from&to`, `reports:money`, at
-most 366 days): **invoiced** = totals of invoices *issued* in the dates (by `issuedAt` in the
+most 366 days): **invoiced** = totals of invoices _issued_ in the dates (by `issuedAt` in the
 org's timezone), void ones left out; **received** = payments by `receivedOn`; both by month and
 received by method. **Aged debt** = what is owed today on issued and part-paid invoices,
 bucketed by days past the due date (not due / 1–30 / 31–60 / 61–90 / 90+), whatever the dates.
@@ -391,8 +392,7 @@ loops may need splitting into per-org queue messages; not needed at MVP size.
 Svix signature both senders use (HMAC-SHA256, 5-minute timestamp tolerance, any of several
 `v1` signatures while a secret rotates) with WebCrypto, no library. The owner sets two secrets,
 `CLERK_WEBHOOK_SECRET` and `RESEND_WEBHOOK_SECRET` (`whsec_…`, from each dashboard's webhook
-endpoint); without one, that webhook is 503 and the sender retries. A bad or stale signature is
-401. Each delivery is recorded by its `svix-id` in `webhook_events` after it is handled, so a
+endpoint); without one, that webhook is 503 and the sender retries. A bad or stale signature is 401. Each delivery is recorded by its `svix-id` in `webhook_events` after it is handled, so a
 redelivery answers `duplicate: true`; records older than 30 days are dropped by the daily cron.
 **Infra note:** while Cloudflare Access covers all traffic, both paths need an Access bypass
 (handoff §5), which is the owner's to add.
@@ -540,20 +540,27 @@ repository or the middleware that owns the table. Ids sent in a **body** (e.g. a
 
 ---
 
-## Where the session stopped (usage limit)
+## Where the build stands
 
-Built on this branch, each committed with tests (964+ passing at the last full run):
-TUI-43, 46, 50, 69, 65, 70, 49, 55, 58, 62, 63, 59, 45, 47, 61, 60, 78.
+Every MVP task with endpoints is built on this branch, each committed with tests (997 passing at
+the last full run, typecheck clean): TUI-43, 45, 46, 47, 49, 50, 55, 58, 59, 60, 61, 62, 63, 65,
+67, 68, 69, 70, 71, 73, 74, 75, 78, 79 and 82. TUI-72 needed no API work (Q-54).
 
-Not built yet, in the order planned:
-- TUI-67 hourly cron: overdue reminders (needs an `invoices.reminded_days` column) and make-up
-  credit expiry (`attendance.expireCredits` exists, not yet called from the cron).
-- TUI-68 daily cron: extend open-ended classes' sessions, `cleanExpired` files (exists, not yet
-  wired into the cron), nightly per-org backup (`exportDocument` exists).
-- TUI-71 Clerk and Resend webhooks (a `webhook_events` table already exists for idempotency).
-- TUI-72 parent portal sign-in (mostly Clerk dashboard set-up; invitations already link parents).
-- TUI-73 Paddle, TUI-74 sign-up/trial/plan limits, TUI-75 super-admin console.
-- TUI-79 privacy controls, TUI-82 cross-org test sweep. TUI-80, 81, 83, 85 and 86 need the
-  owner or infrastructure.
-- The design docs (`handoff.md`, `decisions.md`) and the task files haven't been updated for
-  this session's work: this file holds the decisions to confirm first.
+Not built, because they need you or infrastructure:
+
+- TUI-80 staff 2FA: Clerk Pro (a paid plan) and its dashboard settings.
+- TUI-81 rate limits per user and org: Cloudflare rules or a Rate Limiting binding. The public
+  forms already have their own hourly limit in D1.
+- TUI-83 monitoring and backup checks, TUI-85 legal documents, TUI-86 the beta launch.
+- TUI-21's typed API client is generated when the web app starts (P7).
+
+Secrets and settings to set before the matching features work (none were set in this session):
+`RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `BROWSER_RENDERING_ACCOUNT_ID`,
+`BROWSER_RENDERING_TOKEN`, `FILES_SIGNING_SECRET`, `TURNSTILE_SECRET_KEY` (optional),
+`CLERK_WEBHOOK_SECRET`, `RESEND_WEBHOOK_SECRET`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`,
+`PADDLE_ENVIRONMENT`, `PADDLE_PRICE_IDS`, `SUPER_ADMIN_CLERK_USER_IDS`, and `CLERK_SECRET_KEY`
+for impersonation. The three webhook paths need a Cloudflare Access bypass.
+
+Still to do after you've read this file: confirm or change the Q-entries, then bring
+`handoff.md`, `decisions.md` and the task files in line (`/update-design-docs`), and open the
+PR. Migrations 0019 to 0032 are new on this branch.
