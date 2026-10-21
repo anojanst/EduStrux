@@ -637,10 +637,13 @@ export async function cancelMakeup(ctx: OrgCtx, access: Access, id: string) {
   await repo.cancelBooking(ctx, booking);
 }
 
-/** Marks the org's unused credits past their last day as expired. For the hourly cron. */
-export async function expireCredits(ctx: OrgCtx) {
-  const { timezone } = await orgs.getOrg(ctx);
-  return (await repo.expireCredits(ctx, localNow(timezone).date)).length;
+/**
+ * Marks the org's unused credits past their last day as expired. For the hourly cron, which
+ * gives the org's local date.
+ */
+export async function expireCredits(ctx: OrgCtx, today?: string) {
+  today ??= localNow((await orgs.getOrg(ctx)).timezone).date;
+  return (await repo.expireCredits(ctx, today)).length;
 }
 
 // ── The dashboard (TUI-62) ──────────────────────────────────────────────────

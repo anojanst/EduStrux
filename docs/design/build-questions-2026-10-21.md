@@ -351,6 +351,20 @@ kept a week; `GET /exports/{id}` gives a 5-minute download link once done. Per-t
 zip would need a zip library: say if you want CSV. The export reads every module's tables
 directly (a documented exception to "a repository reads only its own module's tables").
 
+## TUI-67 Hourly cron
+
+**Q-46 · When reminders go.** Built: each hour the cron works out every org's local time
+(orgs suspended or cancelled are skipped). At the org's `reminderHour` it reminds the family of
+each issued or part-paid invoice with a balance, once for each of `overdueReminderDays` (days
+past the due date) the invoice reaches. The days reminded are kept on the invoice
+(`invoices.reminded_days`, migration 0029) and marked **before** the reminder is queued, so a
+failure sends one too few, never two. A day reached more than **3 days** ago (the cron missed
+it, the setting changed, or on the first run after deploy) is marked without sending, so old
+debts don't all get a reminder at once. One `invoices.reminded` audit row per org per run.
+
+**Q-47 · Credit expiry.** Built: credits past their last day expire at the org's local
+midnight (and again at 1am, in case a daylight-saving change skips midnight).
+
 ---
 
 ## Where the session stopped (usage limit)

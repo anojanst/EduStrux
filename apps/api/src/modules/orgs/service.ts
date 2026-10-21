@@ -128,3 +128,8 @@ export async function publicOrg(db: Db, slug: string) {
   if (!row || row.status === 'suspended' || row.status === 'cancelled') return undefined;
   return row;
 }
+
+/** The orgs the hourly and daily crons act for, with their time zones. */
+export function orgsForCron(db: Db) {
+  return repo.orgsForCron(db);
+}

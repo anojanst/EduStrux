@@ -84,6 +84,9 @@ export const invoices = sqliteTable(
     notes: text('notes'),
     issuedAt: text('issued_at'),
     voidedAt: text('voided_at'),
+    // The days overdue (from the org's reminder days) the hourly cron has reminded the family
+    // at, so it reminds once for each (TUI-67).
+    remindedDays: text('reminded_days', { mode: 'json' }).$type<number[]>().notNull().default([]),
     // The job that generated it.
     jobId: text('job_id'),
   },

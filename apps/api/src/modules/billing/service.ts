@@ -2,6 +2,7 @@ import {
   MAX_REPORT_DAYS,
   addDays,
   basisFitsClass,
+  diffDays,
   discountRuleIssues,
   localToUtc,
   utcToLocal,
@@ -1178,6 +1179,78 @@ export async function moneySummary(ctx: OrgCtx, access: Access) {
     receivedThisMonth: money(received.reduce((sum, row) => sum + row.amount, 0)),
     draftInvoices: drafts,
   };
+}
+
+// ── Overdue reminders (TUI-67) ──────────────────────────────────────────────
+
+/** A reminder day passed longer ago than this isn't sent late, only marked as done. */
+export const REMINDER_CATCH_UP_DAYS = 3;
+
+/**
+ * Reminds families of their overdue invoices, for the hourly cron at the org's reminder hour.
+ * An invoice is reminded once for each of `reminderDays` (days past its due date) it reaches,
+ * one reminder per run at most. The days are marked before the reminders are queued, so a
+ * failure sends one too few, never one twice. A day reached more than REMINDER_CATCH_UP_DAYS
+ * ago (the cron missed it, or the setting was changed) is marked without sending.
+ */
+export async function remindOverdue(
+  ctx: OrgCtx,
+  queue: Queue<EmailMessage>,
+  reminderDays: number[],
+  today: string,
+) {
+  const rows = await repo.overdue(ctx, today);
+  const marks: { id: string; remindedDays: number[] }[] = [];
+  const toSend: (typeof rows)[number][] = [];
+  for (const row of rows) {
+    if (!row.dueDate || row.total - row.paid <= 0) continue;
+    const late = diffDays(row.dueDate, today);
+    const reached = reminderDays.filter((day) => day <= late && !row.remindedDays.includes(day));
+    if (reached.length === 0) continue;
+    marks.push({
+      id: row.id,
+      remindedDays: [...row.remindedDays, ...reached].sort((a, b) => a - b),
+    });
+    if (late - Math.max(...reached) < REMINDER_CATCH_UP_DAYS) toSend.push(row);
+  }
+  if (marks.length === 0) return { reminded: 0 };
+  await repo.markReminded(
+    ctx,
+    marks,
+    toSend.map((row) => row.id),
+  );
+  if (toSend.length === 0) return { reminded: 0 };
+
+  const [org, families] = await Promise.all([
+    orgs.getOrg(ctx),
+    people.familyLabels(
+      ctx,
+      toSend.map((row) => row.familyId),
+    ),
+  ]);
+  let reminded = 0;
+  for (const row of toSend) {
+    const family = families.get(row.familyId);
+    if (!family) continue;
+    const balance = formatMoney(
+      { amount: row.total - row.paid, currency: row.currency },
+      org.locale,
+    );
+    const queued = await comms.queueNotice(ctx, queue, {
+      event: 'invoice_overdue',
+      subject: t('invoice.overdue.subject', { balance }),
+      body: t('invoice.overdue.body', {
+        familyName: family.name,
+        dueDate: formatDate(row.dueDate!, org.dateFormat),
+        balance,
+        bankReference: row.bankReference ?? '',
+      }),
+      familyIds: [row.familyId],
+      audience: { type: 'custom', ids: [row.familyId] },
+    });
+    if (queued) reminded++;
+  }
+  return { reminded };
 }
 
 // ── PDFs (TUI-59) ───────────────────────────────────────────────────────────

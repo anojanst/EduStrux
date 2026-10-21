@@ -1214,6 +1214,62 @@ export function owing(ctx: OrgCtx, reach: InvoiceReach) {
     );
 }
 
+/**
+ * The org's issued and part-paid invoices that were due before `today`, for the hourly cron's
+ * reminders (TUI-67). Through the status index: the org's unpaid invoices only.
+ */
+export function overdue(ctx: OrgCtx, today: string) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      familyId: invoices.familyId,
+      currency: invoices.currency,
+      dueDate: invoices.dueDate,
+      total: invoices.totalAmount,
+      paid: invoices.paidAmount,
+      bankReference: invoices.bankReference,
+      remindedDays: invoices.remindedDays,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        inArray(invoices.status, ['issued', 'part_paid']),
+        isNotNull(invoices.dueDate),
+        lt(invoices.dueDate, today),
+      ),
+    );
+}
+
+/**
+ * Records the reminder days each invoice has now been reminded at, in one batch with one
+ * `invoices.reminded` audit row for the cron's pass over the org. `sent` are the invoices whose
+ * families are being sent a reminder; the rest only caught up on days already past.
+ */
+export async function markReminded(
+  ctx: OrgCtx,
+  marks: { id: string; remindedDays: number[] }[],
+  sent: string[],
+) {
+  if (marks.length === 0) return;
+  await writeWithAudit(
+    ctx,
+    marks.map((mark) =>
+      ctx.db
+        .update(invoices)
+        .set({ remindedDays: mark.remindedDays })
+        .where(inOrg(ctx, invoices, eq(invoices.id, mark.id))),
+    ),
+    {
+      action: 'invoices.reminded',
+      entityType: 'org',
+      entityId: ctx.orgId,
+      after: { invoiceIds: marks.map((m) => m.id), sent },
+    },
+  );
+}
+
 /** The payments received in the dates, both included, within reach. */
 export function receivedBetween(
   ctx: OrgCtx,
