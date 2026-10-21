@@ -581,3 +581,8 @@ export function countStudentsEnrolled(ctx: OrgCtx, access: Access) {
 export function planUsage(ctx: OrgCtx, today: string) {
   return repo.planUsage(ctx, today);
 }
+
+/** How many of these students' enrolments are still running, for erasing a family (TUI-79). */
+export function continuing(ctx: OrgCtx, studentIds: string[], today: string) {
+  return repo.continuing(ctx, studentIds, today);
+}

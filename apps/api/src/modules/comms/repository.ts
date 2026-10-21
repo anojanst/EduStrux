@@ -378,3 +378,19 @@ export function settingsOfOrgs(db: OrgCtx['db'], orgIds: string[]) {
       ),
     );
 }
+
+/** Clears the email addresses copied onto these guardians' messages (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, guardianIds: string[]): BatchItem<'sqlite'>[] {
+  if (guardianIds.length === 0) return [];
+  return [
+    ctx.db
+      .update(messageRecipients)
+      .set({ email: null })
+      .where(
+        and(
+          eq(messageRecipients.orgId, ctx.orgId),
+          inIds(messageRecipients.guardianId, guardianIds),
+        ),
+      ),
+  ];
+}

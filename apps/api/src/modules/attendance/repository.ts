@@ -535,3 +535,14 @@ export async function countCreditsAvailable(ctx: OrgCtx, date: string, reach: Id
     .get();
   return row?.n ?? 0;
 }
+
+/** Clears the reasons on these students' absence notices, when their family is erased (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'sqlite'>[] {
+  if (studentIds.length === 0) return [];
+  return [
+    ctx.db
+      .update(absenceNotices)
+      .set({ reason: null })
+      .where(and(eq(absenceNotices.orgId, ctx.orgId), inIds(absenceNotices.studentId, studentIds))),
+  ];
+}

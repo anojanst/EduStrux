@@ -25,6 +25,7 @@ export * from './schemas/payments';
 export * from './schemas/people';
 export * from './schemas/platform';
 export * from './schemas/portal';
+export * from './schemas/privacy';
 export * from './schemas/pricing';
 export * from './schemas/reports';
 export * from './schemas/search';

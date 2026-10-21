@@ -188,3 +188,8 @@ export async function updateNotes(
   const homeworkNow = homeworkChanges ? saved.homework : homework;
   return toSessionNotes(sessionId, homeworkNow, expected, notesNow, names);
 }
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]) {
+  return repo.eraseStatements(ctx, studentIds);
+}

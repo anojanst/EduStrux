@@ -22,6 +22,7 @@ import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { portalRoutes } from './modules/portal/routes';
+import { privacyRoutes } from './modules/privacy/routes';
 import { reportRoutes } from './modules/reports/routes';
 import { staffRoutes } from './modules/staff/routes';
 import { subscriptionRoutes } from './modules/subscriptions/routes';
@@ -54,6 +55,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', commsRoutes);
   app.route('/', portalRoutes);
   app.route('/', reportRoutes);
+  app.route('/', privacyRoutes);
   app.route('/', subscriptionRoutes);
   app.route('/', webhookRoutes);
   app.route('/', adminRoutes);

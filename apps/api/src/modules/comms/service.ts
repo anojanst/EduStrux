@@ -477,3 +477,8 @@ export function recordDelivery(
 export function setEmailStatus(...args: Parameters<typeof repo.setEmailStatus>) {
   return repo.setEmailStatus(...args);
 }
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, guardianIds: string[]) {
+  return repo.eraseStatements(ctx, guardianIds);
+}

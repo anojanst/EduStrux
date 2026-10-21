@@ -1,4 +1,4 @@
-import { families, guardians, now, studentGrades, students } from '@edustrux/db';
+import { families, guardians, now, studentConsents, studentGrades, students } from '@edustrux/db';
 import { and, asc, count, eq, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { BatchItem } from 'drizzle-orm/batch';
@@ -1094,4 +1094,141 @@ export async function insertImported(
       after: audit.after,
     },
   );
+}
+
+// ── Consents (TUI-79) ───────────────────────────────────────────────────────
+
+export type ConsentRow = typeof studentConsents.$inferSelect;
+export type NewConsentRow = typeof studentConsents.$inferInsert;
+
+/** The consents on record for the student. */
+export function consentsOf(ctx: OrgCtx, studentId: Ids) {
+  return ctx.db
+    .select()
+    .from(studentConsents)
+    .where(inOrg(ctx, studentConsents, inIds(studentConsents.studentId, studentId)));
+}
+
+/** Records a consent, adding its row or changing it, with one `consent.recorded` audit row. */
+export async function saveConsent(
+  ctx: OrgCtx,
+  before: ConsentRow | undefined,
+  row: NewConsentRow & { id: string },
+) {
+  const { id, orgId: _org, studentId: _student, type: _type, ...fields } = row;
+  const [, saved] = await writeWithAudit(
+    ctx,
+    [
+      before
+        ? ctx.db
+            .update(studentConsents)
+            .set(fields)
+            .where(inOrg(ctx, studentConsents, eq(studentConsents.id, before.id)))
+            .returning()
+        : ctx.db.insert(studentConsents).values(row).returning(),
+    ],
+    {
+      action: 'consent.recorded',
+      entityType: 'student',
+      entityId: row.studentId,
+      before: before && { type: before.type, granted: before.granted },
+      after: { type: row.type, granted: row.granted, guardianId: row.guardianId ?? null },
+    },
+  );
+  return (saved as ConsentRow[])[0]!;
+}
+
+// ── Erasing a family (TUI-79) ───────────────────────────────────────────────
+// Erasing reaches deleted rows too: a family deleted earlier still holds its people's details.
+
+/** The family, deleted or not. */
+export function familyToErase(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(families)
+    .where(and(eq(families.orgId, ctx.orgId), eq(families.id, id)))
+    .get();
+}
+
+/** Every guardian and student the family has had, deleted or not. */
+export async function peopleOfFamily(ctx: OrgCtx, familyId: string) {
+  const [g, s] = await Promise.all([
+    ctx.db
+      .select({ id: guardians.id })
+      .from(guardians)
+      .where(and(eq(guardians.orgId, ctx.orgId), eq(guardians.familyId, familyId))),
+    ctx.db
+      .select({ id: students.id })
+      .from(students)
+      .where(and(eq(students.orgId, ctx.orgId), eq(students.familyId, familyId))),
+  ]);
+  return { guardianIds: g.map((r) => r.id), studentIds: s.map((r) => r.id) };
+}
+
+const ERASED = 'Erased';
+
+/**
+ * Clears the family's, its guardians' and its students' details, unlinks the guardians from
+ * their sign-ins, deletes the students' consents, and deletes all of them that aren't already.
+ * Ids, the bank reference and grades stay, so invoices, payments and attendance still add up.
+ */
+export function eraseStatements(
+  ctx: OrgCtx,
+  familyId: string,
+  studentIds: string[],
+  at: string,
+): BatchItem<'sqlite'>[] {
+  const gone = (column: SQLiteColumn) => sql`coalesce(${column}, ${at})`;
+  return [
+    ctx.db
+      .update(families)
+      .set({
+        name: `${ERASED} family`,
+        nameNorm: 'erased family',
+        address: null,
+        erasedAt: at,
+        deletedAt: gone(families.deletedAt),
+      })
+      .where(and(eq(families.orgId, ctx.orgId), eq(families.id, familyId))),
+    ctx.db
+      .update(guardians)
+      .set({
+        firstName: ERASED,
+        lastName: 'guardian',
+        firstNameNorm: 'erased',
+        lastNameNorm: 'guardian',
+        relationship: null,
+        email: null,
+        phone: null,
+        phoneNorm: null,
+        language: null,
+        membershipId: null,
+        deletedAt: gone(guardians.deletedAt),
+      })
+      .where(and(eq(guardians.orgId, ctx.orgId), eq(guardians.familyId, familyId))),
+    ctx.db
+      .update(students)
+      .set({
+        firstName: ERASED,
+        lastName: 'student',
+        firstNameNorm: 'erased',
+        lastNameNorm: 'student',
+        dateOfBirth: null,
+        notes: null,
+        deletedAt: gone(students.deletedAt),
+      })
+      .where(and(eq(students.orgId, ctx.orgId), eq(students.familyId, familyId))),
+    ...(studentIds.length
+      ? [
+          ctx.db
+            .delete(studentConsents)
+            .where(
+              and(
+                eq(studentConsents.orgId, ctx.orgId),
+                inIds(studentConsents.studentId, studentIds),
+              ),
+            ),
+        ]
+      : []),
+  ];
 }

@@ -491,6 +491,38 @@ request** made in it is written to a new platform-wide `admin_access_log` (migra
 before it runs, as is every admin request. The impersonated session can do anything the member
 can. There is no endpoint to read `admin_access_log` yet (read it in D1); say if you want one.
 
+## TUI-79 Privacy controls
+
+**Q-64 · Which consents (D-052 left this open).** Built: two consent types per **student**,
+`photos` and `medical_treatment`, in a new `student_consents` table (one row per student and
+type, changed in place; the audit log keeps the history; migration 0032). Each records granted
+or refused, the guardian who gave it (one of the family's guardians), a note and who recorded
+it. `GET /students/{id}/consents` (anyone who reads the student, so a teacher sees whether
+photos are allowed), `PUT /students/{id}/consents/{type}` (people:write), and
+`PUT /portal/students/{id}/consents/{type}` for a parent to give or refuse for their own child,
+recorded as their guardian. More types are one line in `CONSENT_TYPES`; say if you want e.g.
+`marketing` or `trips`.
+
+**Q-65 · Erasing a family.** Built: `POST /families/{id}/erase`, **owner only**, irreversible.
+Names become "Erased family / Erased guardian / Erased student"; address, emails, phones, date
+of birth, notes, relationship and language are cleared; guardians are unlinked from their
+sign-ins; consents, lesson notes on the students and invitations to the guardians are deleted;
+absence reasons and the email copied onto messages are cleared; the enrolment requests that
+made the family lose what the public form sent; and the audit log's `before`/`after` for the
+family, its guardians and students are cleared (the rows stay, so who did what and when is
+kept). All in one batch with one `family.erased` audit row. **Kept:** ids, the bank reference,
+grades, enrolments, attendance, invoices and payments (financial records must be kept; payment
+`reference`/`notes` typed by staff are not touched). Refused (422) while the family owes money
+or its students have enrolments running. Works on an already-deleted family; erasing again
+answers the same. Erasing a single student, and staff members' own data, aren't built.
+
+**Q-66 · Retention.** Not built: archiving old audit rows to R2 (option 3 in the task) stays
+deferred, as you decided on 2026-10-14 (D-113), until the database size needs it. No automatic
+erasure of long-deleted families either: erasure is the owner's explicit action. Retention
+that already exists: uploaded/import files a week, exports a week, backups 14 nights, webhook
+records 30 days, idempotency keys 24 hours. Say if you want a rule such as "erase families
+deleted more than N years ago".
+
 ---
 
 ## Where the session stopped (usage limit)

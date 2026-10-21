@@ -1,4 +1,5 @@
 import { auditLog, exports, files, imports, jobs, type Db } from '@edustrux/db';
+import type { BatchItem } from 'drizzle-orm/batch';
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
@@ -200,6 +201,8 @@ export const EXPORTED_TABLES: Record<string, string[]> = {
   invitations: ['token_hash'],
   files: ['r2_key'],
   imports: [],
+  student_consents: [],
+  org_subscriptions: [],
   audit_log: [],
 };
 
@@ -254,4 +257,24 @@ export async function updateExport(
     .update(exports)
     .set({ ...change, updatedAt: new Date().toISOString() })
     .where(inOrg(ctx, exports, eq(exports.id, id)));
+}
+
+/**
+ * Clears what the audit log holds of these records, before and after, when their family is
+ * erased (TUI-79). The rows stay, so it still shows who did what and when; the erasure's own row
+ * is kept whole.
+ */
+export function eraseAuditStatements(ctx: OrgCtx, entityIds: string[]): BatchItem<'sqlite'>[] {
+  return [
+    ctx.db
+      .update(auditLog)
+      .set({ before: null, after: null })
+      .where(
+        and(
+          eq(auditLog.orgId, ctx.orgId),
+          sql`${auditLog.entityId} in (select value from json_each(${JSON.stringify(entityIds)}))`,
+          sql`${auditLog.action} != 'family.erased'`,
+        ),
+      ),
+  ];
 }

@@ -377,3 +377,22 @@ export async function countActiveStudents(ctx: OrgCtx, reach: Reach) {
     .get();
   return row?.n ?? 0;
 }
+
+/** How many of these students' active enrolments haven't ended by `today` (TUI-79). */
+export async function continuing(ctx: OrgCtx, studentIds: string[], today: string) {
+  if (studentIds.length === 0) return 0;
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(enrolments)
+    .where(
+      inOrg(
+        ctx,
+        enrolments,
+        inIds(enrolments.studentId, studentIds),
+        active,
+        or(isNull(enrolments.endDate), gte(enrolments.endDate, today)),
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}

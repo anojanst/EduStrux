@@ -119,7 +119,8 @@ export function toFamily(
   guardians: repo.GuardianRow[],
   students: Student[],
 ): Family {
-  const { orgId: _org, deletedAt: _deleted, nameNorm: _norm, ...family } = row;
+  // An erased family is always deleted, so `erasedAt` is never one to show.
+  const { orgId: _org, deletedAt: _deleted, nameNorm: _norm, erasedAt: _erased, ...family } = row;
   return { ...family, guardians: guardians.map(toGuardian), students };
 }
 
@@ -1142,4 +1143,38 @@ export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: str
     { entityId: importId, after: counts },
   );
   return counts;
+}
+
+// ── Privacy (TUI-79) ────────────────────────────────────────────────────────
+
+/** The student, if the caller reaches them, and the consents on record for them. One stage. */
+export async function consentsOf(ctx: OrgCtx, access: Access, studentId: string) {
+  const reach = reachOf(ctx, access);
+  const [found, consents] = await Promise.all([
+    repo.findStudent(ctx, studentId, reach),
+    repo.consentsOf(ctx, repo.studentFound(ctx, studentId, reach)),
+  ]);
+  if (!found) throw notFound('Student');
+  return { student: found.student, consents };
+}
+
+/** The guardians of the student's family, to check who gave a consent. Reads by the student. */
+export function guardiansOfStudent(ctx: OrgCtx, studentId: string) {
+  return repo.listGuardians(ctx, repo.familiesOfStudentIds(ctx, [studentId]));
+}
+
+export function saveConsent(...args: Parameters<typeof repo.saveConsent>) {
+  return repo.saveConsent(...args);
+}
+
+export function familyToErase(ctx: OrgCtx, id: string) {
+  return repo.familyToErase(ctx, id);
+}
+
+export function peopleOfFamily(ctx: OrgCtx, familyId: string) {
+  return repo.peopleOfFamily(ctx, familyId);
+}
+
+export function eraseStatements(...args: Parameters<typeof repo.eraseStatements>) {
+  return repo.eraseStatements(...args);
 }

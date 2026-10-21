@@ -225,6 +225,13 @@
       "when": 1792610107724,
       "tag": "0031_admin_access_log",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792610375467,
+      "tag": "0032_privacy",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { invitations, memberships, now, users, type Db } from '@edustrux/db';
 import type { Role } from '@edustrux/shared';
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
-import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { changedFields, inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 // Memberships, invitations and the users they join are one area: people and access (handoff
 // §7). `users` has no org_id, so it is only ever read through a membership of the org.
@@ -251,4 +251,14 @@ export async function acceptInvitation(
     },
   );
   return membershipId;
+}
+
+/** Deletes the invitations sent to these guardians, accepted or not (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, guardianIds: string[]): BatchItem<'sqlite'>[] {
+  if (guardianIds.length === 0) return [];
+  return [
+    ctx.db
+      .delete(invitations)
+      .where(and(eq(invitations.orgId, ctx.orgId), inIds(invitations.guardianId, guardianIds))),
+  ];
 }

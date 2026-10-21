@@ -359,3 +359,8 @@ export async function acceptInvitation(db: Db, user: AuthUser, token: string) {
     org: { id: org.id, name: org.name, slug: org.slug },
   };
 }
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, guardianIds: string[]) {
+  return repo.eraseStatements(ctx, guardianIds);
+}

@@ -1,4 +1,4 @@
-import { CONTACT_CHANNELS } from '@edustrux/shared';
+import { CONSENT_TYPES, CONTACT_CHANNELS } from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';
@@ -21,6 +21,8 @@ export const families = sqliteTable(
     // What the family quotes on a bank transfer, copied onto its invoices. Set when the family
     // is added and never changed.
     bankReference: text('bank_reference'),
+    // When the family was erased (TUI-79): its people's details are gone, its ids and money stay.
+    erasedAt: text('erased_at'),
   },
   (t) => [
     index('families_org_name_idx').on(t.orgId, t.nameNorm, t.id),
@@ -103,5 +105,26 @@ export const studentGrades = sqliteTable(
       .on(t.orgId, t.studentId, t.academicYearId)
       .where(sql`${t.deletedAt} is null`),
     index('student_grades_org_year_grade_idx').on(t.orgId, t.academicYearId, t.gradeLevelId),
+  ],
+);
+
+// A consent given or refused for a student (TUI-79), one row per student and type, changed in
+// place; the audit log keeps its history.
+export const studentConsents = sqliteTable(
+  'student_consents',
+  {
+    ...orgColumns(),
+    studentId: text('student_id').notNull(),
+    type: text('type', { enum: CONSENT_TYPES }).notNull(),
+    granted: integer('granted', { mode: 'boolean' }).notNull(),
+    // The guardian who gave or refused it, when known.
+    guardianId: text('guardian_id'),
+    note: text('note'),
+    recordedByUserId: text('recorded_by_user_id'),
+  },
+  (t) => [
+    uniqueIndex('student_consents_org_student_type_uq')
+      .on(t.orgId, t.studentId, t.type)
+      .where(sql`${t.deletedAt} is null`),
   ],
 );

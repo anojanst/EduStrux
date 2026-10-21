@@ -1,6 +1,7 @@
 import { enquiries, enrolmentRequests } from '@edustrux/db';
-import { and, count, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
-import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import { and, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
+import { changedFields, inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type EnquiryRow = typeof enquiries.$inferSelect;
 export type NewEnquiryRow = typeof enquiries.$inferInsert;
@@ -202,4 +203,19 @@ export async function countPending(ctx: OrgCtx, reach: Reach) {
     )
     .get();
   return row?.n ?? 0;
+}
+
+/** Clears what the public form sent for the enrolment requests approved into the family (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, familyId: string): BatchItem<'sqlite'>[] {
+  return [
+    ctx.db
+      .update(enrolmentRequests)
+      .set({ guardian: {}, students: [], notes: null, ipHash: null })
+      .where(
+        and(
+          eq(enrolmentRequests.orgId, ctx.orgId),
+          sql`json_extract(${enrolmentRequests.result}, '$.familyId') = ${familyId}`,
+        ),
+      ),
+  ];
 }

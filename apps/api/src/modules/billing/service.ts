@@ -1268,3 +1268,8 @@ export async function getPayment(ctx: OrgCtx, access: Access, id: string): Promi
   if (!family) throw notFound('Payment');
   return toPayment(row, family, allocations);
 }
+
+/** What the family still owes, for erasing it (TUI-79). */
+export function owedBy(ctx: OrgCtx, familyId: string) {
+  return repo.owedBy(ctx, familyId);
+}

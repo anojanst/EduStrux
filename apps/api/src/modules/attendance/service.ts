@@ -666,3 +666,8 @@ export async function dashboardAttendance(
   ]);
   return { marked: new Set(marked.map((row) => row.sessionId)), away, credits };
 }
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]) {
+  return repo.eraseStatements(ctx, studentIds);
+}

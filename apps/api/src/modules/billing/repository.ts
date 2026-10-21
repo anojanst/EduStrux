@@ -1304,3 +1304,22 @@ export async function countDrafts(ctx: OrgCtx, reach: InvoiceReach) {
 export function familyOfPayment(ctx: OrgCtx, id: string, reach: PaymentReach): IdQuery {
   return idsFrom(ctx, payments, payments.familyId, eq(payments.id, id), withinPaymentReach(reach));
 }
+
+/** What the family still owes on its issued and part-paid invoices, in minor units (TUI-79). */
+export async function owedBy(ctx: OrgCtx, familyId: string) {
+  const row = await ctx.db
+    .select({
+      owed: sql<number>`coalesce(sum(${invoices.totalAmount} - ${invoices.paidAmount}), 0)`,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        eq(invoices.familyId, familyId),
+        inArray(invoices.status, ['issued', 'part_paid']),
+      ),
+    )
+    .get();
+  return row?.owed ?? 0;
+}

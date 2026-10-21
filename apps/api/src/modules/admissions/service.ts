@@ -331,3 +331,8 @@ export async function rejectRequest(
   if (!decided) throw unprocessable('This request was decided by someone else just now.');
   return toRequest(decided);
 }
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, familyId: string) {
+  return repo.eraseStatements(ctx, familyId);
+}
