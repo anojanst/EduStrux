@@ -523,6 +523,21 @@ that already exists: uploaded/import files a week, exports a week, backups 14 ni
 records 30 days, idempotency keys 24 hours. Say if you want a rule such as "erase families
 deleted more than N years ago".
 
+## TUI-82 Org isolation review
+
+**Q-67 · What the sweep checks.** Built: `test/org-isolation.test.ts` reads the API's own
+OpenAPI document, so a route added later is covered without being listed. (1) Someone who
+isn't a member gets **404 on all ~150 org routes**. (2) In their own org, an owner using
+another org's ids gets **404 on every route with an id in its path** (72; the two parent-only
+portal routes are 403 first). Writes are sent a body that passes the schema, so the 404 comes
+from the id lookup, not validation. (3) A source check fails if anything outside a repository
+queries D1. Allowed outside repositories: each module's `for-*.ts` query files (D-104),
+`src/db/`, the `db` and idempotency middleware, and the job runner's own `jobs` table. Fixed
+by this review: `GET /me` queried D1 in its route, the admin log inserted from outside its
+repository, and the daily cron deleted idempotency keys itself; all three now go through a
+repository or the middleware that owns the table. Ids sent in a **body** (e.g. another org's
+`studentId` in `POST /enrolments`) are covered by each module's own tests, not by the sweep.
+
 ---
 
 ## Where the session stopped (usage limit)

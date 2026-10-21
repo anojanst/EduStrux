@@ -1,6 +1,6 @@
 import { memberships, orgs, users, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { ActiveMembership, AuthUser, OrgRow } from '../../env';
 
 // `users` is the one table without org_id, so this repository isn't org-scoped.
@@ -123,4 +123,28 @@ export async function findOrCreateUserInOrg(
   const created = await findUserInOrg(db, identity.clerkUserId, orgId);
   if (!created) throw new Error('User row missing after insert');
   return created;
+}
+
+/** The user's active memberships in orgs that aren't deleted, by org name, for `GET /me`. */
+export function membershipsOfUser(db: Db, userId: string) {
+  return db
+    .select({
+      id: memberships.id,
+      role: memberships.role,
+      branchIds: memberships.branchIds,
+      orgId: orgs.id,
+      orgName: orgs.name,
+      orgSlug: orgs.slug,
+    })
+    .from(memberships)
+    .innerJoin(orgs, eq(orgs.id, memberships.orgId))
+    .where(
+      and(
+        eq(memberships.userId, userId),
+        eq(memberships.status, 'active'),
+        isNull(memberships.deletedAt),
+        isNull(orgs.deletedAt),
+      ),
+    )
+    .orderBy(asc(orgs.name));
 }

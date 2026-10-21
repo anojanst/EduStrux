@@ -1,4 +1,12 @@
-import { families, memberships, orgs, students, users, type Db } from '@edustrux/db';
+import {
+  adminAccessLog,
+  families,
+  memberships,
+  orgs,
+  students,
+  users,
+  type Db,
+} from '@edustrux/db';
 import { and, asc, count, desc, eq, isNull, like, lt, or, sql } from 'drizzle-orm';
 import { changedFields, writeWithAudit, type OrgCtx } from '../../db/scope';
 
@@ -127,4 +135,9 @@ export async function recordImpersonation(ctx: OrgCtx, detail: { userId: string;
     entityId: ctx.orgId,
     after: detail,
   });
+}
+
+/** One line of the super-admin access log. */
+export function logAccess(db: Db, row: typeof adminAccessLog.$inferInsert) {
+  return db.insert(adminAccessLog).values(row);
 }

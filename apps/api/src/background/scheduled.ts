@@ -1,8 +1,8 @@
-import { createDb, idempotencyKeys, type Db } from '@edustrux/db';
+import { createDb, type Db } from '@edustrux/db';
 import { localNow, orgCanWrite } from '@edustrux/shared';
-import { lt } from 'drizzle-orm';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
+import { forgetOldKeys } from '../middleware/idempotency';
 import * as attendance from '../modules/attendance/service';
 import * as billing from '../modules/billing/service';
 import * as classes from '../modules/classes/service';
@@ -85,7 +85,7 @@ export async function runHourly(db: Db, env: Bindings, at: Date) {
  */
 export async function runDaily(db: Db, env: Bindings, at: Date) {
   const cutoff = new Date(at.getTime() - IDEMPOTENCY_KEY_TTL_MS).toISOString();
-  await db.delete(idempotencyKeys).where(lt(idempotencyKeys.createdAt, cutoff));
+  await forgetOldKeys(db, cutoff);
   await webhooks.forgetOldDeliveries(db, at);
   const done = { filesRemoved: 0, sessionsAdded: 0, backupsStarted: 0, failed: 0 };
   try {

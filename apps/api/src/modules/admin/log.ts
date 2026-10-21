@@ -1,7 +1,7 @@
-import { adminAccessLog } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../env';
+import * as repo from './repository';
 
 // The super-admin access log (TUI-75). Written before the request does anything, so a request
 // that then fails is still on record.
@@ -20,7 +20,7 @@ async function log(
   },
 ) {
   const url = new URL(c.req.url);
-  await c.var.db.insert(adminAccessLog).values({
+  await repo.logAccess(c.var.db, {
     id: newId('adminAccess'),
     adminClerkUserId: entry.adminClerkUserId,
     adminUserId: entry.adminUserId ?? null,
