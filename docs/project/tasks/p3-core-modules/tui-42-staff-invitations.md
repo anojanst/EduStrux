@@ -14,7 +14,7 @@ endpoints:
   - DELETE /staff/{membershipId}
   - POST /guardians/{guardianId}/invitation
 branch: task/tui-42-staff-invitations
-pr:
+pr: 50
 ---
 
 # TUI-42 Staff invitations and staff management
