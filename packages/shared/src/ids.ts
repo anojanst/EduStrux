@@ -31,6 +31,7 @@ export const ID_PREFIXES = {
   lessonHomework: 'lhw',
   lessonNote: 'lnt',
   priceRule: 'prr',
+  discountRule: 'dsr',
   invoice: 'inv',
   invoiceLine: 'inl',
   payment: 'pay',

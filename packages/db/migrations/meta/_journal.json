@@ -169,6 +169,13 @@
       "when": 1792575570562,
       "tag": "0023_makeups",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792576168177,
+      "tag": "0024_discounts",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,14 @@
 import {
   basisFitsClass,
+  discountRuleIssues,
   formatDate,
   formatMoney,
   localNow,
   newId,
   type CreatePayment,
+  type CreateDiscountRule,
   type CreatePriceRule,
+  type DiscountRule,
   type CreateTaxRate,
   type Invoice,
   type InvoiceAdjustment,
@@ -14,6 +17,7 @@ import {
   type Payment,
   type PriceRule,
   type TaxRate,
+  type UpdateDiscountRule,
   type UpdateInvoice,
   type UpdatePriceRule,
   type UpdateTaxRate,
@@ -39,6 +43,7 @@ import { priceResolver } from './pricing';
 import type { EmailMessage } from '../../background/messages';
 import { t } from '../../email/catalog';
 import * as comms from '../comms/service';
+import type { DiscountRuleData } from './discounts';
 import { chargeAgain } from './invoicing';
 import * as repo from './repository';
 
@@ -341,6 +346,12 @@ export function toInvoiceLine(
     taxName: row.taxName,
     taxRateBps: row.taxRateBps,
     taxInclusive: row.taxInclusive,
+    discount: money(row.discountAmount),
+    discounts: (row.discounts ?? []).map((d) => ({
+      ruleId: d.ruleId,
+      name: d.name,
+      amount: money(d.amount),
+    })),
     subtotal: money(row.subtotalAmount),
     tax: money(row.taxAmount),
     total: money(row.totalAmount),
@@ -854,4 +865,163 @@ export function adjustForDates(
     });
   }
   return { statements, adjustments };
+}
+
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+// Every staff role that reads billing reads them. Only the owner adds, changes and deletes them:
+// like an org-wide price rule, a discount changes prices for the whole org (D-111).
+
+export function toDiscountRule(row: repo.DiscountRuleRow): DiscountRule {
+  const money = (amount: number | null) =>
+    amount === null || row.currency === null ? null : { amount, currency: row.currency };
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    percentBps: row.percentBps,
+    amount: money(row.amount),
+    fixedPrice: money(row.fixedPrice),
+    minCount: row.minCount,
+    courseIds: row.courseIds ?? null,
+    studentIds: row.studentIds ?? null,
+    familyIds: row.familyIds ?? null,
+    cutoffDate: row.cutoffDate,
+    termId: row.termId,
+    startsOn: row.startsOn,
+    endsOn: row.endsOn,
+    active: row.active,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** A rule as an invoice run reads it. */
+export function toDiscountData(row: repo.DiscountRuleRow): DiscountRuleData {
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    percentBps: row.percentBps,
+    amount: row.amount,
+    fixedPrice: row.fixedPrice,
+    minCount: row.minCount,
+    courseIds: row.courseIds ?? null,
+    studentIds: row.studentIds ?? null,
+    familyIds: row.familyIds ?? null,
+    cutoffDate: row.cutoffDate,
+    termId: row.termId,
+    startsOn: row.startsOn,
+    endsOn: row.endsOn,
+    active: row.active,
+  };
+}
+
+function discountReader(access: Access) {
+  if (access.role === 'teacher' || access.role === 'parent') throw forbidden();
+}
+
+function discountWriter(access: Access) {
+  if (access.role !== 'owner') throw forbidden();
+}
+
+export async function listDiscountRules(
+  ctx: OrgCtx,
+  access: Access,
+  limit: number,
+  cursor: string | undefined,
+  kind?: string,
+) {
+  discountReader(access);
+  const rows = await repo.listDiscountRules(ctx, limit, decodeCursor(cursor), kind);
+  const { data, nextCursor } = toPage(rows, limit);
+  return { data: data.map(toDiscountRule), nextCursor };
+}
+
+/** The columns of a rule as given, with money in the org's currency (400 otherwise). */
+function discountColumns(input: Partial<CreateDiscountRule>, currency: string) {
+  const fields: Record<string, string[]> = {};
+  for (const field of ['amount', 'fixedPrice'] as const) {
+    const money = input[field];
+    if (money && money.currency !== currency) {
+      fields[`${field}.currency`] = [`Must be the organisation's currency, ${currency}`];
+    }
+  }
+  if (Object.keys(fields).length > 0) throw validationFailed(fields);
+  const columns: Partial<repo.NewDiscountRuleRow> = {};
+  for (const field of [
+    'name',
+    'percentBps',
+    'minCount',
+    'courseIds',
+    'studentIds',
+    'familyIds',
+    'cutoffDate',
+    'termId',
+    'startsOn',
+    'endsOn',
+    'active',
+  ] as const) {
+    if (input[field] !== undefined) Object.assign(columns, { [field]: input[field] });
+  }
+  if (input.amount !== undefined) columns.amount = input.amount?.amount ?? null;
+  if (input.fixedPrice !== undefined) columns.fixedPrice = input.fixedPrice?.amount ?? null;
+  return columns;
+}
+
+export async function createDiscountRule(
+  ctx: OrgCtx,
+  access: Access,
+  input: CreateDiscountRule,
+): Promise<DiscountRule> {
+  discountWriter(access);
+  // A term the org doesn't have is 404.
+  const [org] = await Promise.all([
+    orgs.getOrg(ctx),
+    input.termId ? calendar.getTerm(ctx, input.termId) : null,
+  ]);
+  const row = await repo.insertDiscountRule(ctx, {
+    id: newId('discountRule'),
+    orgId: ctx.orgId,
+    kind: input.kind,
+    currency: org.currency,
+    name: input.name,
+    ...discountColumns(input, org.currency),
+  });
+  return toDiscountRule(row);
+}
+
+export async function updateDiscountRule(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  input: UpdateDiscountRule,
+): Promise<DiscountRule> {
+  const { updatedAt, ...changes } = input;
+  const [before, org] = await Promise.all([repo.findDiscountRule(ctx, id), orgs.getOrg(ctx)]);
+  if (!before) throw notFound('Discount rule');
+  discountWriter(access);
+  if (before.updatedAt !== updatedAt) throw staleData();
+  if (Object.keys(changes).length === 0) return toDiscountRule(before);
+  const after = { ...toDiscountRule(before), ...changes, kind: before.kind };
+  const issues = discountRuleIssues(after);
+  if (issues) {
+    const fields: Record<string, string[]> = {};
+    for (const issue of issues) (fields[issue.path.join('.') || '_'] ??= []).push(issue.message);
+    throw validationFailed(fields);
+  }
+  if (changes.termId) await calendar.getTerm(ctx, changes.termId);
+  const updated = await repo.updateDiscountRule(
+    ctx,
+    before,
+    discountColumns(changes, org.currency),
+  );
+  if (!updated) throw notFound('Discount rule');
+  return toDiscountRule(updated);
+}
+
+export async function deleteDiscountRule(ctx: OrgCtx, access: Access, id: string) {
+  const before = await repo.findDiscountRule(ctx, id);
+  if (!before) throw notFound('Discount rule');
+  discountWriter(access);
+  await repo.softDeleteDiscountRule(ctx, before);
 }

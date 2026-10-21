@@ -141,6 +141,9 @@ export type ChargedLine = {
   periodEnd: string;
   taxRateBps: number | null;
   taxInclusive: boolean | null;
+  /** What discounts took off the charge (TUI-58), and which. */
+  discountAmount: number;
+  discounts: { ruleId: string; name: string; amount: number }[] | null;
 };
 
 /**
@@ -165,15 +168,27 @@ export function chargeAgain(
   const charged = covered - freeLessons;
   if (charged === 0) return null;
   const perLesson = line.basis === 'per_lesson';
-  const amount = perLesson
-    ? charged * line.unitAmount
-    : divRound(line.unitAmount * charged, line.periodLessons ?? charged);
+  const chargeOf = (lessons: number) =>
+    perLesson
+      ? lessons * line.unitAmount
+      : divRound(line.unitAmount * lessons, line.periodLessons ?? lessons);
+  const amount = chargeOf(charged);
+  // Discounts keep their share of the charge.
+  const before = chargeOf(line.lessons);
+  const scale = (value: number) => (before > 0 ? divRound(value * amount, before) : 0);
+  const discounts = (line.discounts ?? []).map((d) => ({ ...d, amount: scale(d.amount) }));
+  const discountAmount = Math.min(
+    amount,
+    discounts.reduce((sum, d) => sum + d.amount, 0),
+  );
   const tax =
     line.taxRateBps === null ? null : { rateBps: line.taxRateBps, inclusive: !!line.taxInclusive };
   return {
     quantity: perLesson ? charged : 1,
     lessons: charged,
     freeLessons,
-    ...withTax(amount, tax),
+    discountAmount,
+    discounts: discounts.length > 0 ? discounts : null,
+    ...withTax(amount - discountAmount, tax),
   };
 }

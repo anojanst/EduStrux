@@ -1,8 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  CreateDiscountRule,
   CreatePayment,
   CreatePriceRule,
   CreateTaxRate,
+  DiscountRule,
+  DiscountRuleQuery,
   GenerateInvoices,
   GenerateMonthlyInvoices,
   Invoice,
@@ -15,6 +18,7 @@ import {
   PriceRule,
   PriceRuleQuery,
   TaxRate,
+  UpdateDiscountRule,
   UpdateInvoice,
   UpdatePriceRule,
   UpdateTaxRate,
@@ -364,6 +368,82 @@ const deletePaymentRoute = createRoute({
   },
 });
 
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+
+const DiscountRuleParams = OrgParams.extend({
+  discountRuleId: z.string().openapi({ param: { name: 'discountRuleId', in: 'path' } }),
+});
+
+const listDiscountRulesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/discount-rules',
+  tags: ['Billing'],
+  summary: 'List discount rules',
+  description:
+    'Oldest first. The owner, branch managers, front desk and accountants read them; a teacher ' +
+    'or a parent gets 403.',
+  middleware: orgAccess('billing:read'),
+  request: { params: OrgParams, query: DiscountRuleQuery },
+  responses: {
+    200: json(page(DiscountRule).openapi('DiscountRulePage'), 'A page of discount rules'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const createDiscountRuleRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/discount-rules',
+  tags: ['Billing'],
+  summary: 'Add a discount rule',
+  description:
+    'Applied by invoice runs from then on, to each line’s charge before tax. `sibling`: every ' +
+    'child of a family with `minCount` (default 2) or more children billed, but the one charged ' +
+    'most. `multi_class`: a student’s lines but their dearest, with `minCount` or more. ' +
+    '`early_bird`: enrolments made on or before `cutoffDate`, in `termId`’s run or any. ' +
+    '`scholarship`: `studentIds`. `manual`: `familyIds`. `bundle`: a student billed for every ' +
+    'one of `courseIds` pays `fixedPrice` for them together, or the percentage or amount off ' +
+    'each; their lines get no multi-class discount (D-079). One of `percentBps`, `amount` or ' +
+    '`fixedPrice` (a bundle only). Money is in the organisation’s currency (400). Rules add up, ' +
+    'to at most the whole charge. Owner only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: OrgParams, body: jsonBody(CreateDiscountRule) },
+  responses: {
+    201: json(DiscountRule, 'The new rule'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const updateDiscountRuleRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/discount-rules/{discountRuleId}',
+  tags: ['Billing'],
+  summary: 'Update a discount rule',
+  description:
+    'Anything but `kind`; the rule must still suit its kind (400). `active: false` pauses it. ' +
+    'Invoices already made keep their discounts. Send the `updatedAt` you last read (409). Owner ' +
+    'only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: DiscountRuleParams, body: jsonBody(UpdateDiscountRule) },
+  responses: {
+    200: json(DiscountRule, 'The updated rule'),
+    ...errors(400, 401, 403, 404, 409),
+  },
+});
+
+const deleteDiscountRuleRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/orgs/{orgId}/discount-rules/{discountRuleId}',
+  tags: ['Billing'],
+  summary: 'Delete a discount rule',
+  description: 'Invoices already made keep their discounts. Owner only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: DiscountRuleParams },
+  responses: {
+    204: { description: 'Deleted' },
+    ...errors(401, 403, 404),
+  },
+});
+
 const router = createRouter();
 // A run's result comes back on its job, so no route returns it. Registered so the docs show it.
 router.openAPIRegistry.register('InvoiceRunResult', InvoiceRunResult);
@@ -460,5 +540,23 @@ export const billingRoutes = router
   })
   .openapi(deletePaymentRoute, async (c) => {
     await service.deletePayment(orgCtx(c), access(c), c.req.valid('param').paymentId);
+    return c.body(null, 204);
+  })
+  .openapi(listDiscountRulesRoute, async (c) => {
+    const { limit, cursor, kind } = c.req.valid('query');
+    return c.json(await service.listDiscountRules(orgCtx(c), access(c), limit, cursor, kind), 200);
+  })
+  .openapi(createDiscountRuleRoute, async (c) => {
+    return c.json(await service.createDiscountRule(orgCtx(c), access(c), c.req.valid('json')), 201);
+  })
+  .openapi(updateDiscountRuleRoute, async (c) => {
+    const { discountRuleId } = c.req.valid('param');
+    return c.json(
+      await service.updateDiscountRule(orgCtx(c), access(c), discountRuleId, c.req.valid('json')),
+      200,
+    );
+  })
+  .openapi(deleteDiscountRuleRoute, async (c) => {
+    await service.deleteDiscountRule(orgCtx(c), access(c), c.req.valid('param').discountRuleId);
     return c.body(null, 204);
   });

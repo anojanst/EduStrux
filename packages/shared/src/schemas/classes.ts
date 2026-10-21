@@ -249,12 +249,15 @@ export type UpdateSession = z.infer<typeof UpdateSession>;
 export const SessionUpdate = z
   .object({
     session: Session,
-    messageId: z.string().nullable().openapi({
-      description:
-        'The id the message to families gets once the queue sends it, moments later. None is ' +
-        'sent when the notification settings turn lesson changes off. null when nothing was ' +
-        'queued: a change families needn’t hear of, `notify: false`, or nobody expected.',
-    }),
+    messageId: z
+      .string()
+      .nullable()
+      .openapi({
+        description:
+          'The id the message to families gets once the queue sends it, moments later. None is ' +
+          'sent when the notification settings turn lesson changes off. null when nothing was ' +
+          'queued: a change families needn’t hear of, `notify: false`, or nobody expected.',
+      }),
   })
   .openapi('SessionUpdate');
 export type SessionUpdate = z.infer<typeof SessionUpdate>;

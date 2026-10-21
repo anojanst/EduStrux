@@ -200,3 +200,30 @@ booking is v1.1). A unique index stops one credit being booked twice at once.
 booked in, in the same read stage: still 3 stages, but 3 more trips (11 instead of 8). Reading a
 roster costs one more trip. Folding the policy into the org row (read at sign-in for free) would
 save one; not done.
+
+## TUI-58 Discount rules
+
+**Q-27 · How the kinds work.** Built (one rule type, six kinds, each a percentage or an amount off
+a line's charge before tax, or for a bundle a fixed total):
+- `sibling`: in a family with `minCount` (default 2) or more children billed in the run, every
+  child but the one charged most gets it (ties: the earliest student).
+- `multi_class`: a student with `minCount` or more lines in the run gets it on all but their
+  dearest line. Lines priced by a bundle neither count nor get it (D-079).
+- `early_bird`: enrolments made on or before `cutoffDate` (the enrolment's creation date in the
+  org's timezone), in one term's run or any. Alternative not built: paid before a date, which
+  would need credit notes.
+- `scholarship` (students) and `manual` (families): standing discounts while the rule is active.
+  A one-off discount on one invoice isn't built: void and generate again.
+- `bundle`: a student billed in the run for every one of `courseIds` pays `fixedPrice` for those
+  lines together (split across them by charge), or the percentage or amount off each.
+
+**Q-28 · Stacking.** Built: rules apply in id order, each worked out on the charge before
+discounts, and together take off at most the whole charge. Tax is worked out on what is left
+(an inclusive rate is split out of the discounted charge).
+
+**Q-29 · Where discounts show and who writes them.** Built: each invoice line carries `discount`
+and `discounts` (`[{ ruleId, name, amount }]`), new fields on the line. Discounts apply when a
+run makes the invoice; a rule changed later doesn't touch invoices already made. When an
+enrolment's dates change (TUI-46), a draft line's discounts shrink or grow with its charge. Only
+the owner writes rules, as for org-wide price rules (D-111); branch staff and accountants read;
+teachers and parents get 403.

@@ -290,6 +290,8 @@ describe('generating a term’s invoices', () => {
       taxName: 'GST',
       taxRateBps: 1500,
       taxInclusive: true,
+      discount: nzd(0),
+      discounts: [],
       subtotal: nzd(39130),
       tax: nzd(5870),
       total: nzd(TERM_PRICE),

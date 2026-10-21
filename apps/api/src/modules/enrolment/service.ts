@@ -546,6 +546,7 @@ export async function enrolmentsToInvoice(
     classId: row.classId,
     startDate: row.startDate,
     endDate: row.endDate,
+    createdAt: row.createdAt,
     priceOverride:
       row.priceOverrideAmount !== null && row.priceOverrideCurrency !== null
         ? { amount: row.priceOverrideAmount, currency: row.priceOverrideCurrency }

@@ -1,4 +1,5 @@
 import {
+  discountRules,
   invoiceLines,
   invoices,
   now,
@@ -599,6 +600,8 @@ export type LineCharge = {
   quantity: number;
   lessons: number;
   freeLessons: number;
+  discountAmount: number;
+  discounts: { ruleId: string; name: string; amount: number }[] | null;
   subtotal: number;
   tax: number;
   total: number;
@@ -631,6 +634,8 @@ export function rechargeDraftLine(
         quantity: charge.quantity,
         lessons: charge.lessons,
         freeLessons: charge.freeLessons,
+        discountAmount: charge.discountAmount,
+        discounts: charge.discounts,
         subtotalAmount: charge.subtotal,
         taxAmount: charge.tax,
         totalAmount: charge.total,
@@ -1041,5 +1046,91 @@ export async function softDeletePayment(
         allocations: allocations.map(({ invoiceId, amount }) => ({ invoiceId, amount })),
       },
     },
+  );
+}
+
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+
+export type DiscountRuleRow = typeof discountRules.$inferSelect;
+export type NewDiscountRuleRow = typeof discountRules.$inferInsert;
+
+/** Every rule of the org, for an invoice run. */
+export function allDiscountRules(ctx: OrgCtx) {
+  return ctx.db.select().from(discountRules).where(inOrg(ctx, discountRules));
+}
+
+/** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listDiscountRules(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  kind: string | undefined,
+) {
+  return ctx.db
+    .select()
+    .from(discountRules)
+    .where(
+      inOrg(
+        ctx,
+        discountRules,
+        kind ? eq(discountRules.kind, kind as DiscountRuleRow['kind']) : undefined,
+        afterId ? gt(discountRules.id, afterId) : undefined,
+      ),
+    )
+    .orderBy(asc(discountRules.id))
+    .limit(limit + 1);
+}
+
+export function findDiscountRule(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(discountRules)
+    .where(inOrg(ctx, discountRules, eq(discountRules.id, id)))
+    .get();
+}
+
+export async function insertDiscountRule(ctx: OrgCtx, row: NewDiscountRuleRow & { id: string }) {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(discountRules).values(row).returning()],
+    { action: 'discount_rule.created', entityType: 'discount_rule', entityId: row.id, after: row },
+  );
+  return (inserted as DiscountRuleRow[])[0]!;
+}
+
+export async function updateDiscountRule(
+  ctx: OrgCtx,
+  before: DiscountRuleRow,
+  changes: Partial<NewDiscountRuleRow>,
+) {
+  const [, updated] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(discountRules)
+        .set(changes)
+        .where(inOrg(ctx, discountRules, eq(discountRules.id, before.id)))
+        .returning(),
+    ],
+    {
+      action: 'discount_rule.updated',
+      entityType: 'discount_rule',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
+  );
+  return (updated as DiscountRuleRow[])[0];
+}
+
+export async function softDeleteDiscountRule(ctx: OrgCtx, before: DiscountRuleRow) {
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(discountRules)
+        .set({ deletedAt: now() })
+        .where(inOrg(ctx, discountRules, eq(discountRules.id, before.id))),
+    ],
+    { action: 'discount_rule.deleted', entityType: 'discount_rule', entityId: before.id, before },
   );
 }

@@ -1,5 +1,6 @@
 import { z } from '../zod';
 import { LocalDate, Money, PageQuery, Timestamp } from './common';
+import { LineDiscount } from './discounts';
 import { PRICE_BASES, PRICE_SOURCES } from './pricing';
 
 /**
@@ -89,7 +90,13 @@ export const InvoiceLine = z
     taxInclusive: z.boolean().nullable().openapi({
       description: 'true = `unitPrice` already includes the tax.',
     }),
-    subtotal: Money.openapi({ description: 'The charge before tax.' }),
+    discount: Money.openapi({
+      description: 'What discounts took off the charge before tax (TUI-58). 0 with none.',
+    }),
+    discounts: z.array(LineDiscount).openapi({
+      description: 'Each discount rule applied, and what it took off.',
+    }),
+    subtotal: Money.openapi({ description: 'The charge before tax, less any discount.' }),
     tax: Money,
     total: Money.openapi({ description: '`subtotal` plus `tax`.' }),
   })

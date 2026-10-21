@@ -2,6 +2,7 @@ import {
   BillingMonth,
   LocalDate,
   newId,
+  utcToLocal,
   z,
   type InvoiceRunResult,
   type InvoiceSkipReason,
@@ -17,9 +18,10 @@ import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
 import { startJob } from '../platform/service';
+import { applyDiscounts } from './discounts';
 import { chargeFor, monthRange, withTax } from './invoicing';
 import * as repo from './repository';
-import { loadPricing } from './service';
+import { loadPricing, toDiscountData } from './service';
 
 /** The job type of an invoice run. */
 export const INVOICE_RUN = 'invoices.generate';
@@ -88,7 +90,7 @@ export async function generateInvoices(ctx: JobContext): Promise<InvoiceRunResul
   const classOf = new Map(billed.map((klass) => [klass.id, klass]));
   const classIds = [...classOf.keys()];
   const enrolments = await enrolment.enrolmentsToInvoice(ctx, classIds, period);
-  const [familyOf, defaultPrices, priceOf, taxRates, invoiced] = await Promise.all([
+  const [familyOf, defaultPrices, priceOf, taxRates, invoiced, discountRules] = await Promise.all([
     people.familyIdsOfStudents(ctx, [...new Set(enrolments.map((e) => e.studentId))]),
     curriculum.defaultPrices(ctx, [...new Set(billed.map((klass) => klass.courseId))]),
     loadPricing(ctx),
@@ -97,6 +99,7 @@ export async function generateInvoices(ctx: JobContext): Promise<InvoiceRunResul
       ctx,
       enrolments.map((e) => e.id),
     ),
+    repo.allDiscountRules(ctx),
   ]);
   const families = await people.familyLabels(ctx, [...new Set(familyOf.values())]);
 
@@ -130,6 +133,16 @@ export async function generateInvoices(ctx: JobContext): Promise<InvoiceRunResul
   let alreadyInvoiced = 0;
   const drafts = new Map<string, Draft>();
 
+  // First what each enrolment is charged, then the discounts on those charges (TUI-58), then
+  // the lines with tax on what is left.
+  const charged: {
+    e: (typeof enrolments)[number];
+    price: NonNullable<(typeof priced)[number]['price']>;
+    charge: Exclude<ReturnType<typeof chargeFor>, string>;
+    familyId: string;
+    family: NonNullable<ReturnType<typeof families.get>>;
+    rate: (typeof taxRates)[number] | null;
+  }[] = [];
   for (const { enrolment: e, price } of priced) {
     const skip = (reason: InvoiceSkipReason) =>
       skipped.push({ enrolmentId: e.id, studentId: e.studentId, classId: e.classId, reason });
@@ -173,7 +186,25 @@ export async function generateInvoices(ctx: JobContext): Promise<InvoiceRunResul
     }
     const rate = price.taxRateId === null ? null : taxOf.get(price.taxRateId);
     if (rate === undefined) throw new Error(`Tax rate ${price.taxRateId} not found`);
-    const amounts = withTax(charge.amount, rate);
+    charged.push({ e, price, charge, familyId, family, rate });
+  }
+
+  const discounts = applyDiscounts(
+    discountRules.map(toDiscountData),
+    charged.map(({ e, charge, familyId }) => ({
+      enrolmentId: e.id,
+      studentId: e.studentId,
+      familyId,
+      courseId: classOf.get(e.classId)!.courseId,
+      charge: charge.amount,
+      enrolledOn: utcToLocal(e.createdAt, org.timezone).date,
+    })),
+    { termId: input.termId, period },
+  );
+
+  for (const { e, price, charge, familyId, family, rate } of charged) {
+    const discount = discounts.get(e.id);
+    const amounts = withTax(charge.amount - (discount?.amount ?? 0), rate);
 
     let draft = drafts.get(familyId);
     if (!draft) {
@@ -226,6 +257,8 @@ export async function generateInvoices(ctx: JobContext): Promise<InvoiceRunResul
       taxName: rate?.name ?? null,
       taxRateBps: rate?.rateBps ?? null,
       taxInclusive: rate?.inclusive ?? null,
+      discountAmount: discount?.amount ?? 0,
+      discounts: discount?.applied ?? null,
       subtotalAmount: amounts.subtotal,
       taxAmount: amounts.tax,
       totalAmount: amounts.total,
