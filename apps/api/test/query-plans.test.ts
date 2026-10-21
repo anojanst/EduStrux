@@ -1430,3 +1430,49 @@ describe('staff and invitations (D-131)', () => {
     expect(plan).toMatch(searchIn('memberships', 'memberships_org_user_uq'));
   });
 });
+
+describe('search reads name ranges and exact values from their indexes (TUI-43)', () => {
+  const plan = (send: Send) => planOf(send);
+
+  it('finds families by the start of a name or a bank reference', async () => {
+    const found = await plan((ctx) =>
+      people.matchFamilies(ctx, { namePrefix: 'per', bankReference: 'ABCD1234' }, 20, {}),
+    );
+    expect(found).toMatch(searchIn('families', 'families_org_name_idx'));
+    expect(found).toMatch(searchIn('families', 'families_org_bank_reference_uq'));
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds students by the start of a first or last name', async () => {
+    const found = await plan((ctx) =>
+      people.matchStudents(ctx, { namePrefix: 'aroha per' }, 20, { branchIds: ['brn_a'] }),
+    );
+    expect(found).toMatch(searchIn('students', 'students_org_name_idx'));
+    expect(found).toMatch(searchIn('students', 'students_org_first_name_idx'));
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds guardians by name, and by email or phone', async () => {
+    const byName = await plan((ctx) =>
+      people.matchGuardians(ctx, { namePrefix: 'mere p' }, 20, {}),
+    );
+    expect(byName).toMatch(searchIn('guardians', 'guardians_org_name_idx'));
+    expect(byName).toMatch(searchIn('guardians', 'guardians_org_first_name_idx'));
+    expect(byName).not.toMatch(READS_AN_ORG);
+    const byEmail = await plan((ctx) => people.matchGuardians(ctx, { email: 'a@b.c' }, 20, {}));
+    expect(byEmail).toMatch(searchBy('guardians', 'email'));
+    const byPhone = await plan((ctx) => people.matchGuardians(ctx, { phone: '6421' }, 20, {}));
+    expect(byPhone).toMatch(searchBy('guardians', 'phone_norm'));
+    const exactName = await plan((ctx) =>
+      people.matchGuardians(ctx, { name: { first: 'mere', last: 'perera' } }, 20, {}),
+    );
+    expect(exactName).toMatch(searchIn('guardians', 'guardians_org_name_idx'));
+  });
+
+  it('never reads a whole org for a parent', async () => {
+    const found = await plan((ctx) =>
+      people.matchGuardians(ctx, { namePrefix: 'mere' }, 20, { guardianMembershipId: 'mem_a' }),
+    );
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+});

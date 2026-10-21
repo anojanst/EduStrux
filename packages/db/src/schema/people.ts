@@ -46,6 +46,8 @@ export const guardians = sqliteTable(
     // Stored lower-case.
     email: text('email'),
     phone: text('phone'),
+    // The phone's digits alone, from `normalisePhone()`, for an exact search (D-026).
+    phoneNorm: text('phone_norm'),
     preferredChannel: text('preferred_channel', { enum: CONTACT_CHANNELS })
       .notNull()
       .default('email'),
@@ -58,6 +60,11 @@ export const guardians = sqliteTable(
   (t) => [
     index('guardians_org_family_idx').on(t.orgId, t.familyId),
     index('guardians_org_membership_idx').on(t.orgId, t.membershipId),
+    // Search and duplicate warnings (TUI-43): a name prefix, an exact email or phone.
+    index('guardians_org_name_idx').on(t.orgId, t.lastNameNorm, t.firstNameNorm, t.id),
+    index('guardians_org_first_name_idx').on(t.orgId, t.firstNameNorm),
+    index('guardians_org_email_idx').on(t.orgId, t.email),
+    index('guardians_org_phone_idx').on(t.orgId, t.phoneNorm),
   ],
 );
 
@@ -77,6 +84,8 @@ export const students = sqliteTable(
   (t) => [
     index('students_org_name_idx').on(t.orgId, t.lastNameNorm, t.firstNameNorm, t.id),
     index('students_org_family_idx').on(t.orgId, t.familyId),
+    // A search by first name (TUI-43); the name index above serves last names.
+    index('students_org_first_name_idx').on(t.orgId, t.firstNameNorm),
   ],
 );
 

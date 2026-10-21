@@ -1,5 +1,6 @@
 import { families, guardians, now, studentGrades, students } from '@edustrux/db';
-import { and, asc, count, eq, gt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
   changedFields,
@@ -757,4 +758,175 @@ export async function countStudentsInGrade(ctx: OrgCtx, gradeLevelId: string) {
     .where(inOrg(ctx, studentGrades, eq(studentGrades.gradeLevelId, gradeLevelId)))
     .get();
   return row?.n ?? 0;
+}
+
+// ── Search and duplicate warnings (TUI-43) ──────────────────────────────────
+// A name is matched by prefix on the normalised columns, an email, phone or bank reference
+// exactly (D-026). Each read keeps to the caller's reach, as the lists do.
+
+/**
+ * Order by these columns without letting the order pick the index: a search goes to the indexes
+ * its name ranges and exact values fit, then sorts the few rows it found. Ordered by the plain
+ * columns, SQLite would read the org's whole name index in order to save that sort.
+ */
+const sortedBy = (...columns: SQLiteColumn[]) => columns.map((column) => sql`+${column}`);
+
+/** Values starting with `prefix`, as a range an index on the column can go to. */
+const startsWith = (column: SQLiteColumn, prefix: string) =>
+  and(gte(column, prefix), lt(column, `${prefix}\u{10FFFF}`));
+
+/**
+ * A typed name against a first and a last name: "aroha per" is Aroha Per…, Per… Aroha, or a
+ * first or last name that starts with all of it. One word is the start of either name. Each of
+ * those starts with the first word, so the rows are found by that word's two ranges, which the
+ * name indexes go to, and the rest only checks them. The terms are for an `or()` of the caller's:
+ * SQLite goes to an index for each term of one flat OR, not of an OR nested in it.
+ */
+function namePrefix(first: SQLiteColumn, last: SQLiteColumn, typed: string) {
+  const [head = '', ...rest] = typed.split(' ');
+  const tail = rest.join(' ');
+  if (!tail) return [startsWith(last, head), startsWith(first, head)];
+  const fits = or(
+    and(startsWith(first, head), startsWith(last, tail)),
+    and(startsWith(last, head), startsWith(first, tail)),
+    startsWith(last, typed),
+    startsWith(first, typed),
+  );
+  return [and(startsWith(last, head), fits), and(startsWith(first, head), fits)];
+}
+
+/** What a family is matched by: any one of these. Names are normalised. */
+export type FamilyMatch = { namePrefix?: string; name?: string; bankReference?: string };
+
+/** What a person is matched by: any one of these. Names are normalised, phone digits only. */
+export type PersonMatch = {
+  namePrefix?: string;
+  name?: { first: string; last: string };
+  email?: string;
+  phone?: string;
+};
+
+/** The families within reach that match, in name order. At most `limit`. */
+export function matchFamilies(ctx: OrgCtx, match: FamilyMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: families.id,
+      name: families.name,
+      branchId: families.branchId,
+      bankReference: families.bankReference,
+    })
+    .from(families)
+    .where(
+      inOrg(
+        ctx,
+        families,
+        or(
+          match.namePrefix !== undefined
+            ? startsWith(families.nameNorm, match.namePrefix)
+            : undefined,
+          match.name !== undefined ? eq(families.nameNorm, match.name) : undefined,
+          match.bankReference !== undefined
+            ? eq(families.bankReference, match.bankReference)
+            : undefined,
+        ),
+        within(ctx, reach),
+      ),
+    )
+    .orderBy(...sortedBy(families.nameNorm, families.id))
+    .limit(limit);
+}
+
+/** The students within reach that match, with their family's name and home branch. */
+export function matchStudents(ctx: OrgCtx, match: PersonMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: students.id,
+      familyId: students.familyId,
+      familyName: families.name,
+      branchId: families.branchId,
+      firstName: students.firstName,
+      lastName: students.lastName,
+      dateOfBirth: students.dateOfBirth,
+    })
+    .from(students)
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          students,
+          or(
+            ...(match.namePrefix !== undefined
+              ? namePrefix(students.firstNameNorm, students.lastNameNorm, match.namePrefix)
+              : []),
+            match.name
+              ? and(
+                  eq(students.firstNameNorm, match.name.first),
+                  eq(students.lastNameNorm, match.name.last),
+                )
+              : undefined,
+          ),
+          ...studentReach(ctx, reach),
+        ),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(...sortedBy(students.lastNameNorm, students.firstNameNorm, students.id))
+    .limit(limit);
+}
+
+/**
+ * The guardians within reach that match, with their family's name and home branch. A teacher
+ * reaches the guardians of their students' families, and a parent those of their own families.
+ * Send a name, an email and a phone in separate calls: with no table statistics, SQLite reads
+ * the org's whole index sooner than go to the email and phone indexes for one OR.
+ */
+export function matchGuardians(ctx: OrgCtx, match: PersonMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: guardians.id,
+      familyId: guardians.familyId,
+      familyName: families.name,
+      branchId: families.branchId,
+      firstName: guardians.firstName,
+      lastName: guardians.lastName,
+      relationship: guardians.relationship,
+      email: guardians.email,
+      phone: guardians.phone,
+      phoneNorm: guardians.phoneNorm,
+    })
+    .from(guardians)
+    .innerJoin(families, eq(families.id, guardians.familyId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          guardians,
+          or(
+            ...(match.namePrefix !== undefined
+              ? namePrefix(guardians.firstNameNorm, guardians.lastNameNorm, match.namePrefix)
+              : []),
+            match.name
+              ? and(
+                  eq(guardians.firstNameNorm, match.name.first),
+                  eq(guardians.lastNameNorm, match.name.last),
+                )
+              : undefined,
+            match.email !== undefined ? eq(guardians.email, match.email) : undefined,
+            match.phone !== undefined ? eq(guardians.phoneNorm, match.phone) : undefined,
+          ),
+          and(
+            reach.guardianMembershipId
+              ? inIds(guardians.familyId, familiesOfGuardian(ctx, reach.guardianMembershipId))
+              : undefined,
+            reach.studentIds
+              ? inIds(guardians.familyId, familiesOfStudents(ctx, reach.studentIds))
+              : undefined,
+          ),
+        ),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(...sortedBy(guardians.lastNameNorm, guardians.firstNameNorm, guardians.id))
+    .limit(limit);
 }

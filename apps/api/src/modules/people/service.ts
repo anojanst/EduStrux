@@ -3,13 +3,19 @@ import {
   localNow,
   newId,
   normaliseName,
+  normalisePhone,
   type AcademicYear,
   type CreateFamily,
   type CreateGuardian,
   type CreateStudent,
+  type DuplicateMatches,
+  type DuplicateQuery,
+  type DuplicateReason,
   type Family,
   type Guardian,
   type Org,
+  type SearchQuery,
+  type SearchResults,
   type Student,
   type StudentEmergencyContacts,
   type UpdateFamily,
@@ -61,6 +67,7 @@ export function toGuardian(row: repo.GuardianRow): Guardian {
     deletedAt: _deleted,
     firstNameNorm: _first,
     lastNameNorm: _last,
+    phoneNorm: _phone,
     ...guardian
   } = row;
   return guardian;
@@ -337,6 +344,7 @@ export async function createGuardian(
       relationship: input.relationship ?? null,
       email: input.email ?? null,
       phone: input.phone ?? null,
+      phoneNorm: normalisePhone(input.phone),
       preferredChannel: input.preferredChannel,
       language: input.language ?? null,
       emergencyContact: input.emergencyContact,
@@ -361,6 +369,7 @@ export async function updateGuardian(
   if (Object.keys(changes).length === 0) return toGuardian(before);
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
   if (changes.lastName !== undefined) changes.lastNameNorm = normaliseName(changes.lastName);
+  if (changes.phone !== undefined) changes.phoneNorm = normalisePhone(changes.phone);
 
   const updated = await repo.updateGuardian(ctx, before, changes);
   if (!updated) throw notFound('Guardian');
@@ -732,4 +741,138 @@ export async function studentNames(ctx: OrgCtx, ids: Ids) {
 /** How many students have been in this grade level, in any year. It can't be deleted while any have. */
 export function countStudentsInGrade(ctx: OrgCtx, gradeLevelId: string) {
   return repo.countStudentsInGrade(ctx, gradeLevelId);
+}
+
+// ── Search and duplicate warnings (TUI-43) ──────────────────────────────────
+
+/** A phone as typed into a search: only phone characters, and at least 3 digits. */
+function phoneIn(typed: string) {
+  if (!/^[0-9+() .-]+$/.test(typed)) return undefined;
+  const digits = normalisePhone(typed);
+  return digits && digits.length >= 3 ? digits : undefined;
+}
+
+/** A family's bank reference as typed: 8 letters and digits, matched in capitals. */
+const bankReferenceIn = (typed: string) =>
+  /^[0-9a-z]{8}$/i.test(typed) ? typed.toUpperCase() : undefined;
+
+const withoutPhoneNorm = <T extends { phoneNorm: string | null }>({ phoneNorm: _p, ...row }: T) =>
+  row;
+
+/**
+ * The guardians that match by name, email or phone, each once, in name order. The three are read
+ * apart (see `repo.matchGuardians`), in the same stage.
+ */
+async function matchGuardians(
+  ctx: OrgCtx,
+  { email, phone, ...names }: repo.PersonMatch,
+  limit: number,
+  reach: repo.Reach,
+) {
+  const byName = names.namePrefix !== undefined || names.name !== undefined;
+  const reads = await Promise.all([
+    byName ? repo.matchGuardians(ctx, names, limit, reach) : [],
+    email !== undefined ? repo.matchGuardians(ctx, { email }, limit, reach) : [],
+    phone !== undefined ? repo.matchGuardians(ctx, { phone }, limit, reach) : [],
+  ]);
+  const found = new Map(reads.flat().map((row) => [row.id, row]));
+  const key = (row: { lastName: string; firstName: string; id: string }) =>
+    `${normaliseName(row.lastName)}\u0000${normaliseName(row.firstName)}\u0000${row.id}`;
+  return [...found.values()]
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
+    .slice(0, limit);
+}
+
+/**
+ * Families, students and guardians within the caller's reach that `q` finds: the start of a name,
+ * or an exact email, phone or bank reference (D-026). One stage: the three reads go together.
+ */
+export async function search(
+  ctx: OrgCtx,
+  access: Access,
+  query: SearchQuery,
+): Promise<SearchResults> {
+  const typed = query.q.trim();
+  const namePrefix = normaliseName(typed);
+  const reach = reachOf(ctx, access);
+  const person: repo.PersonMatch = {
+    namePrefix,
+    email: typed.includes('@') ? typed.toLowerCase() : undefined,
+    phone: phoneIn(typed),
+  };
+  const [families, students, guardians] = await Promise.all([
+    repo.matchFamilies(
+      ctx,
+      { namePrefix, bankReference: bankReferenceIn(typed) },
+      query.limit,
+      reach,
+    ),
+    repo.matchStudents(ctx, { namePrefix }, query.limit, reach),
+    matchGuardians(ctx, person, query.limit, reach),
+  ]);
+  return { families, students, guardians: guardians.map(withoutPhoneNorm) };
+}
+
+const DUPLICATE_LIMIT = 20;
+
+/**
+ * Who within the caller's reach may already be on record as the family, student or guardian
+ * about to be added, and why. A warning only: nothing stops the add. One stage.
+ */
+export async function duplicates(
+  ctx: OrgCtx,
+  access: Access,
+  query: DuplicateQuery,
+): Promise<DuplicateMatches> {
+  const reach = reachOf(ctx, access);
+  const empty: DuplicateMatches = { families: [], students: [], guardians: [] };
+  const name =
+    query.firstName && query.lastName
+      ? { first: normaliseName(query.firstName), last: normaliseName(query.lastName) }
+      : undefined;
+
+  if (query.kind === 'family') {
+    const rows = await repo.matchFamilies(
+      ctx,
+      { name: normaliseName(query.name ?? '') },
+      DUPLICATE_LIMIT,
+      reach,
+    );
+    return { ...empty, families: rows.map((row) => ({ ...row, reasons: ['same_name'] })) };
+  }
+
+  if (query.kind === 'student') {
+    const rows = await repo.matchStudents(ctx, { name }, DUPLICATE_LIMIT, reach);
+    return {
+      ...empty,
+      students: rows.map((row) => ({
+        ...row,
+        reasons: [
+          query.dateOfBirth && row.dateOfBirth === query.dateOfBirth
+            ? 'same_name_and_birth_date'
+            : 'same_name',
+        ],
+      })),
+    };
+  }
+
+  const email = query.email || undefined;
+  const phone = normalisePhone(query.phone) ?? undefined;
+  const rows = await matchGuardians(ctx, { name, email, phone }, DUPLICATE_LIMIT, reach);
+  return {
+    ...empty,
+    guardians: rows.map((row) => {
+      const reasons: DuplicateReason[] = [];
+      if (
+        name &&
+        normaliseName(row.firstName) === name.first &&
+        normaliseName(row.lastName) === name.last
+      ) {
+        reasons.push('same_name');
+      }
+      if (email && row.email === email) reasons.push('same_email');
+      if (phone && row.phoneNorm === phone) reasons.push('same_phone');
+      return { ...withoutPhoneNorm(row), reasons };
+    }),
+  };
 }

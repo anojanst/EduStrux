@@ -3,9 +3,13 @@ import {
   CreateFamily,
   CreateGuardian,
   CreateStudent,
+  DuplicateMatches,
+  DuplicateQuery,
   Family,
   FamilyQuery,
   Guardian,
+  SearchQuery,
+  SearchResults,
   Student,
   StudentQuery,
   UpdateFamily,
@@ -242,7 +246,49 @@ const deleteStudentRoute = createRoute({
   },
 });
 
+const searchRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/search',
+  tags: ['People'],
+  summary: 'Search families, students and guardians',
+  description:
+    'The start of a name ("aroha per" finds Aroha Perera, and Perera Aroha), or an exact email, ' +
+    'phone number or bank reference. Case and accents don’t matter. Each list holds at most ' +
+    '`limit`, in name order, and only what the caller reaches, as on the family and student ' +
+    'routes (D-026).',
+  middleware: orgAccess('people:read'),
+  request: { params: OrgParams, query: SearchQuery },
+  responses: {
+    200: json(SearchResults, 'What the search found'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const duplicatesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/search/duplicates',
+  tags: ['People'],
+  summary: 'Check for likely duplicates before adding someone',
+  description:
+    'Call before adding a family, student or guardian, with what is about to be added. A family ' +
+    'matches on its name; a student on first and last name, and `same_name_and_birth_date` ' +
+    'when the birth date matches too; a guardian on name, email or phone. Only what the caller ' +
+    'reaches is checked. A warning only: nothing stops the add.',
+  middleware: orgAccess('people:write'),
+  request: { params: OrgParams, query: DuplicateQuery },
+  responses: {
+    200: json(DuplicateMatches, 'Records that may be the same'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
 export const peopleRoutes = createRouter()
+  .openapi(searchRoute, async (c) => {
+    return c.json(await service.search(orgCtx(c), access(c), c.req.valid('query')), 200);
+  })
+  .openapi(duplicatesRoute, async (c) => {
+    return c.json(await service.duplicates(orgCtx(c), access(c), c.req.valid('query')), 200);
+  })
   .openapi(listFamiliesRoute, async (c) => {
     const { limit, cursor, ...filter } = c.req.valid('query');
     return c.json(await service.listFamilies(orgCtx(c), access(c), limit, cursor, filter), 200);
