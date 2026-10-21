@@ -20,6 +20,7 @@ import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { portalRoutes } from './modules/portal/routes';
+import { reportRoutes } from './modules/reports/routes';
 import { staffRoutes } from './modules/staff/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
@@ -47,6 +48,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', billingRoutes);
   app.route('/', commsRoutes);
   app.route('/', portalRoutes);
+  app.route('/', reportRoutes);
 
   // API docs: generated from the route definitions above.
   app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {

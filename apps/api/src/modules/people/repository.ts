@@ -975,3 +975,13 @@ export function familiesFound(ctx: OrgCtx, ids: string[], reach: Reach) {
     .from(families)
     .where(inOrg(ctx, families, inIds(families.id, ids), within(ctx, reach)));
 }
+
+/** How many families are within reach (TUI-62). */
+export async function countFamiliesWithin(ctx: OrgCtx, reach: Reach) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(families)
+    .where(inOrg(ctx, families, within(ctx, reach)))
+    .get();
+  return row?.n ?? 0;
+}

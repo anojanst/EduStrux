@@ -227,3 +227,23 @@ run makes the invoice; a rule changed later doesn't touch invoices already made.
 enrolment's dates change (TUI-46), a draft line's discounts shrink or grow with its charge. Only
 the owner writes rules, as for org-wide price rules (D-111); branch staff and accountants read;
 teachers and parents get 403.
+
+## TUI-62, TUI-63 Dashboard and money reports
+
+**Q-30 · What the dashboard shows.** Built (`GET /reports/dashboard`, `reports:read`, as far as
+the caller reaches): families, students with an active enrolment, classes still running, today's
+lessons (cancelled, with marks), students away today, lessons in the last 14 days with no marks,
+and make-up credits waiting. `money` (owing, overdue and how many invoices, received this month,
+drafts) only for roles with money reports: the owner and branch managers. Front desk ("Limited"
+in §6) and teachers get the counts without money. An accountant has no `reports:read`, so 403.
+
+**Q-31 · Money report definitions.** Built (`GET /reports/money?from&to`, `reports:money`, at
+most 366 days): **invoiced** = totals of invoices *issued* in the dates (by `issuedAt` in the
+org's timezone), void ones left out; **received** = payments by `receivedOn`; both by month and
+received by method. **Aged debt** = what is owed today on issued and part-paid invoices,
+bucketed by days past the due date (not due / 1–30 / 31–60 / 61–90 / 90+), whatever the dates.
+**Tax collected** = tax on the lines of invoices issued in the dates, by rate (accrual basis).
+Alternative not built: tax on payments received (cash basis), which needs tax per allocation.
+
+**Q-32 · Export.** The accountant's "read + export" isn't a CSV of this report yet; the full
+data export (TUI-78) carries the raw invoices and payments.

@@ -553,3 +553,8 @@ export async function enrolmentsToInvoice(
         : null,
   }));
 }
+
+/** How many students the caller reaches hold an active enrolment, for the dashboard. */
+export function countStudentsEnrolled(ctx: OrgCtx, access: Access) {
+  return repo.countActiveStudents(ctx, reachOf(ctx, access));
+}

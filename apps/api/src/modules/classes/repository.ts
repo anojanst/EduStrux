@@ -770,3 +770,60 @@ export function sessionTaken(error: unknown): boolean {
   }
   return false;
 }
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/** How many classes within reach run on or after a date: their own end, else their term's. */
+export async function countRunningClasses(ctx: OrgCtx, reach: Reach, date: string, terms: IdQuery) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        or(
+          gte(classes.endDate, date),
+          and(isNull(classes.endDate), isNull(classes.termId)),
+          and(isNull(classes.endDate), inIds(classes.termId, terms)),
+        ),
+        within(reach),
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}
+
+/** The lessons within reach in the dates, both included: id, date and status. */
+export function lessonsBetween(ctx: OrgCtx, range: DateRange, reach: Reach) {
+  return ctx.db
+    .select({ id: sessions.id, date: sessions.date, status: sessions.status })
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          sessions,
+          gte(sessions.date, range.startDate),
+          lte(sessions.date, range.endDate),
+          sessionReach(ctx, reach),
+        ),
+        inOrg(ctx, classes, within(reach)),
+      ),
+    );
+}
+
+/** Those lessons, scheduled ones only, as ids: their marks are read by them in the same stage. */
+export function scheduledBetween(ctx: OrgCtx, range: DateRange, reach: Reach): IdQuery {
+  return idsFrom(
+    ctx,
+    sessions,
+    sessions.id,
+    eq(sessions.status, 'scheduled'),
+    gte(sessions.date, range.startDate),
+    lte(sessions.date, range.endDate),
+    sessionReach(ctx, reach),
+    reach.branchIds ? inIds(sessions.classId, classesWithin(ctx, reach)) : undefined,
+  );
+}

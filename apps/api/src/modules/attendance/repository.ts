@@ -7,7 +7,7 @@ import {
   now,
 } from '@edustrux/db';
 import type { AttendanceStatus } from '@edustrux/shared';
-import { and, asc, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
   changedFields,
@@ -488,4 +488,50 @@ export function expireCredits(ctx: OrgCtx, today: string) {
       ),
     )
     .returning({ id: makeupCredits.id });
+}
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/** Of these lessons, the ones with any mark. */
+export function lessonsMarked(ctx: OrgCtx, sessionIds: Ids) {
+  return ctx.db
+    .selectDistinct({ sessionId: attendance.sessionId })
+    .from(attendance)
+    .where(inOrg(ctx, attendance, inIds(attendance.sessionId, sessionIds)));
+}
+
+/** How many students within reach have a notice covering the date. */
+export async function countAwayOn(ctx: OrgCtx, date: string, reach: Ids | undefined) {
+  const row = await ctx.db
+    .select({ n: sql<number>`count(distinct ${absenceNotices.studentId})` })
+    .from(absenceNotices)
+    .where(
+      inOrg(
+        ctx,
+        absenceNotices,
+        lte(absenceNotices.startDate, date),
+        gte(absenceNotices.endDate, date),
+        reach ? and(inIds(absenceNotices.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}
+
+/** How many unused credits within reach haven't lapsed by the date. */
+export async function countCreditsAvailable(ctx: OrgCtx, date: string, reach: Ids | undefined) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(makeupCredits)
+    .where(
+      inOrg(
+        ctx,
+        makeupCredits,
+        eq(makeupCredits.status, 'available'),
+        sql`(${makeupCredits.expiresOn} is null or ${makeupCredits.expiresOn} >= ${date})`,
+        reach ? and(inIds(makeupCredits.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
 }

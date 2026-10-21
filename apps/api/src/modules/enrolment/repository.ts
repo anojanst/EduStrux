@@ -332,3 +332,13 @@ export function spansIn(ctx: OrgCtx, classIds: Ids) {
     .from(enrolments)
     .where(inOrg(ctx, enrolments, inIds(enrolments.classId, classIds)));
 }
+
+/** How many students hold an active enrolment within reach (TUI-62). */
+export async function countActiveStudents(ctx: OrgCtx, reach: Reach) {
+  const row = await ctx.db
+    .select({ n: sql<number>`count(distinct ${enrolments.studentId})` })
+    .from(enrolments)
+    .where(inOrg(ctx, enrolments, active, within(reach)))
+    .get();
+  return row?.n ?? 0;
+}

@@ -911,3 +911,8 @@ export async function familiesReached(ctx: OrgCtx, access: Access, ids: string[]
 export function allFamilies(ctx: OrgCtx): IdQuery {
   return repo.familiesWithin(ctx, {});
 }
+
+/** How many families the caller reaches, for the dashboard. */
+export function countFamiliesReached(ctx: OrgCtx, access: Access) {
+  return repo.countFamiliesWithin(ctx, reachOf(ctx, access));
+}

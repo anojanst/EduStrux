@@ -1,6 +1,11 @@
 import {
+  MAX_REPORT_DAYS,
+  addDays,
   basisFitsClass,
   discountRuleIssues,
+  localToUtc,
+  utcToLocal,
+  type MoneyReport,
   formatDate,
   formatMoney,
   localNow,
@@ -1024,4 +1029,153 @@ export async function deleteDiscountRule(ctx: OrgCtx, access: Access, id: string
   if (!before) throw notFound('Discount rule');
   discountWriter(access);
   await repo.softDeleteDiscountRule(ctx, before);
+}
+
+// ── Money reports (TUI-63) and the dashboard (TUI-62) ───────────────────────
+
+/** The days between two local dates. */
+const daysBetween = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
+/** What is owed today, by how long past its due date. */
+function agedDebt(rows: Awaited<ReturnType<typeof repo.owing>>, today: string, currency: string) {
+  const money = (amount: number) => ({ amount, currency });
+  const buckets = { notDue: 0, days1to30: 0, days31to60: 0, days61to90: 0, over90: 0 };
+  let invoices = 0;
+  for (const row of rows) {
+    const owed = row.total - row.paid;
+    if (owed <= 0) continue;
+    invoices++;
+    const late = row.dueDate && row.dueDate < today ? daysBetween(row.dueDate, today) : 0;
+    if (late === 0) buckets.notDue += owed;
+    else if (late <= 30) buckets.days1to30 += owed;
+    else if (late <= 60) buckets.days31to60 += owed;
+    else if (late <= 90) buckets.days61to90 += owed;
+    else buckets.over90 += owed;
+  }
+  const total = Object.values(buckets).reduce((a, b) => a + b, 0);
+  return {
+    asOf: today,
+    invoices,
+    total: money(total),
+    notDue: money(buckets.notDue),
+    days1to30: money(buckets.days1to30),
+    days31to60: money(buckets.days31to60),
+    days61to90: money(buckets.days61to90),
+    over90: money(buckets.over90),
+  };
+}
+
+/**
+ * Invoiced against received, by month; what is owed by age; and tax by rate, for the families the
+ * caller reaches: branch staff their branches' families, an accountant and the owner every one.
+ * One stage: the four reads go together.
+ */
+export async function moneyReport(
+  ctx: OrgCtx,
+  access: Access,
+  range: { from: string; to: string },
+): Promise<MoneyReport> {
+  if (range.to > addDays(range.from, MAX_REPORT_DAYS - 1)) {
+    throw validationFailed({ to: [`At most ${MAX_REPORT_DAYS} days from \`from\``] });
+  }
+  const org = await orgs.getOrg(ctx);
+  const reach = invoiceReach(ctx, access);
+  const from = localToUtc(range.from, '00:00', org.timezone);
+  const to = localToUtc(addDays(range.to, 1), '00:00', org.timezone);
+  const [issued, received, owed, tax] = await Promise.all([
+    repo.issuedBetween(ctx, from, to, reach),
+    repo.receivedBetween(
+      ctx,
+      { startDate: range.from, endDate: range.to },
+      paymentReach(ctx, access),
+    ),
+    repo.owing(ctx, reach),
+    repo.taxBetween(ctx, from, to, reach),
+  ]);
+  const money = (amount: number) => ({ amount, currency: org.currency });
+  const months = new Map<string, { invoiced: number; received: number }>();
+  const month = (key: string) => {
+    const entry = months.get(key) ?? { invoiced: 0, received: 0 };
+    months.set(key, entry);
+    return entry;
+  };
+  // Every month in the dates, so a month with nothing shows as 0.
+  const last = range.to.slice(0, 7);
+  for (let m = range.from.slice(0, 7); m <= last; m = addDays(`${m}-01`, 31).slice(0, 7)) month(m);
+  let invoiced = 0;
+  for (const row of issued) {
+    if (row.status === 'void' || !row.issuedAt) continue;
+    invoiced += row.total;
+    month(utcToLocal(row.issuedAt, org.timezone).date.slice(0, 7)).invoiced += row.total;
+  }
+  const byMethod = new Map<string, number>();
+  let receivedTotal = 0;
+  for (const row of received) {
+    receivedTotal += row.amount;
+    month(row.receivedOn.slice(0, 7)).received += row.amount;
+    byMethod.set(row.method, (byMethod.get(row.method) ?? 0) + row.amount);
+  }
+  return {
+    from: range.from,
+    to: range.to,
+    invoiced: money(invoiced),
+    received: money(receivedTotal),
+    byMonth: [...months]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([key, m]) => ({
+        month: key,
+        invoiced: money(m.invoiced),
+        received: money(m.received),
+      })),
+    receivedByMethod: [...byMethod].map(([method, amount]) => ({
+      method: method as MoneyReport['receivedByMethod'][number]['method'],
+      amount: money(amount),
+    })),
+    agedDebt: agedDebt(owed, localNow(org.timezone).date, org.currency),
+    tax: tax.map((row) => ({
+      taxRateId: row.taxRateId,
+      name: row.taxName,
+      rateBps: row.taxRateBps,
+      inclusive: row.taxInclusive,
+      taxable: money(row.subtotal),
+      tax: money(row.tax),
+    })),
+    taxTotal: money(tax.reduce((sum, row) => sum + row.tax, 0)),
+  };
+}
+
+/** The money on the dashboard: what is owed, what is overdue, and this month's payments. */
+export async function moneySummary(ctx: OrgCtx, access: Access) {
+  const org = await orgs.getOrg(ctx);
+  const today = localNow(org.timezone).date;
+  const reach = invoiceReach(ctx, access);
+  const [owed, received, drafts] = await Promise.all([
+    repo.owing(ctx, reach),
+    repo.receivedBetween(
+      ctx,
+      { startDate: `${today.slice(0, 7)}-01`, endDate: today },
+      paymentReach(ctx, access),
+    ),
+    repo.countDrafts(ctx, reach),
+  ]);
+  const money = (amount: number) => ({ amount, currency: org.currency });
+  let owing = 0;
+  let overdue = 0;
+  let overdueInvoices = 0;
+  for (const row of owed) {
+    const left = row.total - row.paid;
+    owing += left;
+    if (row.dueDate && row.dueDate < today && left > 0) {
+      overdue += left;
+      overdueInvoices++;
+    }
+  }
+  return {
+    owing: money(owing),
+    overdue: money(overdue),
+    overdueInvoices,
+    receivedThisMonth: money(received.reduce((sum, row) => sum + row.amount, 0)),
+    draftInvoices: drafts,
+  };
 }

@@ -642,3 +642,24 @@ export async function expireCredits(ctx: OrgCtx) {
   const { timezone } = await orgs.getOrg(ctx);
   return (await repo.expireCredits(ctx, localNow(timezone).date)).length;
 }
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/**
+ * What the dashboard shows of attendance, as far as the caller reaches: which of the lessons
+ * have marks, the students away today and the make-up credits waiting to be used. One stage.
+ */
+export async function dashboardAttendance(
+  ctx: OrgCtx,
+  access: Access,
+  lessons: Ids,
+  today: string,
+) {
+  const reach = noticeReach(ctx, access);
+  const [marked, away, credits] = await Promise.all([
+    repo.lessonsMarked(ctx, lessons),
+    repo.countAwayOn(ctx, today, reach),
+    repo.countCreditsAvailable(ctx, today, reach),
+  ]);
+  return { marked: new Set(marked.map((row) => row.sessionId)), away, credits };
+}

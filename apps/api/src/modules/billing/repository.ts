@@ -1134,3 +1134,112 @@ export async function softDeleteDiscountRule(ctx: OrgCtx, before: DiscountRuleRo
     { action: 'discount_rule.deleted', entityType: 'discount_rule', entityId: before.id, before },
   );
 }
+
+// ── Money reports (TUI-63) and the dashboard (TUI-62) ───────────────────────
+
+/** The invoices issued between two instants, within reach: what was invoiced, for a report. */
+export function issuedBetween(ctx: OrgCtx, from: string, to: string, reach: InvoiceReach) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      issuedAt: invoices.issuedAt,
+      status: invoices.status,
+      subtotal: invoices.subtotalAmount,
+      tax: invoices.taxAmount,
+      total: invoices.totalAmount,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        isNotNull(invoices.issuedAt),
+        sql`${invoices.issuedAt} >= ${from}`,
+        lt(invoices.issuedAt, to),
+        ...withinInvoiceReach(reach),
+      ),
+    );
+}
+
+/** The tax on the lines of those invoices, by rate. A void invoice's lines are left out. */
+export function taxBetween(ctx: OrgCtx, from: string, to: string, reach: InvoiceReach) {
+  const issued = idsFrom(
+    ctx,
+    invoices,
+    invoices.id,
+    isNotNull(invoices.issuedAt),
+    ne(invoices.status, 'void'),
+    sql`${invoices.issuedAt} >= ${from}`,
+    lt(invoices.issuedAt, to),
+    ...withinInvoiceReach(reach),
+  );
+  return ctx.db
+    .select({
+      taxRateId: invoiceLines.taxRateId,
+      taxName: invoiceLines.taxName,
+      taxRateBps: invoiceLines.taxRateBps,
+      taxInclusive: invoiceLines.taxInclusive,
+      subtotal: sum(invoiceLines.subtotalAmount).mapWith(Number),
+      tax: sum(invoiceLines.taxAmount).mapWith(Number),
+      lines: count(),
+    })
+    .from(invoiceLines)
+    .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, issued)))
+    .groupBy(
+      invoiceLines.taxRateId,
+      invoiceLines.taxName,
+      invoiceLines.taxRateBps,
+      invoiceLines.taxInclusive,
+    );
+}
+
+/** What is still owed: the issued and part-paid invoices within reach, with their families. */
+export function owing(ctx: OrgCtx, reach: InvoiceReach) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      familyId: invoices.familyId,
+      dueDate: invoices.dueDate,
+      total: invoices.totalAmount,
+      paid: invoices.paidAmount,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        inArray(invoices.status, ['issued', 'part_paid']),
+        ...withinInvoiceReach(reach),
+      ),
+    );
+}
+
+/** The payments received in the dates, both included, within reach. */
+export function receivedBetween(
+  ctx: OrgCtx,
+  range: { startDate: string; endDate: string },
+  reach: PaymentReach,
+) {
+  return ctx.db
+    .select({ receivedOn: payments.receivedOn, amount: payments.amount, method: payments.method })
+    .from(payments)
+    .where(
+      inOrg(
+        ctx,
+        payments,
+        sql`${payments.receivedOn} >= ${range.startDate}`,
+        sql`${payments.receivedOn} <= ${range.endDate}`,
+        withinPaymentReach(reach),
+      ),
+    );
+}
+
+/** How many drafts the caller's families have. */
+export async function countDrafts(ctx: OrgCtx, reach: InvoiceReach) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(invoices)
+    .where(inOrg(ctx, invoices, eq(invoices.status, 'draft'), ...withinInvoiceReach(reach)))
+    .get();
+  return row?.n ?? 0;
+}

@@ -30,7 +30,7 @@ import {
 import { byDateTime, decodeCursor, decodeDateTimeCursor, toPage } from '../../lib/pagination';
 import * as billing from '../billing/service';
 import * as branches from '../branches/service';
-import { closedFrom, termDates } from '../calendar/for-classes';
+import { closedFrom, termDates, termsRunningFrom } from '../calendar/for-classes';
 import * as calendar from '../calendar/service';
 import { lessonLengths } from '../curriculum/for-classes';
 import * as curriculum from '../curriculum/service';
@@ -906,4 +906,30 @@ function noticeFor(
   if (after.date !== before.date) return say('moved');
   if (after.startTime !== before.startTime) return say('retimed');
   return null;
+}
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/**
+ * What the dashboard shows of classes, as far as the caller reaches: how many classes are
+ * running, the lessons from 13 days ago to today, and those of them scheduled as a query, for
+ * their marks to be read beside them. One stage.
+ */
+export async function dashboardLessons(ctx: OrgCtx, access: Access, today: string) {
+  const reach = reachOf(ctx, access);
+  const range = { startDate: addDays(today, -13), endDate: today };
+  const [classes, lessons] = await Promise.all([
+    repo.countRunningClasses(ctx, reach, today, termsRunningFrom(ctx, today)),
+    repo.lessonsBetween(ctx, range, reach),
+  ]);
+  return { classes, lessons };
+}
+
+/** The scheduled lessons within reach from 13 days ago to today, as ids to filter by. */
+export function recentLessons(ctx: OrgCtx, access: Access, today: string): IdQuery {
+  return repo.scheduledBetween(
+    ctx,
+    { startDate: addDays(today, -13), endDate: today },
+    reachOf(ctx, access),
+  );
 }
