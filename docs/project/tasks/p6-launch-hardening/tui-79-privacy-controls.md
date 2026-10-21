@@ -1,13 +1,13 @@
 ---
 id: TUI-79
 title: 'Privacy controls: consents, retention, delete a family'
-status: todo
+status: done
 phase: P6
 module: platform
 priority: P0
 size: M
 endpoints: []
-branch:
+branch: task/tui-43-82-remaining-mvp-api
 pr:
 ---
 
@@ -47,3 +47,5 @@ Options. 2 is decided for session generation (D-045) and 1 on 2026-10-14 (D-113)
 
 Avoid a separate D1 database for the audit log: a change and its audit row are written in one
 D1 batch, and a batch can't span two databases.
+
+Decisions: D-155 (built on `task/tui-43-82-remaining-mvp-api`; recorded as an assumption until the owner confirms it).
