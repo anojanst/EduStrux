@@ -316,3 +316,19 @@ export async function changeEnrolment(
     inserted: added ? (rest[0] as EnrolmentRow[])[0] : undefined,
   };
 }
+
+/**
+ * The enrolments in these classes, active or withdrawn, each with its student, its class and the
+ * dates it covers, for working out who is in two lessons at once (TUI-50).
+ */
+export function spansIn(ctx: OrgCtx, classIds: Ids) {
+  return ctx.db
+    .select({
+      studentId: enrolments.studentId,
+      classId: enrolments.classId,
+      startDate: enrolments.startDate,
+      endDate: enrolments.endDate,
+    })
+    .from(enrolments)
+    .where(inOrg(ctx, enrolments, inIds(enrolments.classId, classIds)));
+}

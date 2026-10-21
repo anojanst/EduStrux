@@ -89,3 +89,22 @@ accountants get 403.
 
 Known limit: the change reads in two stages before its write (four with sign-in), one over the
 D-102 budget, because the class and its lessons are known only once the enrolment is read.
+
+## TUI-50 Clash detection
+
+**Q-11 · A report to ask for, or a check on every save?**
+Options: (a) `GET /timetable/clashes?from&to` that lists clashing pairs; (b) also warn, or refuse,
+when a schedule, a session move or an enrolment would make one.
+**Built: (a)** only. Nothing is refused: clashes are sometimes intended (two groups sharing a big
+room). The web app can call it after a save. Warnings on save can come with the calendar UI.
+
+**Q-12 · What counts as a clash.** Built, for two scheduled lessons on one date whose times
+overlap (touching end to start isn't): the same room; the same teacher; a student whose
+enrolments cover that date in both classes (withdrawn ones up to their last day); and a **grade**
+clash, two different courses of one grade level at once (two groups of the same course aren't).
+Cancelled lessons are ignored.
+
+**Q-13 · Limits and who.** Built: at most 92 days per request (400 beyond), not paged. Uses
+`classes:read` and the class reach: branch staff see their branches' lessons only (so a teacher
+shared with another branch shows no clash to them), a teacher their own classes. A parent gets
+403, as for an accountant.

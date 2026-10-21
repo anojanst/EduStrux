@@ -499,6 +499,11 @@ export function studentsOnRollOf(ctx: OrgCtx, classIds: Ids): IdQuery {
   return repo.rollStudents(ctx, classIds);
 }
 
+/** The enrolments in these classes, active or withdrawn, each with the dates it covers. */
+export function spansIn(ctx: OrgCtx, classIds: Ids) {
+  return repo.spansIn(ctx, classIds);
+}
+
 /** The classes any of these students holds an active enrolment in. */
 export function classesOfStudents(ctx: OrgCtx, studentIds: Ids): IdQuery {
   return repo.activeClasses(ctx, studentIds);

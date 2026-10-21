@@ -1,5 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  CLASH_RANGE_DAYS,
+  Clash,
+  ClashQuery,
   Class,
   ClassQuery,
   CreateClass,
@@ -161,7 +164,28 @@ const getSessionRoute = createRoute({
   },
 });
 
+const clashesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/timetable/clashes',
+  tags: ['Classes'],
+  summary: 'Find clashing lessons',
+  description:
+    'Pairs of scheduled lessons that overlap on a date: in one room, with one teacher, with a ' +
+    'student enrolled in both on that date, or two courses of one grade level at once. Only the ' +
+    'lessons the caller reaches are checked: branch staff their branches’, a teacher their own ' +
+    `classes’. At most ${CLASH_RANGE_DAYS} days at a time (400). Not paged. A parent gets 403.`,
+  middleware: orgAccess('classes:read'),
+  request: { params: OrgParams, query: ClashQuery },
+  responses: {
+    200: json(z.object({ data: z.array(Clash) }).openapi('ClashList'), 'The clashes found'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
 export const classRoutes = createRouter()
+  .openapi(clashesRoute, async (c) => {
+    return c.json({ data: await service.clashes(orgCtx(c), access(c), c.req.valid('query')) }, 200);
+  })
   .openapi(listClassesRoute, async (c) => {
     const { limit, cursor, ...filter } = c.req.valid('query');
     return c.json(await service.listClasses(orgCtx(c), access(c), limit, cursor, filter), 200);

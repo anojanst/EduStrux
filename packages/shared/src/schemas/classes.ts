@@ -216,3 +216,57 @@ export const SessionQuery = PageQuery.extend({
     !LocalDate.safeParse(q.from).success || !LocalDate.safeParse(q.to).success || q.to >= q.from,
   { message: 'Must be on or after from', path: ['to'] },
 );
+
+// ── Clashes (TUI-50) ────────────────────────────────────────────────────────
+
+export const CLASH_KINDS = ['room', 'teacher', 'student', 'grade'] as const;
+export type ClashKind = (typeof CLASH_KINDS)[number];
+
+/** At most this many days, both ends included, in one clash check. */
+export const CLASH_RANGE_DAYS = 92;
+
+export const ClashQuery = z
+  .object({
+    from: LocalDate.openapi({ description: 'The first date to check', example: '2026-10-12' }),
+    to: LocalDate.openapi({
+      description: `The last date to check, at most ${CLASH_RANGE_DAYS} days on from \`from\``,
+      example: '2026-12-20',
+    }),
+    branchId: z.string().optional().openapi({ description: 'Only this branch’s classes' }),
+  })
+  .refine(
+    (q) =>
+      !LocalDate.safeParse(q.from).success || !LocalDate.safeParse(q.to).success || q.to >= q.from,
+    { message: 'Must be on or after from', path: ['to'] },
+  );
+
+const ClashSession = z
+  .object({
+    id: z.string(),
+    classId: z.string(),
+    className: z.string(),
+    branchId: z.string(),
+    startTime: LocalTime,
+    endTime: LocalTime,
+  })
+  .openapi('ClashSession');
+
+export const Clash = z
+  .object({
+    kind: z.enum(CLASH_KINDS).openapi({
+      description:
+        '`room`: one room, two lessons. `teacher`: one teacher, two lessons. `student`: a ' +
+        'student enrolled in both on that date. `grade`: two courses of the same grade level ' +
+        'at once, so a student of that grade can’t take both.',
+    }),
+    date: LocalDate,
+    sessions: z.array(ClashSession).length(2),
+    roomId: z.string().nullable(),
+    teacherId: z.string().nullable(),
+    gradeLevelId: z.string().nullable(),
+    studentId: z.string().nullable(),
+    studentFirstName: z.string().nullable(),
+    studentLastName: z.string().nullable(),
+  })
+  .openapi('Clash');
+export type Clash = z.infer<typeof Clash>;

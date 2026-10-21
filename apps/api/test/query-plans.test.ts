@@ -1493,3 +1493,19 @@ describe('changing an enrolment reads it and its invoice lines by id (TUI-46)', 
     expect(roll).toMatch(searchBy('enrolments', 'class_id'));
   });
 });
+
+describe('a clash check reads the dates’ sessions by date (TUI-50)', () => {
+  const range = { startDate: '2026-10-12', endDate: '2026-12-20' };
+  it('goes to the sessions in the dates through the date index', async () => {
+    const plan = await planOf((ctx) => classes.sessionsToCheck(ctx, range, undefined, {}));
+    expect(plan).toMatch(searchIn('sessions', 'sessions_org_date_idx'));
+  });
+
+  it('reads the enrolments of those sessions’ classes by class', async () => {
+    const plan = await planOf((ctx) =>
+      enrolment.spansIn(ctx, classes.classesToCheck(ctx, range, undefined, {})),
+    );
+    expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+    expect(plan).toMatch(searchIn('sessions', 'sessions_org_date_idx'));
+  });
+});

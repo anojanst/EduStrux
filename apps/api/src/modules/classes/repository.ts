@@ -625,3 +625,66 @@ export function removeSessionsClosedBy(
     .set({ deletedAt: now() })
     .where(closedBy(ctx, holiday, from));
 }
+
+// ── Clashes (TUI-50) ────────────────────────────────────────────────────────
+
+/** What finds the scheduled sessions in the dates, within reach: the clash check reads them. */
+const clashConditions = (
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+) => ({
+  ofSession: [
+    eq(sessions.status, 'scheduled'),
+    gte(sessions.date, range.startDate),
+    lte(sessions.date, range.endDate),
+    sessionReach(ctx, reach),
+  ],
+  ofClass: [branchId ? eq(classes.branchId, branchId) : undefined, within(reach)],
+});
+
+/** The scheduled sessions in the dates within reach, each with its class's name, course and grade. */
+export function sessionsToCheck(
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+) {
+  const { ofSession, ofClass } = clashConditions(ctx, range, branchId, reach);
+  return ctx.db
+    .select({
+      id: sessions.id,
+      classId: sessions.classId,
+      roomId: sessions.roomId,
+      teacherMembershipId: sessions.teacherMembershipId,
+      date: sessions.date,
+      startTime: sessions.startTime,
+      endTime: sessions.endTime,
+      className: classes.name,
+      courseId: classes.courseId,
+      branchId: classes.branchId,
+      gradeLevelId: classes.gradeLevelId,
+    })
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(and(inOrg(ctx, sessions, ...ofSession), inOrg(ctx, classes, ...ofClass)))
+    .orderBy(asc(sessions.date), asc(sessions.startTime), asc(sessions.id));
+}
+
+/** The classes of those sessions, as ids: their enrolments are read by them in the same stage. */
+export function classesToCheck(
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+): IdQuery {
+  const { ofSession, ofClass } = clashConditions(ctx, range, branchId, reach);
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    ...ofClass,
+    inIds(classes.id, idsFrom(ctx, sessions, sessions.classId, ...ofSession)),
+  );
+}

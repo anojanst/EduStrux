@@ -1,6 +1,8 @@
 import {
+  CLASH_RANGE_DAYS,
   OPEN_ENDED_HORIZON_DAYS,
   addDays,
+  type Clash,
   localNow,
   localToUtc,
   newId,
@@ -627,4 +629,97 @@ export async function getSession(ctx: OrgCtx, access: Access, id: string): Promi
   if (!row) throw notFound('Session');
   const { timezone } = await orgClock(ctx);
   return toSession(row, timezone);
+}
+
+// ── Clashes (TUI-50) ────────────────────────────────────────────────────────
+
+type Checked = Awaited<ReturnType<typeof repo.sessionsToCheck>>[number];
+
+const overlap = (a: Checked, b: Checked) => a.startTime < b.endTime && b.startTime < a.endTime;
+
+/**
+ * Lessons that clash in the dates, among the scheduled sessions the caller reaches: two in one
+ * room, two with one teacher, a student enrolled in two on that date, or two courses of one grade
+ * level at once (TUI-50). By date, then the first lesson's start time. One stage: the sessions,
+ * the enrolments in their classes and those students' names are read together. A parent gets
+ * 403: it is a planning tool for staff.
+ */
+export async function clashes(
+  ctx: OrgCtx,
+  access: Access,
+  query: { from: string; to: string; branchId?: string },
+): Promise<Clash[]> {
+  if (access.role === 'parent') throw forbidden();
+  if (query.to > addDays(query.from, CLASH_RANGE_DAYS - 1)) {
+    throw validationFailed({ to: [`At most ${CLASH_RANGE_DAYS} days from \`from\``] });
+  }
+  const reach = reachOf(ctx, access);
+  const range = { startDate: query.from, endDate: query.to };
+  const classIds = repo.classesToCheck(ctx, range, query.branchId, reach);
+  const [branch, rows, spans, names] = await Promise.all([
+    hold(query.branchId ? branches.getBranch(ctx, query.branchId) : null),
+    repo.sessionsToCheck(ctx, range, query.branchId, reach),
+    enrolment.spansIn(ctx, classIds),
+    people.studentNames(ctx, enrolment.studentsOnRollOf(ctx, classIds)),
+  ]);
+  take(branch);
+
+  const found: Clash[] = [];
+  const add = (kind: Clash['kind'], a: Checked, b: Checked, extra: Partial<Clash> = {}) =>
+    found.push({
+      kind,
+      date: a.date,
+      sessions: [a, b].map((s) => ({
+        id: s.id,
+        classId: s.classId,
+        className: s.className,
+        branchId: s.branchId,
+        startTime: s.startTime,
+        endTime: s.endTime,
+      })),
+      roomId: null,
+      teacherId: null,
+      gradeLevelId: null,
+      studentId: null,
+      studentFirstName: null,
+      studentLastName: null,
+      ...extra,
+    });
+  const covers = (span: (typeof spans)[number], date: string) =>
+    span.startDate <= date && (span.endDate === null || span.endDate >= date);
+
+  const byDate = new Map<string, Checked[]>();
+  for (const row of rows) byDate.set(row.date, [...(byDate.get(row.date) ?? []), row]);
+  for (const [date, day] of byDate) {
+    for (let i = 0; i < day.length; i++) {
+      for (let j = i + 1; j < day.length; j++) {
+        const a = day[i]!;
+        const b = day[j]!;
+        if (!overlap(a, b)) continue;
+        if (a.roomId && a.roomId === b.roomId) add('room', a, b, { roomId: a.roomId });
+        if (a.teacherMembershipId && a.teacherMembershipId === b.teacherMembershipId) {
+          add('teacher', a, b, { teacherId: a.teacherMembershipId });
+        }
+        if (a.gradeLevelId && a.gradeLevelId === b.gradeLevelId && a.courseId !== b.courseId) {
+          add('grade', a, b, { gradeLevelId: a.gradeLevelId });
+        }
+        if (a.classId === b.classId) continue;
+        const inA = new Set(
+          spans.filter((s) => s.classId === a.classId && covers(s, date)).map((s) => s.studentId),
+        );
+        const both = spans.filter(
+          (s) => s.classId === b.classId && covers(s, date) && inA.has(s.studentId),
+        );
+        for (const studentId of new Set(both.map((s) => s.studentId))) {
+          const name = names.get(studentId);
+          add('student', a, b, {
+            studentId,
+            studentFirstName: name?.firstName ?? null,
+            studentLastName: name?.lastName ?? null,
+          });
+        }
+      }
+    }
+  }
+  return found;
 }
