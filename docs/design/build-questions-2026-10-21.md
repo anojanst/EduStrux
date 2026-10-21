@@ -340,3 +340,13 @@ job that adds everything in one batch with one `import.committed` audit row, or 
 Records already in the org are **not** matched: an import adds new families even when a name
 is on record. Run the duplicate check (TUI-43) or search first. Branch staff can only import
 into their own branches. An import is seen by whoever started it and the owner.
+
+## TUI-78 Full data export
+
+**Q-45 · Format and who.** Built: `POST /exports` (owner only) runs a job that writes **one JSON
+file** with every org table (`{ format, version, exportedAt, org, tables: { name: rows } }`,
+deleted rows included, as a backup holds them; internal columns such as normalised names, IP
+hashes, token hashes and R2 keys left out; members' names and emails from `users`). The file is
+kept a week; `GET /exports/{id}` gives a 5-minute download link once done. Per-table CSVs in a
+zip would need a zip library: say if you want CSV. The export reads every module's tables
+directly (a documented exception to "a repository reads only its own module's tables").

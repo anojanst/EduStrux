@@ -1,4 +1,4 @@
-import { auditLog, files, imports, jobs, type Db } from '@edustrux/db';
+import { auditLog, exports, files, imports, jobs, type Db } from '@edustrux/db';
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
@@ -149,4 +149,109 @@ export async function updateImport(
     )
     .returning();
   return rows[0];
+}
+
+// ── Exports (TUI-78) ────────────────────────────────────────────────────────
+
+export type ExportRow = typeof exports.$inferSelect;
+
+/**
+ * Every table an export holds, with the columns left out. This is the one reader of other
+ * modules' tables: an export is a copy of everything, and it only reads, by the org.
+ */
+export const EXPORTED_TABLES: Record<string, string[]> = {
+  branches: [],
+  rooms: [],
+  tax_rates: [],
+  academic_years: [],
+  terms: [],
+  holidays: [],
+  grade_levels: [],
+  subjects: [],
+  courses: [],
+  classes: [],
+  class_schedules: [],
+  sessions: [],
+  families: [],
+  guardians: ['phone_norm'],
+  students: ['first_name_norm', 'last_name_norm'],
+  student_grades: [],
+  enrolments: [],
+  enquiries: ['ip_hash'],
+  enrolment_requests: ['ip_hash'],
+  attendance: [],
+  absence_notices: [],
+  makeup_policies: [],
+  makeup_credits: [],
+  makeup_bookings: [],
+  lesson_homework: [],
+  lesson_notes: [],
+  price_rules: [],
+  discount_rules: [],
+  invoices: [],
+  invoice_lines: [],
+  payments: [],
+  payment_allocations: [],
+  messages: [],
+  message_recipients: [],
+  message_templates: [],
+  notification_settings: [],
+  memberships: [],
+  invitations: ['token_hash'],
+  files: ['r2_key'],
+  imports: [],
+  audit_log: [],
+};
+
+/** One page of a table's rows for the org, in id order: deleted ones too, as a backup holds. */
+export async function exportPage(
+  ctx: OrgCtx,
+  table: keyof typeof EXPORTED_TABLES,
+  afterId: string,
+  limit: number,
+) {
+  if (!(table in EXPORTED_TABLES)) throw new Error(`Not an exported table: ${table}`);
+  const rows = await ctx.db.all<Record<string, unknown>>(
+    sql`select * from ${sql.identifier(table)} where org_id = ${ctx.orgId} and id > ${afterId} order by id limit ${limit}`,
+  );
+  const leftOut = EXPORTED_TABLES[table] ?? [];
+  return rows.map((row) => {
+    const { org_id: _org, ...rest } = row;
+    for (const column of leftOut) delete rest[column];
+    return rest;
+  });
+}
+
+/** The names and emails of the org's members, for the export. */
+export function memberUsers(ctx: OrgCtx) {
+  return ctx.db.all<Record<string, unknown>>(
+    sql`select u.id, u.name, u.email, u.created_at from users u where u.id in (select user_id from memberships where org_id = ${ctx.orgId})`,
+  );
+}
+
+export async function insertExport(ctx: OrgCtx, row: typeof exports.$inferInsert & { id: string }) {
+  await writeWithAudit(ctx, [ctx.db.insert(exports).values(row)], {
+    action: 'export.started',
+    entityType: 'export',
+    entityId: row.id,
+  });
+}
+
+export function findExport(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(exports)
+    .where(inOrg(ctx, exports, eq(exports.id, id)))
+    .get();
+}
+
+export async function updateExport(
+  ctx: OrgCtx,
+  id: string,
+  change: Partial<typeof exports.$inferInsert>,
+) {
+  await ctx.db
+    .update(exports)
+    .set({ ...change, updatedAt: new Date().toISOString() })
+    .where(inOrg(ctx, exports, eq(exports.id, id)));
 }

@@ -14,6 +14,7 @@ export * from './schemas/comms';
 export * from './schemas/curriculum';
 export * from './schemas/discounts';
 export * from './schemas/enrolment';
+export * from './schemas/exports';
 export * from './schemas/files';
 export * from './schemas/imports';
 export * from './schemas/invoices';

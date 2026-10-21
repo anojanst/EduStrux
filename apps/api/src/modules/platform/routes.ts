@@ -3,6 +3,7 @@ import {
   AuditEntry,
   CreateImport,
   CreateUpload,
+  DataExport,
   Import,
   JobStarted,
   MapImport,
@@ -18,6 +19,7 @@ import { decodeCursor, toPage } from '../../lib/pagination';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as repo from './repository';
+import * as exportsService from './exports';
 import * as files from './files';
 import * as imports from './imports';
 import * as service from './service';
@@ -188,9 +190,52 @@ const commitImportRoute = createRoute({
   responses: { 202: json(JobStarted, 'The commit is running'), ...errors(401, 403, 404, 409, 422) },
 });
 
+const startExportRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/exports',
+  tags: ['Platform'],
+  summary: 'Export all the organisation’s data (job)',
+  description:
+    'Every table, as one JSON file, kept a week. Poll `GET /exports/{id}` for the download ' +
+    'link. Owner only.',
+  middleware: orgAccess('org:write'),
+  request: { params: OrgParams },
+  responses: {
+    202: json(
+      z.object({ id: z.string(), jobId: z.string() }).openapi('ExportStarted'),
+      'The export is running',
+    ),
+    ...errors(401, 403, 404),
+  },
+});
+
+const getExportRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/exports/{exportId}',
+  tags: ['Platform'],
+  summary: 'Get an export, with its download link once done',
+  middleware: orgAccess('org:write'),
+  request: {
+    params: OrgParams.extend({
+      exportId: z.string().openapi({ param: { name: 'exportId', in: 'path' } }),
+    }),
+  },
+  responses: { 200: json(DataExport, 'The export'), ...errors(401, 403, 404, 503) },
+});
+
 const originOf = (url: string) => new URL(url).origin;
 
 export const platformRoutes = createRouter()
+  .openapi(startExportRoute, async (c) => {
+    return c.json(await exportsService.startExport(orgCtx(c), c.env.JOBS_QUEUE), 202);
+  })
+  .openapi(getExportRoute, async (c) => {
+    const { exportId } = c.req.valid('param');
+    return c.json(
+      await exportsService.getExport(orgCtx(c), c.env, originOf(c.req.url), exportId),
+      200,
+    );
+  })
   .openapi(createImportRoute, async (c) => {
     return c.json(await imports.createImport(orgCtx(c), c.env, c.req.valid('json').fileId), 201);
   })

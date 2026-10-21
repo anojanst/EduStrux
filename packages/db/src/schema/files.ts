@@ -51,3 +51,20 @@ export const imports = sqliteTable(
   },
   (t) => [uniqueIndex('imports_org_id_uq').on(t.orgId, t.id)],
 );
+
+// A full export of an org's data (TUI-78), made by a job into a file.
+export const exports = sqliteTable(
+  'exports',
+  {
+    ...orgColumns(),
+    status: text('status', { enum: ['queued', 'running', 'done', 'failed'] })
+      .notNull()
+      .default('queued'),
+    jobId: text('job_id'),
+    fileId: text('file_id'),
+    // Rows per table, once made.
+    counts: text('counts', { mode: 'json' }).$type<Record<string, number>>(),
+    createdByUserId: text('created_by_user_id'),
+  },
+  (t) => [uniqueIndex('exports_org_id_uq').on(t.orgId, t.id)],
+);
