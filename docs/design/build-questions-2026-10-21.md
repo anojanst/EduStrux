@@ -365,6 +365,26 @@ debts don't all get a reminder at once. One `invoices.reminded` audit row per or
 **Q-47 · Credit expiry.** Built: credits past their last day expire at the org's local
 midnight (and again at 1am, in case a daylight-saving change skips midnight).
 
+## TUI-68 Daily cron
+
+**Q-48 · Open-ended classes.** Built: each day the cron does for every open-ended class still
+running what saving its schedule again does: sessions are kept generated 91 days ahead, with
+holidays and lessons moved by hand respected. One `class.sessions_extended` audit row when a
+class gets new sessions (about once a week per class), none when nothing changes.
+
+**Q-49 · Nightly backups.** Built: the cron starts one `exports.backup` job per org (no user, so
+only the owner can look it up). It writes the same JSON document as `POST /exports` to the
+existing `FILES` bucket at `backups/{orgId}/{local date}.json` and deletes the org's backups
+older than **14 nights**. These aren't `files` rows: the owner can't download them through the
+API (that is what `POST /exports` is for); they are there to restore one org, alongside D1's
+own Time Travel. Storage grows with org size × 14 in the existing bucket; say if you want a
+different retention. The cron also removes expired files (`cleanExpired`) and stale
+idempotency keys.
+
+**Q-50 · Cron limits.** Both crons loop over every org in one invocation (the backup itself
+runs in a queued job per org, so its CPU doesn't count against the cron). With many orgs the
+loops may need splitting into per-org queue messages; not needed at MVP size.
+
 ---
 
 ## Where the session stopped (usage limit)

@@ -467,6 +467,35 @@ export async function setSchedule(
   );
 }
 
+/**
+ * The org's open-ended classes still running on `today`, for the daily cron to extend their
+ * sessions (TUI-68).
+ */
+export function openEndedClasses(ctx: OrgCtx, today: string) {
+  return ctx.db
+    .select()
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        isNull(classes.termId),
+        sql`${classes.startDate} is not null`,
+        or(isNull(classes.endDate), gte(classes.endDate, today)),
+      ),
+    );
+}
+
+/** The daily cron's sessions for an open-ended class, in one batch with one audit row. */
+export async function extendSessions(ctx: OrgCtx, classId: string, plan: SessionPlan) {
+  await writeWithAudit(ctx, sessionStatements(ctx, plan), {
+    action: 'class.sessions_extended',
+    entityType: 'class',
+    entityId: classId,
+    after: { sessionsAdded: plan.add.length, sessionsRemoved: plan.removeIds.length },
+  });
+}
+
 // ── Sessions ────────────────────────────────────────────────────────────────
 
 /** Removals first: a replaced session frees its (class, date, start time) for the new one. */

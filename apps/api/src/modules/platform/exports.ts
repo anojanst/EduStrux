@@ -1,4 +1,4 @@
-import { newId, type DataExport } from '@edustrux/shared';
+import { addDays, newId, type DataExport } from '@edustrux/shared';
 import type { JobContext } from '../../background/jobs';
 import type { JobMessage } from '../../background/messages';
 import type { OrgCtx } from '../../db/scope';
@@ -105,4 +105,44 @@ export async function getExport(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+// ── Nightly backups (TUI-68) ────────────────────────────────────────────────
+
+/** The job type of a nightly backup. */
+export const BACKUP = 'exports.backup';
+
+/** The nights of backups kept for each org. */
+export const BACKUP_KEEP_DAYS = 14;
+
+const backupPrefix = (orgId: string) => `backups/${orgId}/`;
+
+/** Starts tonight's backup of the org, for the daily cron. */
+export function startBackup(ctx: OrgCtx, queue: Queue<JobMessage>, date: string) {
+  return startJob(ctx, queue, BACKUP, { date });
+}
+
+/**
+ * Writes the org's export document to R2 as `backups/{orgId}/{date}.json`, then removes the
+ * org's backups older than BACKUP_KEEP_DAYS. These aren't files the owner downloads (that is
+ * `POST /exports`): they are there to restore one org from. Running it twice for a date writes
+ * the same key again.
+ */
+export async function makeBackup(ctx: JobContext) {
+  const { date } = ctx.input as { date: string };
+  const { json, counts } = await exportDocument(ctx);
+  await ctx.setProgress(80);
+  const prefix = backupPrefix(ctx.orgId);
+  const key = `${prefix}${date}.json`;
+  await ctx.env.FILES.put(key, json, { httpMetadata: { contentType: 'application/json' } });
+  const oldest = `${prefix}${addDays(date, -(BACKUP_KEEP_DAYS - 1))}.json`;
+  const old: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const listed = await ctx.env.FILES.list({ prefix, cursor });
+    old.push(...listed.objects.map((o) => o.key).filter((k) => k < oldest));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+  if (old.length > 0) await ctx.env.FILES.delete(old);
+  return { key, counts, removed: old.length };
 }

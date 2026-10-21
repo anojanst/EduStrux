@@ -135,9 +135,9 @@ function reachOf(ctx: OrgCtx, access: Access): repo.Reach {
 }
 
 /** The org's timezone and the local date and time there right now. No trip in a request. */
-async function orgClock(ctx: OrgCtx): Promise<{ now: LocalMoment; timezone: string }> {
+async function orgClock(ctx: OrgCtx, at?: Date): Promise<{ now: LocalMoment; timezone: string }> {
   const { timezone } = await orgs.getOrg(ctx);
-  const { date, time } = localNow(timezone);
+  const { date, time } = localNow(timezone, at);
   return { now: { date, time }, timezone };
 }
 
@@ -597,6 +597,32 @@ export async function setSchedule(
     class: toClass(klass, slotsChanged ? slots : before),
     sessions: { added: plan.add.length, removed: plan.removeIds.length, kept, through },
   };
+}
+
+/**
+ * Keeps the org's open-ended classes generated OPEN_ENDED_HORIZON_DAYS ahead, for the daily cron
+ * (TUI-68): what saving each one's schedule again does, without touching the slots. A class with
+ * nothing to add or remove writes nothing. Returns the sessions added.
+ */
+export async function extendOpenEnded(ctx: OrgCtx, at?: Date) {
+  const { now } = await orgClock(ctx, at);
+  const open = await repo.openEndedClasses(ctx, now.date);
+  if (open.length === 0) return 0;
+  const slots = await repo.listSlots(
+    ctx,
+    open.map((klass) => klass.id),
+  );
+  let added = 0;
+  for (const klass of open) {
+    const mine = slots.filter((slot) => slot.classId === klass.id).map(toSlot);
+    if (mine.length === 0) continue;
+    const generation = await readGeneration(ctx, klass.id, now);
+    const { plan } = planSessions(ctx, klass, mine, now, generation);
+    if (plan.add.length === 0 && plan.removeIds.length === 0) continue;
+    await repo.extendSessions(ctx, klass.id, plan);
+    added += plan.add.length;
+  }
+  return added;
 }
 
 /**
