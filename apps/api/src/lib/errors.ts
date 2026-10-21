@@ -38,3 +38,6 @@ export const validationFailed = (fields: FieldErrors) =>
 
 export const unprocessable = (message: string, fields?: FieldErrors) =>
   new ApiError(422, 'unprocessable', message, fields);
+
+/** A service the request needs isn't set up, or isn't answering: PDFs without Browser Rendering. */
+export const unavailable = (message: string) => new ApiError(503, 'unavailable', message);

@@ -247,3 +247,23 @@ Alternative not built: tax on payments received (cash basis), which needs tax pe
 
 **Q-32 · Export.** The accountant's "read + export" isn't a CSV of this report yet; the full
 data export (TUI-78) carries the raw invoices and payments.
+
+## TUI-59 Invoice PDF and payment receipts
+
+**Q-33 · How PDFs are made without an infra change.** D-025 chose Cloudflare Browser Rendering.
+Its Worker binding would be a wrangler/infra change, so it wasn't added. Built instead: the API
+renders the printable HTML itself (English catalog, the org's locale and date format, brand
+colour, tax number; nothing org-written trusted as HTML) and posts it to Browser Rendering's
+**REST API**, which needs no binding. The owner must set two secrets before PDFs work:
+`BROWSER_RENDERING_ACCOUNT_ID` and `BROWSER_RENDERING_TOKEN` (an API token with Browser
+Rendering: Edit). Until then a PDF is **503** `unavailable` (a new error code), and
+`?format=html` gives the printable page, which a browser can print to PDF. Browser time may be
+billed on the account's plan (owner's call, D-065).
+
+**Q-34 · Invoice numbers.** Invoices have no sequential number. Built: the paper shows a short
+reference, the last 8 characters of the invoice id in capitals (the same for receipts). A
+sequential, per-org invoice number (some tax authorities require one) would need a counter and a
+migration: say if you want it.
+
+**Q-35 · Not built here.** Batch PDF jobs (all invoices of a run as one file), and attaching the
+PDF to the invoice email: the email links to nothing yet and carries the amounts in its text.

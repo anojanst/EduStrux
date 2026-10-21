@@ -20,6 +20,8 @@ export default defineConfig(async () => ({
           // Never send real email from tests, even when .dev.vars has a key for local work.
           RESEND_API_KEY: '',
           EMAIL_FROM: '',
+          BROWSER_RENDERING_ACCOUNT_ID: '',
+          BROWSER_RENDERING_TOKEN: '',
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),

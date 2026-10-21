@@ -1179,3 +1179,19 @@ export async function moneySummary(ctx: OrgCtx, access: Access) {
     draftInvoices: drafts,
   };
 }
+
+// ── PDFs (TUI-59) ───────────────────────────────────────────────────────────
+
+/** One payment within reach, as the list shows it. One stage. */
+export async function getPayment(ctx: OrgCtx, access: Access, id: string): Promise<Payment> {
+  const reach = paymentReach(ctx, access);
+  const [row, allocations, families] = await Promise.all([
+    repo.findPayment(ctx, id, reach),
+    repo.listAllocations(ctx, repo.paymentWithin(ctx, id, reach)),
+    people.familyLabels(ctx, repo.familyOfPayment(ctx, id, reach)),
+  ]);
+  if (!row) throw notFound('Payment');
+  const family = families.get(row.familyId);
+  if (!family) throw notFound('Payment');
+  return toPayment(row, family, allocations);
+}

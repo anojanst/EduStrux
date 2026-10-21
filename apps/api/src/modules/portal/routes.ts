@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi';
+import { createRoute, z } from '@hono/zod-openapi';
 import {
   AbsenceNotice,
   CreateAbsenceNotice,
@@ -15,7 +15,11 @@ import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { roleAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
+import { invoiceHtml, invoiceReference } from '../../pdf/documents';
+import { DocumentQuery, documentResponse, sendDocument } from '../../pdf/respond';
+import * as billing from '../billing/service';
 import * as comms from '../comms/service';
+import * as orgs from '../orgs/service';
 import * as service from './service';
 
 // The parent portal: a signed-in parent's view of their own family (D-126). Every route is for
@@ -106,7 +110,37 @@ const listMessagesRoute = createRoute({
   },
 });
 
+const invoicePdfRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/portal/invoices/{invoiceId}/pdf',
+  tags: ['Parent portal'],
+  summary: 'One of my invoices as a PDF',
+  description:
+    'An issued invoice of one of your families (a draft or another family’s is 404). ' +
+    '`?format=html` gives the printable page. 503 while PDFs aren’t set up.',
+  middleware: roleAccess('parent', 'billing:read'),
+  request: {
+    params: OrgParams.extend({
+      invoiceId: z.string().openapi({ param: { name: 'invoiceId', in: 'path' } }),
+    }),
+    query: DocumentQuery,
+  },
+  responses: {
+    200: documentResponse('The invoice'),
+    ...errors(400, 401, 403, 404, 503),
+  },
+});
+
 export const portalRoutes = createRouter()
+  .openapi(invoicePdfRoute, async (c) => {
+    const { invoiceId } = c.req.valid('param');
+    const [invoice, org] = await Promise.all([
+      billing.getInvoice(orgCtx(c), access(c), invoiceId),
+      orgs.getOrg(orgCtx(c)),
+    ]);
+    const name = `invoice-${invoiceReference(invoice.id)}`;
+    return sendDocument(c, invoiceHtml(org, invoice), name, c.req.valid('query').format);
+  })
   .openapi(listMessagesRoute, async (c) => {
     const { limit, cursor } = c.req.valid('query');
     return c.json(

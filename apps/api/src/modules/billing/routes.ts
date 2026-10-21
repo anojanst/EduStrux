@@ -29,6 +29,9 @@ import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { byOrg, idempotent } from '../../middleware/idempotency';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
+import { invoiceHtml, invoiceReference, receiptHtml } from '../../pdf/documents';
+import { DocumentQuery, documentResponse, sendDocument } from '../../pdf/respond';
+import * as orgs from '../orgs/service';
 import { startInvoiceRun } from './generation';
 import * as service from './service';
 
@@ -262,6 +265,22 @@ const getInvoiceRoute = createRoute({
   },
 });
 
+const invoicePdfRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/invoices/{invoiceId}/pdf',
+  tags: ['Billing'],
+  summary: 'An invoice as a PDF',
+  description:
+    'Made from the printable page (`?format=html`) by Cloudflare Browser Rendering (D-025). ' +
+    'A draft or void invoice says so across the top. 503 while Browser Rendering isn’t set up.',
+  middleware: orgAccess('billing:read'),
+  request: { params: InvoiceParams, query: DocumentQuery },
+  responses: {
+    200: documentResponse('The invoice'),
+    ...errors(400, 401, 403, 404, 503),
+  },
+});
+
 const updateInvoiceRoute = createRoute({
   method: 'patch',
   path: '/api/v1/orgs/{orgId}/invoices/{invoiceId}',
@@ -444,6 +463,22 @@ const deleteDiscountRuleRoute = createRoute({
   },
 });
 
+const receiptRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/payments/{paymentId}/receipt',
+  tags: ['Billing'],
+  summary: 'A payment’s receipt as a PDF',
+  description:
+    'What was received, how, and which invoices it paid towards. `?format=html` gives the ' +
+    'printable page. 503 while Browser Rendering isn’t set up.',
+  middleware: orgAccess('billing:read'),
+  request: { params: PaymentParams, query: DocumentQuery },
+  responses: {
+    200: documentResponse('The receipt'),
+    ...errors(400, 401, 403, 404, 503),
+  },
+});
+
 const router = createRouter();
 // A run's result comes back on its job, so no route returns it. Registered so the docs show it.
 router.openAPIRegistry.register('InvoiceRunResult', InvoiceRunResult);
@@ -559,4 +594,22 @@ export const billingRoutes = router
   .openapi(deleteDiscountRuleRoute, async (c) => {
     await service.deleteDiscountRule(orgCtx(c), access(c), c.req.valid('param').discountRuleId);
     return c.body(null, 204);
+  })
+  .openapi(invoicePdfRoute, async (c) => {
+    const { invoiceId } = c.req.valid('param');
+    const [invoice, org] = await Promise.all([
+      service.getInvoice(orgCtx(c), access(c), invoiceId),
+      orgs.getOrg(orgCtx(c)),
+    ]);
+    const name = `invoice-${invoiceReference(invoice.id)}`;
+    return sendDocument(c, invoiceHtml(org, invoice), name, c.req.valid('query').format);
+  })
+  .openapi(receiptRoute, async (c) => {
+    const { paymentId } = c.req.valid('param');
+    const [payment, org] = await Promise.all([
+      service.getPayment(orgCtx(c), access(c), paymentId),
+      orgs.getOrg(orgCtx(c)),
+    ]);
+    const name = `receipt-${invoiceReference(payment.id)}`;
+    return sendDocument(c, receiptHtml(org, payment), name, c.req.valid('query').format);
   });

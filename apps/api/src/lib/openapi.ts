@@ -50,6 +50,7 @@ const ERROR_DESCRIPTIONS = {
   409: 'Conflict, stale `updatedAt`, or a request with this Idempotency-Key still in progress',
   422: 'Business rule failed, or an Idempotency-Key was reused with a different request',
   429: 'Rate limited. See Retry-After.',
+  503: 'A service this needs isn’t set up or isn’t answering. Try again later.',
 } as const;
 
 export function errors(...codes: (keyof typeof ERROR_DESCRIPTIONS)[]) {

@@ -1243,3 +1243,8 @@ export async function countDrafts(ctx: OrgCtx, reach: InvoiceReach) {
     .get();
   return row?.n ?? 0;
 }
+
+/** The family of one payment within reach, as a query: its label is read beside the payment. */
+export function familyOfPayment(ctx: OrgCtx, id: string, reach: PaymentReach): IdQuery {
+  return idsFrom(ctx, payments, payments.familyId, eq(payments.id, id), withinPaymentReach(reach));
+}

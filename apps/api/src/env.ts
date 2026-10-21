@@ -18,6 +18,13 @@ export type Bindings = {
   EMAIL_FROM?: string;
   /** The web app's address, for links in emails. Without it, emails carry codes, not links. */
   APP_URL?: string;
+  /**
+   * Cloudflare Browser Rendering's REST API, which turns invoice and receipt HTML into PDFs
+   * (D-025): the account id, and an API token with Browser Rendering: Edit. Secrets the owner
+   * sets. Without them a PDF is 503, and `?format=html` still gives the printable page.
+   */
+  BROWSER_RENDERING_ACCOUNT_ID?: string;
+  BROWSER_RENDERING_TOKEN?: string;
 };
 
 export type AuthUser = {
