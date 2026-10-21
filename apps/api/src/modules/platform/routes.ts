@@ -1,11 +1,20 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { AuditEntry, Job, PageQuery, page } from '@edustrux/shared';
+import {
+  AuditEntry,
+  CreateUpload,
+  FileWithLink,
+  Job,
+  PageQuery,
+  UploadLink,
+  page,
+} from '@edustrux/shared';
 import { orgCtx } from '../../db/scope';
-import { createRouter, errors, json } from '../../lib/openapi';
+import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as repo from './repository';
+import * as files from './files';
 import * as service from './service';
 
 const healthRoute = createRoute({
@@ -48,7 +57,122 @@ const auditLogRoute = createRoute({
   },
 });
 
+const FileParams = OrgParams.extend({
+  fileId: z.string().openapi({ param: { name: 'fileId', in: 'path' } }),
+});
+const SignedQuery = z.object({ expires: z.string().optional(), sig: z.string().optional() });
+
+const uploadUrlRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/files/upload-url',
+  tags: ['Platform'],
+  summary: 'Get a link to upload a file',
+  description:
+    'Makes the file’s record and a link to `PUT` its bytes to, good for 15 minutes. CSV, PDF, ' +
+    'PNG or JPEG, at most 10 MB and no more than `size`. A file for an import is removed after ' +
+    'a week. Teachers, parents and accountants get 403.',
+  middleware: orgAccess('people:write'),
+  request: { params: OrgParams, body: jsonBody(CreateUpload) },
+  responses: {
+    201: json(UploadLink, 'The file and its upload link'),
+    ...errors(400, 401, 403, 404, 503),
+  },
+});
+
+const getFileRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/files/{fileId}',
+  tags: ['Platform'],
+  summary: 'Get a file, with a link to download it',
+  description:
+    'The link is good for 5 minutes. Only the member who uploaded the file and the owner can ' +
+    'get it; anyone else gets 404.',
+  middleware: orgAccess('org:read'),
+  request: { params: FileParams },
+  responses: { 200: json(FileWithLink, 'The file'), ...errors(401, 403, 404, 503) },
+});
+
+const putContentRoute = createRoute({
+  method: 'put',
+  path: '/api/v1/files/{fileId}/content',
+  tags: ['Platform'],
+  summary: 'Upload a file’s bytes through its signed link',
+  description:
+    'No sign-in: the link’s signature is the proof. A link that is wrong or past its time is 404.',
+  security: [],
+  request: {
+    params: z.object({ fileId: z.string().openapi({ param: { name: 'fileId', in: 'path' } }) }),
+    query: SignedQuery,
+  },
+  responses: { 204: { description: 'Stored' }, ...errors(400, 404, 503) },
+});
+
+const getContentRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/files/{fileId}/content',
+  tags: ['Platform'],
+  summary: 'Download a file through its signed link',
+  security: [],
+  request: {
+    params: z.object({ fileId: z.string().openapi({ param: { name: 'fileId', in: 'path' } }) }),
+    query: SignedQuery,
+  },
+  responses: {
+    200: {
+      description: 'The file',
+      content: { 'application/octet-stream': { schema: z.string().openapi({ format: 'binary' }) } },
+    },
+    ...errors(404, 503),
+  },
+});
+
+const originOf = (url: string) => new URL(url).origin;
+
 export const platformRoutes = createRouter()
+  .openapi(uploadUrlRoute, async (c) => {
+    const link = await files.createUpload(
+      orgCtx(c),
+      c.env,
+      originOf(c.req.url),
+      c.req.valid('json'),
+    );
+    return c.json(link, 201);
+  })
+  .openapi(getFileRoute, async (c) => {
+    const { fileId } = c.req.valid('param');
+    const file = await files.getFile(
+      orgCtx(c),
+      c.env,
+      originOf(c.req.url),
+      c.var.membership.role,
+      fileId,
+    );
+    return c.json(file, 200);
+  })
+  .openapi(putContentRoute, async (c) => {
+    const length = c.req.header('Content-Length');
+    await files.receiveUpload(
+      c.var.db,
+      c.env,
+      c.req.valid('param').fileId,
+      c.req.valid('query'),
+      c.req.raw.body,
+      length ? Number(length) : null,
+    );
+    return c.body(null, 204);
+  })
+  .openapi(getContentRoute, async (c) => {
+    const { row, body } = await files.download(
+      c.var.db,
+      c.env,
+      c.req.valid('param').fileId,
+      c.req.valid('query'),
+    );
+    return c.body(body, 200, {
+      'Content-Type': row.contentType,
+      'Content-Disposition': `attachment; filename="${row.filename.replaceAll('"', '')}"`,
+    });
+  })
   .openapi(healthRoute, (c) => c.json({ ok: true as const, environment: c.env.ENVIRONMENT }, 200))
   .openapi(getJobRoute, async (c) => {
     const job = await service.getJob(orgCtx(c), c.var.membership.role, c.req.valid('param').jobId);

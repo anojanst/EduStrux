@@ -1,5 +1,5 @@
-import { auditLog, jobs } from '@edustrux/db';
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { auditLog, files, jobs, type Db } from '@edustrux/db';
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -50,4 +50,63 @@ export function listAudit(ctx: OrgCtx, limit: number, beforeId?: string) {
     .where(and(eq(auditLog.orgId, ctx.orgId), beforeId ? lt(auditLog.id, beforeId) : undefined))
     .orderBy(desc(auditLog.id))
     .limit(limit + 1);
+}
+
+// ── Files (TUI-61) ──────────────────────────────────────────────────────────
+
+export type FileRow = typeof files.$inferSelect;
+export type NewFileRow = typeof files.$inferInsert;
+
+export async function insertFile(ctx: OrgCtx, row: NewFileRow & { id: string }) {
+  const [, inserted] = await writeWithAudit(ctx, [ctx.db.insert(files).values(row).returning()], {
+    action: 'file.created',
+    entityType: 'file',
+    entityId: row.id,
+    after: { purpose: row.purpose, filename: row.filename, contentType: row.contentType },
+  });
+  return (inserted as FileRow[])[0]!;
+}
+
+export function findFile(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(files)
+    .where(inOrg(ctx, files, eq(files.id, id)))
+    .get();
+}
+
+/**
+ * A file by id alone, whatever its org: for the signed links, where the signature is the proof
+ * and there is no signed-in member. Nothing else may read a file without its org.
+ */
+export function findFileBySignedLink(db: Db, id: string) {
+  return db
+    .select()
+    .from(files)
+    .where(and(eq(files.id, id), isNull(files.deletedAt)))
+    .get();
+}
+
+export async function markUploaded(db: Db, id: string, size: number) {
+  await db
+    .update(files)
+    .set({ status: 'uploaded', size, updatedAt: new Date().toISOString() })
+    .where(eq(files.id, id));
+}
+
+/** The files past their expiry, any org's, for the daily clean-up (TUI-68). */
+export function expiredFiles(db: Db, now: string, limit: number) {
+  return db
+    .select({ id: files.id, r2Key: files.r2Key })
+    .from(files)
+    .where(and(isNull(files.deletedAt), lt(files.expiresAt, now)))
+    .limit(limit);
+}
+
+export async function softDeleteFiles(db: Db, ids: string[]) {
+  if (ids.length === 0) return;
+  await db
+    .update(files)
+    .set({ deletedAt: new Date().toISOString() })
+    .where(sql`${files.id} in (select value from json_each(${JSON.stringify(ids)}))`);
 }

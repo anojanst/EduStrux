@@ -4,6 +4,7 @@ export * from './classes';
 export * from './comms';
 export * from './core';
 export * from './enrolment';
+export * from './files';
 export * from './learning';
 export * from './people';
 export * from './setup';

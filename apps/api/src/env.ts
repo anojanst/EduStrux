@@ -30,6 +30,11 @@ export type Bindings = {
    * valid `turnstileToken`; without it, only the hidden field and the hourly limit guard them.
    */
   TURNSTILE_SECRET_KEY?: string;
+  /**
+   * Signs the short-lived links files are uploaded and downloaded through (TUI-61). A secret the
+   * owner sets: any long random string. Without it, files can't be uploaded or fetched (503).
+   */
+  FILES_SIGNING_SECRET?: string;
 };
 
 export type AuthUser = {

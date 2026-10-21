@@ -304,3 +304,17 @@ and the approver's reach. A class that refuses (full, outside its dates) is list
 row, not one batch: a failure halfway leaves what was made and the request still pending.
 Branch staff see requests naming one of their branches, or none. Nobody is emailed about a new
 request or the decision yet.
+
+## TUI-61 File uploads to R2
+
+**Q-40 · Signed links without R2 credentials.** R2's own presigned URLs need S3 API keys (an
+infra/credentials change). Built instead: the Worker serves the links itself over the existing
+`FILES` binding. `POST /files/upload-url` makes the file's record and a link to `PUT` its bytes
+(15 minutes); `GET /files/{id}` gives a download link (5 minutes). Each link carries an expiry
+and an HMAC of method, file id and expiry; a wrong or stale one is 404. The owner must set one
+secret, `FILES_SIGNING_SECRET` (any long random string); without it these routes are 503.
+Files stream through the Worker, so they're kept small: CSV, PDF, PNG or JPEG, at most 10 MB.
+
+**Q-41 · Who.** Uploading needs `people:write` (owner, branch managers, front desk: imports are
+the main use). A file is read by the member who uploaded it and the owner; anyone else 404, as
+for jobs (D-018). Files for an import are removed by the daily clean-up after a week.

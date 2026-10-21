@@ -23,6 +23,7 @@ export default defineConfig(async () => ({
           BROWSER_RENDERING_ACCOUNT_ID: '',
           BROWSER_RENDERING_TOKEN: '',
           TURNSTILE_SECRET_KEY: '',
+          FILES_SIGNING_SECRET: 'test-files-signing-secret',
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),
