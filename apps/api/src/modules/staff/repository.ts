@@ -97,6 +97,20 @@ export function findMembershipOfUser(ctx: OrgCtx, userId: string) {
     .get();
 }
 
+/** The user's active memberships in every org, for Clerk's user.deleted webhook. */
+export function activeMembershipsOfUser(db: Db, userId: string) {
+  return db
+    .select()
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, userId),
+        eq(memberships.status, 'active'),
+        isNull(memberships.deletedAt),
+      ),
+    );
+}
+
 /** Returns the membership as updated, from the same batch. */
 export async function updateMember(
   ctx: OrgCtx,

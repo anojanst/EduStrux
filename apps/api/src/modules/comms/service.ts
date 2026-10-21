@@ -448,6 +448,32 @@ export function findRecipient(ctx: OrgCtx, id: string) {
   return repo.findRecipient(ctx, id);
 }
 
+/**
+ * What Resend's webhook says happened to an email after it was sent (TUI-71). Delivered only
+ * moves a `sent` email on; a bounce or complaint can follow a delivery. An event for a recipient
+ * the org doesn't have changes nothing.
+ */
+export function recordDelivery(
+  ctx: OrgCtx,
+  recipientId: string,
+  event: { status: 'delivered' | 'bounced' | 'complained' | 'failed'; at: string; error?: string },
+) {
+  if (event.status === 'delivered') {
+    return repo.setEmailStatus(
+      ctx,
+      recipientId,
+      { emailStatus: 'delivered', deliveredAt: event.at },
+      ['sent'],
+    );
+  }
+  return repo.setEmailStatus(
+    ctx,
+    recipientId,
+    { emailStatus: event.status, error: event.error ?? null },
+    ['sent', 'delivered'],
+  );
+}
+
 export function setEmailStatus(...args: Parameters<typeof repo.setEmailStatus>) {
   return repo.setEmailStatus(...args);
 }

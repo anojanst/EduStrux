@@ -35,6 +35,12 @@ export type Bindings = {
    * owner sets: any long random string. Without it, files can't be uploaded or fetched (503).
    */
   FILES_SIGNING_SECRET?: string;
+  /**
+   * The signing secrets (`whsec_…`) of the Clerk and Resend webhooks (TUI-71), from each
+   * dashboard's webhook endpoint. Without one, that webhook answers 503 and the sender retries.
+   */
+  CLERK_WEBHOOK_SECRET?: string;
+  RESEND_WEBHOOK_SECRET?: string;
 };
 
 export type AuthUser = {

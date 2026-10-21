@@ -24,6 +24,8 @@ export default defineConfig(async () => ({
           BROWSER_RENDERING_TOKEN: '',
           TURNSTILE_SECRET_KEY: '',
           FILES_SIGNING_SECRET: 'test-files-signing-secret',
+          CLERK_WEBHOOK_SECRET: 'whsec_dGVzdC1jbGVyay13ZWJob29rLXNlY3JldA==',
+          RESEND_WEBHOOK_SECRET: 'whsec_dGVzdC1yZXNlbmQtd2ViaG9vay1zZWNyZXQ=',
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),

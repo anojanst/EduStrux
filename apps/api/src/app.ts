@@ -23,6 +23,7 @@ import { platformRoutes } from './modules/platform/routes';
 import { portalRoutes } from './modules/portal/routes';
 import { reportRoutes } from './modules/reports/routes';
 import { staffRoutes } from './modules/staff/routes';
+import { webhookRoutes } from './modules/webhooks/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
   if (c.env.ENABLE_DOCS !== 'true') return c.json(errorBody('not_found', 'Route not found'), 404);
@@ -51,6 +52,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', commsRoutes);
   app.route('/', portalRoutes);
   app.route('/', reportRoutes);
+  app.route('/', webhookRoutes);
 
   // API docs: generated from the route definitions above.
   app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {

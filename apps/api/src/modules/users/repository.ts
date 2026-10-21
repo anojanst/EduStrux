@@ -45,6 +45,26 @@ export async function findOrCreateUser(db: Db, identity: ClerkIdentity): Promise
   return created;
 }
 
+/**
+ * Brings the user's email and name in line with Clerk's, for Clerk's webhook (TUI-71): adds the
+ * user when their first request hasn't yet. Returns the user's id.
+ */
+export async function syncFromClerk(db: Db, identity: ClerkIdentity) {
+  await db
+    .insert(users)
+    .values({ id: newId('user'), ...identity })
+    .onConflictDoUpdate({
+      target: users.clerkUserId,
+      set: { email: identity.email, name: identity.name },
+    });
+  return (await findUser(db, identity.clerkUserId))!.id;
+}
+
+/** The user's id, if they have ever signed in or Clerk has told us of them. */
+export async function userIdOf(db: Db, clerkUserId: string) {
+  return (await findUser(db, clerkUserId))?.id ?? null;
+}
+
 export type UserInOrg = {
   user: AuthUser;
   /** null when the user has no active membership in the org. */

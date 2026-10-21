@@ -10,6 +10,7 @@ import * as comms from '../modules/comms/service';
 import * as orgs from '../modules/orgs/service';
 import * as exports from '../modules/platform/exports';
 import * as files from '../modules/platform/files';
+import * as webhooks from '../modules/webhooks/service';
 
 const IDEMPOTENCY_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -78,13 +79,14 @@ export async function runHourly(db: Db, env: Bindings, at: Date) {
 }
 
 /**
- * The daily cron (TUI-68): drops stale idempotency keys and expired files, then for each org
+ * The daily cron (TUI-68): drops stale idempotency keys, webhook records and expired files, then for each org
  * extends its open-ended classes' sessions and starts its nightly backup job. An org that fails
  * is logged and the rest carry on.
  */
 export async function runDaily(db: Db, env: Bindings, at: Date) {
   const cutoff = new Date(at.getTime() - IDEMPOTENCY_KEY_TTL_MS).toISOString();
   await db.delete(idempotencyKeys).where(lt(idempotencyKeys.createdAt, cutoff));
+  await webhooks.forgetOldDeliveries(db, at);
   const done = { filesRemoved: 0, sessionsAdded: 0, backupsStarted: 0, failed: 0 };
   try {
     done.filesRemoved = await files.cleanExpired(db, env);

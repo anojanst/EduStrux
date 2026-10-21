@@ -385,6 +385,32 @@ idempotency keys.
 runs in a queued job per org, so its CPU doesn't count against the cron). With many orgs the
 loops may need splitting into per-org queue messages; not needed at MVP size.
 
+## TUI-71 Webhooks
+
+**Q-51 · Signatures and secrets.** Built: `POST /api/v1/webhooks/clerk` and `/resend` check the
+Svix signature both senders use (HMAC-SHA256, 5-minute timestamp tolerance, any of several
+`v1` signatures while a secret rotates) with WebCrypto, no library. The owner sets two secrets,
+`CLERK_WEBHOOK_SECRET` and `RESEND_WEBHOOK_SECRET` (`whsec_…`, from each dashboard's webhook
+endpoint); without one, that webhook is 503 and the sender retries. A bad or stale signature is
+401. Each delivery is recorded by its `svix-id` in `webhook_events` after it is handled, so a
+redelivery answers `duplicate: true`; records older than 30 days are dropped by the daily cron.
+**Infra note:** while Cloudflare Access covers all traffic, both paths need an Access bypass
+(handoff §5), which is the owner's to add.
+
+**Q-52 · Clerk events.** Built: `user.created` / `user.updated` store the primary email
+(lower-cased) and name on `users`, adding the row if the user hasn't signed in yet.
+`user.deleted` **suspends** the user's memberships in every org (one `membership.updated` audit
+row per org, by no one) rather than removing them, so their records and history stay and an
+owner can remove them. If the deleted user was an org's only owner, that org has no active owner
+until support (TUI-75) steps in. Other Clerk events are ignored.
+
+**Q-53 · Resend events.** Built: `email.delivered`, `email.bounced`, `email.complained` and
+`email.failed` update the message recipient named by the `org_id` and `recipient_id` tags every
+message email is already sent with. Delivered only moves a `sent` email on; bounced, complained
+or failed can follow a delivery and aren't undone by a late "delivered". Invitation emails carry
+no recipient tag, so their events are ignored. A bounce doesn't (yet) flag the guardian's email
+address as bad.
+
 ---
 
 ## Where the session stopped (usage limit)
