@@ -28,6 +28,10 @@ function verifyOptions(env: Bindings) {
   };
 }
 
+function claimText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 /** Verifies the Clerk session token and returns who it names. 401 without a valid one. */
 export async function signedInAs(c: Context<AppEnv>): Promise<ClerkIdentity> {
   const token = readToken(c.req.header('Authorization'), getCookie(c, '__session'));
@@ -53,9 +57,10 @@ export async function signedInAs(c: Context<AppEnv>): Promise<ClerkIdentity> {
 
   return {
     clerkUserId: sub,
-    // Present when the Clerk session token is customised to include them.
-    email: typeof claims.email === 'string' ? claims.email : null,
-    name: typeof claims.name === 'string' ? claims.name : null,
+    // Present when the Clerk session token is customised to include them. A user who gave no
+    // name has an empty `{{user.full_name}}`, which is no name, not a blank one.
+    email: claimText(claims.email),
+    name: claimText(claims.name),
   };
 }
 

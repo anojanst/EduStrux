@@ -29,4 +29,19 @@ describe('auth', () => {
     expect(again.body.email).toBe('first@example.com');
     expect(again.body.memberships).toEqual([]);
   });
+
+  it('keeps the email and name the session token carries, and treats a blank one as none', async () => {
+    const clerkUserId = `user_claims_${crypto.randomUUID()}`;
+    const first = await call('GET', '/api/v1/me', { token: await tokenFor(clerkUserId) });
+    expect(first.body).toMatchObject({ email: null, name: null });
+
+    const named = await tokenFor(clerkUserId, { email: 'ana@example.com', name: 'Ana Silva' });
+    expect((await call('GET', '/api/v1/me', { token: named })).body).toMatchObject({
+      email: 'ana@example.com',
+      name: 'Ana Silva',
+    });
+
+    const blank = await tokenFor(clerkUserId, { email: 'ana@example.com', name: ' ' });
+    expect((await call('GET', '/api/v1/me', { token: blank })).body.name).toBe('Ana Silva');
+  });
 });
