@@ -4472,3 +4472,112 @@ under "Not changed here" for a reach that is a subquery.
   - The fee and profit figures in handoff §1 are Paddle's and need redoing with Stripe's.
 - **Supersedes:** D-152 (when TUI-106 is built).
 - **Tasks:** TUI-106.
+
+## D-158 · 2026-10-22 · The web app's stack
+
+- **Context:** ui-design.md §10 proposed the web stack, to be decided when TUI-23 started. The
+  owner scoped TUI-23 on 2026-10-22 to registration and login for every user type, including
+  invites; the stack was chosen while building it.
+- **Decision:**
+  - React 19 and Vite 8, React Router 8 (data router), TanStack Query 5.
+  - Tailwind CSS 4, with the ui-design §2 tokens as CSS variables mapped in its theme, so class
+    names read `bg-brand`, `text-muted`.
+  - Lucide icons. Inter self-hosted from the npm package (no Google Fonts call).
+  - shadcn/ui and Radix aren't added yet. A few own primitives (button, fields, card, notice,
+    badge, avatar, spinner) cover the screens so far; Radix comes in when a dialog, menu or
+    popover needs it.
+  - Web tests: Vitest with jsdom and Testing Library, run by `pnpm test` beside the API's.
+  - Locally the Vite dev server sends `/api` to the API on :8787, so both share one origin as in
+    production, and `pnpm dev` runs both.
+- **Consequences:** ui-design §10 is settled except shadcn/ui, which waits for the first screen
+  that needs it. One bundle of about 545 kB (160 kB gzip) for now; splitting by route comes later.
+  Serving the build from the Worker isn't built (TUI-107).
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-23, TUI-107.
+
+## D-159 · 2026-10-22 · The web's API client uses the shared types, not a generated client
+
+- **Context:** TUI-21 planned a typed client generated from `/api/openapi.json` when the web app
+  started.
+- **Decision:**
+  - The web imports the API's request and response types from `@edustrux/shared` with type-only
+    imports. No OpenAPI code generation.
+  - Every call sends Clerk's session token as `Authorization: Bearer`, from Clerk's `getToken()`,
+    not the session cookie.
+  - An error body `{ error: { code, message, fields } }` becomes one error type in the web. The
+    field messages shown next to a form field are the API's own (English) ones for now.
+  - `@edustrux/shared` exports the role permissions on their own path, so the web can check what a
+    role may do without bundling zod.
+- **Consequences:** TUI-21's typed-client note is settled by the shared types. The API and the
+  web can't drift on a type without `pnpm typecheck` failing, but nothing checks a path or
+  method against the spec. Showing the API's English field messages departs from D-015, where
+  the client translates the field codes; that holds while the UI is English only.
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-23, TUI-21.
+
+## D-160 · 2026-10-22 · Sign-in and sign-up use Clerk's own screens
+
+- **Context:** Registration and login for every user type (TUI-23). Building them by hand means
+  email verification, password reset, email codes and later MFA (TUI-80).
+- **Decision:**
+  - `/sign-in` and `/sign-up` show Clerk's prebuilt sign-in and sign-up components, inside the
+    app's own auth layout (teal brand panel beside the form), themed to the ui-design tokens.
+  - Their text is Clerk's own English, an exception to D-015's single catalog. Every other string
+    in the web goes through `t()` and the `en` catalog.
+- **Consequences:** Verification, reset and email codes come from Clerk without own flows.
+  Translating the UI later means Clerk's localisation too.
+  - Observed: the Clerk development instance asks for a password at sign-up, so an invited
+    parent sets one today. Passwordless parents (D-021) need the owner to turn on email-code
+    sign-in and make passwords optional in the Clerk dashboard (TUI-72).
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-23, TUI-72, TUI-80.
+
+## D-161 · 2026-10-22 · Web routes, where a user lands, and accepting an invite
+
+- **Context:** TUI-23's scope: owners register and start a centre; staff and parents register
+  from an invite.
+- **Decision:**
+  - **Routes:** `/sign-in`, `/sign-up`, `/invitations/:token` (the link the invite email already
+    uses), `/welcome` (signed in, no org), `/onboarding`, `/orgs` (picker), `/o/:orgSlug` (the
+    org by slug, found in `GET /me`) and `/o/:orgSlug/settings/team`. A slug the user isn't a
+    member of shows "no access".
+  - **Landing:** no memberships → `/welcome`; one → that org; several → the last one opened on
+    this browser, else `/orgs`. A signed-out visit to a signed-in page goes to
+    `/sign-in?redirect_url=…`, and only paths inside the app are followed back.
+  - **Invite page:** it shows the invite first, from a new route that needs no sign-in,
+    `GET /api/v1/invitations/{token}`: the org's name and slug, the role, the invited email,
+    `pending`, `accepted` or `expired`, and the expiry. An unknown or withdrawn token is 404; a
+    used or expired one is still 200 with its status. Signed out, the page shows Clerk's sign-up
+    (or sign-in) with the invited address filled in and comes back to itself. Signed in, one
+    "Join" click accepts it and opens the org. A signed-in address that isn't the invited one is
+    allowed, since the token is the proof (D-131), but shown as a warning with "Use a different
+    account". 409 is "already a member", with a link into the org; each 422 (used, expired,
+    guardian removed) is explained.
+  - **Team page (Settings › Team):** the staff list and an invite form. The roles offered are
+    those the inviter may give (D-131): the owner any staff role, a branch manager branch
+    manager, front desk or teacher. Branches are asked only when there's a choice or the inviter
+    is limited to branches. The invite link is shown to copy, since invite emails may not be
+    configured. Parents are invited from their guardian, which needs the family screens (TUI-40).
+  - **Shell:** the desktop sidebar of ui-design §5 (logo, org switcher with "start another
+    centre", nav filtered by role, user footer with sign out), and below 1024px a top bar with a
+    drawer. The trial, read-only and past-due banner reads the org's status and trial end; the
+    trial banner can be dismissed for the day. A parent's home lists `GET /portal/children`, so
+    they can see the invite linked the right family.
+- **Consequences:** The preview tells anyone holding the token the invited email and the org;
+  the token is already enough to accept it. Not built from ui-design §5 yet: top-bar search,
+  "+ New", the bell, the tablet icon rail and the phone tab bar (TUI-40, TUI-84). Only Home and
+  Team exist. Locally, the seeded org's trial has ended, so it is read-only and refuses invites
+  with 402 (D-153).
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-23, TUI-40, TUI-84.
+
+## D-162 · 2026-10-22 · Starting a centre asks for its regional defaults
+
+- **Context:** An owner who signs up lands on `/onboarding`, which calls `POST /orgs`.
+- **Decision:** Onboarding asks the centre's name, solo or a team (single-tutor mode), the
+  country (a list of 18 and "somewhere else"), the currency (defaulted from the country), the
+  date format (MM/DD/YYYY for the US, else DD/MM/YYYY) and the time zone (the browser's). The
+  locale is English for that country (`en-<country>`, D-015), or `en-GB` without one.
+- **Consequences:** Terms, grade levels and subjects stay for the full onboarding wizard (TUI-64).
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-23, TUI-64.

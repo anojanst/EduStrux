@@ -3,6 +3,7 @@ import {
   AcceptedInvitation,
   CreatedInvitation,
   CreateInvitation,
+  InvitationPreview,
   InviteGuardian,
   PageQuery,
   StaffMember,
@@ -85,6 +86,22 @@ const inviteGuardianRoute = createRoute({
   },
 });
 
+const previewInvitationRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/invitations/{token}',
+  tags: ['Staff'],
+  summary: 'Look at an invitation before accepting it',
+  description:
+    'No sign-in: the invite link shows who invited the person and as what, and pre-fills the ' +
+    'address on the sign-up form. An unknown or withdrawn token is 404. A used or expired ' +
+    'invite still answers, with its `status`.',
+  request: { params: TokenParams },
+  responses: {
+    200: json(InvitationPreview, 'The invitation'),
+    ...errors(400, 404),
+  },
+});
+
 const acceptInvitationRoute = createRoute({
   method: 'post',
   path: '/api/v1/invitations/{token}/accept',
@@ -161,6 +178,10 @@ export const staffRoutes = createRouter()
       ),
       201,
     );
+  })
+  .openapi(previewInvitationRoute, async (c) => {
+    const { token } = c.req.valid('param');
+    return c.json(await service.previewInvitation(c.var.db, token), 200);
   })
   .openapi(acceptInvitationRoute, async (c) => {
     const { token } = c.req.valid('param');

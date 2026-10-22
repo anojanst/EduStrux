@@ -7,8 +7,8 @@ follows this file; when a screen needs something it doesn't cover, add it here f
   <https://finch-coal-95289917.figma.site/>, chosen by the owner on 2026-10-22 as the direction
   for the whole app. Colour tokens below are taken from its CSS; type sizes are set here, since
   the Figma page scales its text with the window.
-- **Status:** direction agreed. The implementation choices in [§10](#10-building-it) are proposed
-  and get a decision in `decisions.md` when TUI-23 starts.
+- **Status:** direction agreed. The implementation choices in [§10](#10-building-it) were
+  settled when TUI-23 was built (D-158).
 - **Related:** stack and principles in [handoff.md](handoff.md) §1 and §3; strings and formatting
   in D-015.
 
@@ -319,15 +319,22 @@ Changes from the Figma source:
 
 ## 10. Building it
 
-Proposed, to be decided when TUI-23 starts:
+Settled when TUI-23 was built (D-158):
 
 - **Tailwind CSS** with the tokens in §2 as CSS variables mapped into the Tailwind theme, so
   class names read `bg-brand`, `text-muted`, `border-border`.
-- **shadcn/ui** (Radix underneath) for accessible primitives: dialog, sheet, dropdown, popover,
-  tabs, toast, command (the `⌘K` search), styled to these tokens.
+- **shadcn/ui** (Radix underneath) for accessible primitives (dialog, sheet, dropdown, popover,
+  tabs, toast, command for the `⌘K` search) isn't added yet. A few own primitives cover the
+  screens so far; Radix comes in with the first dialog, menu or popover.
 - **Lucide** icons; **Inter** self-hosted with the app (no Google Fonts call).
 - Components live in `apps/web/src/components/ui/` (primitives) and
   `apps/web/src/components/` (app components such as `StatCard`, `LessonRow`, `StatusBadge`).
+- **Sign-in and sign-up** are Clerk's own components, themed with these tokens, inside the app's
+  auth layout: the teal brand panel beside the form (D-160).
+- **Built so far** (D-161): the desktop sidebar of §5 (logo, org switcher, nav by role, user
+  footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
+  past due. Not yet: top-bar search, "+ New", the bell, the tablet icon rail and the phone tab
+  bar (TUI-40, TUI-84).
 - Further screens are designed in the same Figma Make file, starting each prompt with: "Keep the
   exact design system, colours, typography, spacing, sidebar and components from the Home
   dashboard. Reuse existing components before creating new ones."

@@ -5,6 +5,7 @@ Swagger before the web app.
 
 ```
 apps/api/          Hono on Cloudflare Workers: REST API, cron handlers, queue consumers
+apps/web/          React + Vite: staff app and parent portal (Clerk sign-in, TanStack Query, Tailwind)
 packages/shared/   Zod schemas, roles & permissions, ID generator, money/date helpers (shared with web/mobile later)
 packages/db/       Drizzle schema + D1 migrations
 ```
@@ -18,10 +19,15 @@ Design spec: [docs/design/handoff.md](docs/design/handoff.md) · decisions:
 ```bash
 pnpm install
 cp apps/api/.dev.vars.example apps/api/.dev.vars   # add your Clerk development secret key
+cp apps/web/.env.example apps/web/.env.local        # add the same instance's publishable key
 pnpm db:migrate                                     # apply migrations to local D1
 pnpm seed                                           # test users per role, in 2 orgs
-pnpm dev                                            # http://localhost:8787
+pnpm dev                                            # API on :8787, web app on :5173
 ```
+
+The web app's dev server sends `/api` to the API on :8787, so both run on one origin as in
+production. Sign up at http://localhost:5173/sign-up to start a centre; an invite link from
+`POST /staff/invitations` or `POST /guardians/{id}/invitation` opens at `/invitations/{token}`.
 
 ## Trying the API in Swagger
 
@@ -46,8 +52,8 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
 
 | Command            |                                                                                        |
 | ------------------ | -------------------------------------------------------------------------------------- |
-| `pnpm dev`         | API on :8787 with local D1, R2 and Queues                                              |
-| `pnpm test`        | Vitest inside the Workers runtime, against a fresh local D1                            |
+| `pnpm dev`         | API on :8787 with local D1, R2 and Queues, and the web app on :5173                    |
+| `pnpm test`        | API: Vitest in the Workers runtime on a fresh local D1. Web: Vitest with jsdom         |
 | `pnpm typecheck`   | All packages                                                                           |
 | `pnpm db:generate` | New migration from schema changes in `packages/db/src/schema`                          |
 | `pnpm db:migrate`  | Apply migrations locally                                                               |
@@ -121,6 +127,11 @@ The scripts refuse anything but a Clerk **development** key (`sk_test_…`).
   `?limit&cursor` → `{ data, nextCursor }`. PATCH takes the `updatedAt` you last read (stale →
   409). Money is `{ amount, currency }` in minor units. Long actions return `202 { jobId }`.
   `Idempotency-Key` makes POSTs retry-safe.
+- **Web app** (`apps/web`): take request and response types from `@edustrux/shared` with
+  `import type` (no generated client), and role checks from `@edustrux/shared/permissions`, so
+  zod stays out of the bundle (D-159). Every string goes through `t()` and the `en` catalog;
+  only Clerk's sign-in and sign-up screens carry their own text (D-160). Primitives live in
+  `src/components/ui/`, styled with the Tailwind token classes from ui-design §2 (D-158).
 - **Money and dates** go through the helpers in `packages/shared` (`money.ts`, `dates.ts`),
   shared by the API and the web app: decimal strings ↔ minor units without floats, local date
   maths, local time ↔ UTC in the org's timezone (DST rule D-016), and formatting with the org's
