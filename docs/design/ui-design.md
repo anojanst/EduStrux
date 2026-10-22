@@ -341,6 +341,12 @@ Settled when TUI-23 was built (D-158):
   footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
   past due. Not yet: top-bar search, "+ New", the bell, the tablet icon rail and the phone tab
   bar (TUI-40, TUI-84).
+- **Top-bar search** (D-164): built without Radix. A command palette over the page, full screen on
+  phones, opened from the top bar or with Ctrl/⌘ K. The top bar shows on desktop too for roles
+  that can search (staff with `people:read`). "+ New" and the bell are still to come.
+- **Families & students** (D-164), from the Figma Make people design: the list with families and
+  students tabs, the family page, the student page and the Add family dialog. Dialogs take a
+  `wide` size (640px) for forms with sections, and focus their first field when they open.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

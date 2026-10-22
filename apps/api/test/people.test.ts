@@ -22,6 +22,7 @@ type Guardian = Row & {
 };
 type Student = Row & {
   familyId: string;
+  familyName: string;
   branchId: string;
   firstName: string;
   lastName: string;
@@ -560,6 +561,7 @@ describe('students', () => {
     expect(created.body).toEqual({
       id: expect.stringMatching(/^stu_/),
       familyId: family.id,
+      familyName: 'Perera',
       branchId: main.id,
       firstName: 'Aroha',
       lastName: 'Perera',
@@ -954,6 +956,15 @@ describe('students', () => {
     expect(all.body.data.map((s: Student) => `${s.firstName} ${s.lastName}`)).toEqual(expected);
     // The two with the same name keep the order they were added in.
     expect(all.body.data[1].id).toBe(aroha.id);
+    // Each carries their family's name, in the list and on their own.
+    expect(all.body.data.map((s: Student) => s.familyName)).toEqual([
+      'Silva',
+      'Perera',
+      'Perera',
+      'Perera',
+      'Silva',
+    ]);
+    expect((await api('GET', `/students/${aroha.id}`)).body.familyName).toBe('Perera');
 
     expect(await names(`?familyId=${perera.id}`)).toEqual(expected.slice(1, 4));
     expect(await names(`?branchId=${albany.id}`)).toEqual(['Ana de Silva', 'Zoë Silva']);

@@ -81,7 +81,7 @@ export function toGuardian(row: repo.GuardianRow): Guardian {
 /** `grades` are the student's own; they come back in academic-year order. */
 export function toStudent(
   row: repo.StudentRow,
-  branchId: string,
+  family: { branchId: string; name: string },
   grades: GradeOfYear[],
   { years, current }: Years,
 ): Student {
@@ -96,7 +96,8 @@ export function toStudent(
   const position = (grade: GradeOfYear) => order.get(grade.academicYearId) ?? years.length;
   return {
     ...student,
-    branchId,
+    familyName: family.name,
+    branchId: family.branchId,
     gradeLevelId: grades.find((g) => g.academicYearId === current?.id)?.gradeLevelId ?? null,
     grades: [...grades]
       .sort((a, b) => position(a) - position(b))
@@ -196,7 +197,7 @@ function withMembers(
           forReader(
             toStudent(
               student,
-              family.branchId,
+              family,
               grades.filter((g) => g.studentId === student.id),
               years,
             ),
@@ -500,11 +501,11 @@ export async function listStudents(
     ({ student }) => byKeys(student.lastNameNorm, student.firstNameNorm, student.id),
   );
   return {
-    data: data.map(({ student, branchId }) =>
+    data: data.map(({ student, branchId, familyName }) =>
       forReader(
         toStudent(
           student,
-          branchId,
+          { branchId, name: familyName },
           grades.filter((g) => g.studentId === student.id),
           years,
         ),
@@ -528,7 +529,10 @@ export async function getStudent(ctx: OrgCtx, access: Access, id: string): Promi
     calendar.academicYears(ctx),
   ]);
   if (!found) throw notFound('Student');
-  return forReader(toStudent(found.student, found.branchId, grades, years), access);
+  return forReader(
+    toStudent(found.student, { branchId: found.branchId, name: found.familyName }, grades, years),
+    access,
+  );
 }
 
 export async function createStudent(
@@ -572,7 +576,7 @@ export async function createStudent(
     },
     grade,
   );
-  return toStudent(row, family.branchId, grade ? [grade] : [], years);
+  return toStudent(row, family, grade ? [grade] : [], years);
 }
 
 /**
@@ -598,7 +602,8 @@ export async function updateStudent(
     gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,
   ]);
   if (!found) throw notFound('Student');
-  const { student: before, branchId } = found;
+  const { student: before } = found;
+  const family = { branchId: found.branchId, name: found.familyName };
   if (before.updatedAt !== updatedAt) throw staleData();
 
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
@@ -616,12 +621,12 @@ export async function updateStudent(
     }
   }
   if (Object.keys(changes).length === 0 && !grade) {
-    return toStudent(before, branchId, grades, years);
+    return toStudent(before, family, grades, years);
   }
 
   const updated = await repo.updateStudent(ctx, before, changes, grade);
   if (!updated) throw notFound('Student');
-  return toStudent(updated, branchId, gradesAfter(grades, grade), years);
+  return toStudent(updated, family, gradesAfter(grades, grade), years);
 }
 
 /** Deletes the student and their grade history. Refused while the student has enrolments. */
@@ -661,9 +666,7 @@ export async function childrenOfGuardian(ctx: OrgCtx, guardianMembershipId: stri
     const family = familyOf.get(row.familyId);
     if (!family) return [];
     const ownGrades = grades.filter((g) => g.studentId === row.id);
-    return [
-      { student: toStudent(row, family.branchId, ownGrades, years), familyName: family.name },
-    ];
+    return [{ student: toStudent(row, family, ownGrades, years), familyName: family.name }];
   });
 }
 

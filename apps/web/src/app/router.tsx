@@ -7,6 +7,9 @@ import { ChooseOrgPage } from '../pages/ChooseOrgPage';
 import { InvitationPage } from '../pages/InvitationPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
+import { FamilyPage } from '../pages/people/FamilyPage';
+import { PeoplePage } from '../pages/people/PeoplePage';
+import { StudentPage } from '../pages/people/StudentPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
@@ -81,6 +84,9 @@ export const routes = [
             element: <OrgLayout />,
             children: [
               { index: true, element: <HomePage /> },
+              { path: 'families', element: <PeoplePage /> },
+              { path: 'families/:familyId', element: <FamilyPage /> },
+              { path: 'students/:studentId', element: <StudentPage /> },
               { path: 'settings/team', element: <TeamPage /> },
               { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },

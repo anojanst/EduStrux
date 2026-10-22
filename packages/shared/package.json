@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./permissions": "./src/permissions.ts"
+    "./permissions": "./src/permissions.ts",
+    "./money": "./src/money.ts",
+    "./dates": "./src/dates.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
