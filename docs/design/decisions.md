@@ -4330,6 +4330,8 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-152 · 2026-10-22 · Paddle subscriptions and their webhook
 
+> **Superseded by D-157** once TUI-106 is built: billing moves to Stripe.
+
 - **Context:** TUI-73 builds Paddle subscription billing. Built in the session of 2026-10-21 (Q-55
   to Q-57), with no Paddle account changes.
 - **Decision:**
@@ -4451,3 +4453,22 @@ under "Not changed here" for a reach that is a subquery.
   covered by each module's own tests, not the sweep.
   - Assumption: taken during the build without asking (Q-67); the owner hasn't stated it.
 - **Tasks:** TUI-82.
+
+## D-157 · 2026-10-22 · Subscription billing moves to Stripe
+
+- **Context:** The handoff named Paddle for the SaaS's own subscription billing (merchant of
+  record, 5% + $0.50 a transaction), and TUI-73 was built on it (D-152). Asked why Paddle, the
+  owner chose Stripe.
+- **Decision:** EduStrux bills its subscriptions through **Stripe**, not Paddle. The switch is
+  made later, before launch, in TUI-106; until then the API stays on Paddle as built.
+- **Alternatives considered:** Paddle (rejected: about 10% of a $9.90 Solo plan in fees, less
+  control over checkout). Lemon Squeezy, another merchant of record (not chosen).
+- **Consequences:**
+  - Stripe isn't the merchant of record: EduStrux is the seller, so sales tax, VAT and GST are
+    ours to calculate, register for and file where thresholds are crossed. Stripe Tax can do the
+    calculating for a fee. Which countries to register in is still open (handoff §11).
+  - The plan limits and read-only rules (D-153) don't depend on the provider and stay.
+  - D-027's hand-set NZD, AUD and GBP prices become Stripe prices in those currencies.
+  - The fee and profit figures in handoff §1 are Paddle's and need redoing with Stripe's.
+- **Supersedes:** D-152 (when TUI-106 is built).
+- **Tasks:** TUI-106.

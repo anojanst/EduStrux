@@ -41,7 +41,7 @@ A global SaaS for running tuition centres, from a solo tutor up to a centre with
 | Displayed currency | USD base. Hand-set round local prices for NZD, AUD and GBP in Paddle; other countries see Paddle's automatic local-currency conversion. Exact amounts are set during Paddle setup (D-027). |
 | Plan mix assumption | 4 Solo for every 1 Small |
 | First-year goal | **NZ$500/month profit** |
-| Subscription billing | Paddle (merchant of record, handles global sales tax; 5% + $0.50 per transaction) |
+| Subscription billing | **Stripe** (decided D-157). The API is built on Paddle (D-152) until TUI-106 switches it. Stripe isn't merchant of record, so sales tax is ours to handle. The fee figures below are still Paddle's. |
 | Add-ons | WhatsApp, SMS and AI are paid add-ons, not in the base app. Pricing still open (packs or pay-as-you-go). WhatsApp costs vary a lot by region, so price packs by region. |
 | Large-class attendance (QR/ID check-in, 100+ students) | Only as a custom feature if a large client signs. Not planned. |
 | Spending | Anything that results in billing goes through the owner. No cloud resource is created, no plan changed and no paid product enabled without the owner's approval (D-065). |
@@ -607,6 +607,7 @@ Only the Clerk users in `SUPER_ADMIN_CLERK_USER_IDS`; anyone else gets 404. Ever
 ## 11. Open questions
 
 **Product and business**
+- [ ] With Stripe (D-157), sales tax is ours: use Stripe Tax, and in which countries to register for GST/VAT/sales tax as thresholds are crossed? Redo the fee and profit figures in §1 with Stripe's fees.
 - [x] Is the ~65-feature MVP too big for the first launch? Consider cutting to a thinner first release. → Move term roll-over, student timeline, grade timetable view and drag-and-drop timetable editing to v1.1; keep spreadsheet import and the rest (D-022)
 - [x] Annual billing discount? Which currency is shown in each country? → Annual at launch, two months free (Solo US$99/yr, Small US$249/yr); USD base with hand-set NZD, AUD and GBP prices, Paddle conversion elsewhere (D-027)
 - [ ] Add-on pricing: monthly packs or pay-as-you-go at cost plus margin (WhatsApp priced by region)? Deferred by the owner on 2026-10-14 until the add-ons are built.
