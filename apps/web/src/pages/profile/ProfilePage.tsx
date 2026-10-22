@@ -65,7 +65,7 @@ export function ProfilePage() {
           </h1>
         </header>
 
-        <div className="md:grid md:grid-cols-[190px_minmax(0,720px)] md:items-start md:gap-[42px]">
+        <div className="md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-[42px]">
           <nav
             aria-label={t('profile.nav.label')}
             className="-mx-4 mb-[22px] flex gap-[7px] overflow-x-auto px-4 [scrollbar-width:none] md:sticky md:top-6 md:mx-0 md:mb-0 md:flex-col md:gap-[3px] md:px-0"

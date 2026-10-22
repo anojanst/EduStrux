@@ -66,7 +66,7 @@ function useCollapsed() {
 /**
  * The app shell (ui-design.md §5): a teal sidebar on desktop that collapses to a 72px icon rail,
  * a top bar with a drawer on smaller screens, and the org's banner above the page. The page fills
- * the width beside the sidebar, edge to edge; a page that needs a narrower column sets its own.
+ * the width beside the sidebar, edge to edge.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
