@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { idsFrom, type OrgCtx } from '../../db/scope';
 import { notFound } from '../../lib/errors';
 import { termDates } from '../calendar/for-enrolment';
+import * as repo from './repository';
 
 // What enrolment asks of classes so that enrolling a student reads in one stage (TUI-94). It is
 // in a file of its own only because this module's service and repository were being rewritten
@@ -29,5 +30,25 @@ export async function classDatesOf(ctx: OrgCtx, classId: string) {
       startDate: klass.startDate ?? term?.startDate ?? null,
       endDate: klass.endDate ?? term?.endDate ?? null,
     };
+  };
+}
+
+/**
+ * A class as an enrolment that is already within the caller's reach shows it, with the first and
+ * last day it runs, whoever asks: changing an enrolment needs the class's dates even when the
+ * caller reaches the enrolment through its student only. undefined when the class is gone.
+ */
+export async function classOfEnrolment(ctx: OrgCtx, classId: string) {
+  const [row, datesOf] = await Promise.all([
+    repo.findClass(ctx, classId, {}),
+    classDatesOf(ctx, classId),
+  ]);
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    name: row.name,
+    courseId: row.courseId,
+    branchId: row.branchId,
+    ...datesOf(row),
   };
 }

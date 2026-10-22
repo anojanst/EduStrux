@@ -662,6 +662,7 @@ describe('weekly schedule and session generation', () => {
       startsAt: localToUtc(tuesdays[0]!, '16:00', TZ),
       endsAt: localToUtc(tuesdays[0]!, '17:00', TZ),
       status: 'scheduled',
+      movedFrom: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });

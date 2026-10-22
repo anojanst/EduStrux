@@ -106,6 +106,31 @@ export const auditLog = sqliteTable(
   ],
 );
 
+// What super-admins did, and every request made while one was signed in as someone else
+// (TUI-75). Platform-wide, so no org_id requirement: `org_id` is the org it concerned, if any.
+export const adminAccessLog = sqliteTable(
+  'admin_access_log',
+  {
+    id: text('id').primaryKey(),
+    // The admin's Clerk id, and our user id once they have one.
+    adminClerkUserId: text('admin_clerk_user_id').notNull(),
+    adminUserId: text('admin_user_id'),
+    // `admin.request` for an admin route, `impersonated.request` for a request made as someone
+    // else, `admin.impersonate` for starting it.
+    action: text('action').notNull(),
+    orgId: text('org_id'),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    // Who was impersonated, and why.
+    detail: text('detail', { mode: 'json' }),
+    createdAt: text('created_at').notNull().$defaultFn(now),
+  },
+  (t) => [
+    index('admin_access_log_created_idx').on(t.createdAt),
+    index('admin_access_log_org_idx').on(t.orgId, t.createdAt),
+  ],
+);
+
 export const jobs = sqliteTable(
   'jobs',
   {

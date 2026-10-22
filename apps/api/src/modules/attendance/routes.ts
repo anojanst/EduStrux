@@ -4,13 +4,19 @@ import {
   AbsenceNoticeQuery,
   ClassEmergencyContacts,
   CreateAbsenceNotice,
+  CreateMakeupBooking,
+  MakeupBooking,
+  MakeupCredit,
+  MakeupCreditQuery,
+  MakeupPolicy,
   MarkAttendance,
   SessionAttendance,
+  UpdateMakeupPolicy,
   page,
 } from '@edustrux/shared';
 import { access, orgCtx } from '../../db/scope';
 import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
-import { orgAccess } from '../../middleware/permission';
+import { orgAccess, roleAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
 import * as service from './service';
 
@@ -121,7 +127,119 @@ const createAbsenceNoticeRoute = createRoute({
   },
 });
 
+// ── Make-ups (TUI-55) ───────────────────────────────────────────────────────
+
+const getPolicyRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/makeup-policy',
+  tags: ['Attendance'],
+  summary: 'Get the make-up policy',
+  description: 'Off, with the defaults, until the owner saves it (`updatedAt: null`).',
+  middleware: orgAccess('org:read'),
+  request: { params: OrgParams },
+  responses: { 200: json(MakeupPolicy, 'The policy'), ...errors(401, 403, 404) },
+});
+
+const savePolicyRoute = createRoute({
+  method: 'put',
+  path: '/api/v1/orgs/{orgId}/makeup-policy',
+  tags: ['Attendance'],
+  summary: 'Save the make-up policy',
+  description:
+    'Which marks earn a make-up credit, whether they need an absence notice given before the ' +
+    'lesson, when credits lapse and whether a make-up must be the same course. The whole ' +
+    'policy at once; the later save wins. It applies to marks made from then on. Owner only.',
+  middleware: orgAccess('org:write'),
+  request: { params: OrgParams, body: jsonBody(UpdateMakeupPolicy) },
+  responses: { 200: json(MakeupPolicy, 'The policy as saved'), ...errors(400, 401, 403, 404) },
+});
+
+const listCreditsRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/makeup-credits',
+  tags: ['Attendance'],
+  summary: 'List make-up credits',
+  description:
+    'Newest first, for the students you reach, as for absence notices: branch staff the ' +
+    'students in their branches’ classes and their branches’ students, a teacher their ' +
+    'students, a parent their children. A credit is earned when a lesson is marked under the ' +
+    'make-up policy, and taken back if the mark changes while it is unused. A `studentId` you ' +
+    'can’t reach is 404.',
+  middleware: orgAccess('attendance:read'),
+  request: { params: OrgParams, query: MakeupCreditQuery },
+  responses: {
+    200: json(page(MakeupCredit).openapi('MakeupCreditPage'), 'A page of credits'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const bookRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/makeup-bookings',
+  tags: ['Attendance'],
+  summary: 'Book a make-up lesson',
+  description:
+    'Uses a credit to put its student on another lesson’s roster. The credit must be unused ' +
+    'and not lapsed (422), and the lesson scheduled, still to come, before the credit lapses, ' +
+    'of the same course when the policy says so, with a place free, and one the student isn’t ' +
+    'already in (422). Booked twice is 409. A credit or lesson you can’t reach is 404.',
+  middleware: orgAccess('classes:write'),
+  request: { params: OrgParams, body: jsonBody(CreateMakeupBooking) },
+  responses: {
+    201: json(MakeupBooking, 'The booking'),
+    ...errors(400, 401, 403, 404, 409, 422),
+  },
+});
+
+const cancelBookingRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/orgs/{orgId}/makeup-bookings/{bookingId}',
+  tags: ['Attendance'],
+  summary: 'Cancel a make-up booking',
+  description: 'Before its lesson starts (422 after). The credit can be used again.',
+  middleware: orgAccess('classes:write'),
+  request: {
+    params: OrgParams.extend({
+      bookingId: z.string().openapi({ param: { name: 'bookingId', in: 'path' } }),
+    }),
+  },
+  responses: { 204: { description: 'Cancelled' }, ...errors(401, 403, 404, 422) },
+});
+
+const portalCreditsRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/portal/makeup-credits',
+  tags: ['Parent portal'],
+  summary: 'My children’s make-up credits',
+  description: 'Newest first. A `studentId` that isn’t one of your children is 404.',
+  middleware: roleAccess('parent', 'attendance:read'),
+  request: { params: OrgParams, query: MakeupCreditQuery },
+  responses: {
+    200: json(page(MakeupCredit).openapi('PortalMakeupCreditPage'), 'A page of credits'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
 export const attendanceRoutes = createRouter()
+  .openapi(getPolicyRoute, async (c) => c.json(await service.getPolicy(orgCtx(c)), 200))
+  .openapi(savePolicyRoute, async (c) =>
+    c.json(await service.savePolicy(orgCtx(c), c.req.valid('json')), 200),
+  )
+  .openapi(listCreditsRoute, async (c) => {
+    const { limit, cursor, ...query } = c.req.valid('query');
+    return c.json(await service.listCredits(orgCtx(c), access(c), limit, cursor, query), 200);
+  })
+  .openapi(portalCreditsRoute, async (c) => {
+    const { limit, cursor, ...query } = c.req.valid('query');
+    return c.json(await service.listCredits(orgCtx(c), access(c), limit, cursor, query), 200);
+  })
+  .openapi(bookRoute, async (c) =>
+    c.json(await service.bookMakeup(orgCtx(c), access(c), c.req.valid('json')), 201),
+  )
+  .openapi(cancelBookingRoute, async (c) => {
+    await service.cancelMakeup(orgCtx(c), access(c), c.req.valid('param').bookingId);
+    return c.body(null, 204);
+  })
   .openapi(getAttendanceRoute, async (c) => {
     const { sessionId } = c.req.valid('param');
     return c.json(await service.getAttendance(orgCtx(c), access(c), sessionId), 200);

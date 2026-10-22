@@ -1,9 +1,8 @@
 import { createRoute } from '@hono/zod-openapi';
-import { memberships, orgs } from '@edustrux/db';
 import { Me } from '@edustrux/shared';
-import { and, asc, eq, isNull } from 'drizzle-orm';
 import { createRouter, errors, json } from '../../lib/openapi';
 import { requireAuth } from '../../middleware/auth';
+import { membershipsOfUser } from '../users/repository';
 
 const meRoute = createRoute({
   method: 'get',
@@ -19,26 +18,7 @@ const meRoute = createRoute({
 
 export const meRoutes = createRouter().openapi(meRoute, async (c) => {
   const user = c.var.user;
-  const rows = await c.var.db
-    .select({
-      id: memberships.id,
-      role: memberships.role,
-      branchIds: memberships.branchIds,
-      orgId: orgs.id,
-      orgName: orgs.name,
-      orgSlug: orgs.slug,
-    })
-    .from(memberships)
-    .innerJoin(orgs, eq(orgs.id, memberships.orgId))
-    .where(
-      and(
-        eq(memberships.userId, user.id),
-        eq(memberships.status, 'active'),
-        isNull(memberships.deletedAt),
-        isNull(orgs.deletedAt),
-      ),
-    )
-    .orderBy(asc(orgs.name));
+  const rows = await membershipsOfUser(c.var.db, user.id);
 
   return c.json(
     {

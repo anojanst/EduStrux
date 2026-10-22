@@ -1,5 +1,4 @@
 import { enrolments } from '@edustrux/db';
-import { eq } from 'drizzle-orm';
 import { inIds, inOrg, type Ids, type OrgCtx } from '../../db/scope';
 
 // What attendance asks of enrolment so that it can read a session and its roster in one stage
@@ -11,7 +10,10 @@ import { inIds, inOrg, type Ids, type OrgCtx } from '../../db/scope';
 /** One active enrolment: its student and the dates (both included) it covers. */
 type Span = { studentId: string; startDate: string; endDate: string | null };
 
-/** The active enrolments in these classes, each with the dates it covers. */
+/**
+ * The enrolments in these classes, each with the dates it covers: active ones, and withdrawn
+ * ones, whose dates end when the student left (TUI-46), so a past lesson's roster still has them.
+ */
 function activeSpansIn(ctx: OrgCtx, classIds: Ids) {
   return ctx.db
     .select({
@@ -20,9 +22,7 @@ function activeSpansIn(ctx: OrgCtx, classIds: Ids) {
       endDate: enrolments.endDate,
     })
     .from(enrolments)
-    .where(
-      inOrg(ctx, enrolments, inIds(enrolments.classId, classIds), eq(enrolments.status, 'active')),
-    );
+    .where(inOrg(ctx, enrolments, inIds(enrolments.classId, classIds)));
 }
 
 /** Whether an enrolment covers a date: it has started by then and hasn't ended before it. */
@@ -30,7 +30,7 @@ const covers = (span: Span, date: string) =>
   span.startDate <= date && (span.endDate === null || span.endDate >= date);
 
 /**
- * Who is expected at these classes' lessons: the students whose active enrolment covers the
+ * Who is expected at these classes' lessons: the students whose enrolment covers the
  * lesson's date. The answer is a function of that date, so it can be asked for before the date
  * is known, in the same stage as the lesson itself. `classIds` can be a query, such as the class
  * of a session.

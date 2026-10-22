@@ -1,16 +1,29 @@
 import {
+  MAX_REPORT_DAYS,
+  addDays,
   basisFitsClass,
+  diffDays,
+  discountRuleIssues,
+  localToUtc,
+  utcToLocal,
+  type MoneyReport,
+  formatDate,
+  formatMoney,
   localNow,
   newId,
   type CreatePayment,
+  type CreateDiscountRule,
   type CreatePriceRule,
+  type DiscountRule,
   type CreateTaxRate,
   type Invoice,
+  type InvoiceAdjustment,
   type InvoiceLine,
   type InvoiceStatus,
   type Payment,
   type PriceRule,
   type TaxRate,
+  type UpdateDiscountRule,
   type UpdateInvoice,
   type UpdatePriceRule,
   type UpdateTaxRate,
@@ -33,6 +46,11 @@ import * as orgs from '../orgs/service';
 import { familyLabelWithinReach, familyWithinReach } from '../people/for-billing';
 import * as people from '../people/service';
 import { priceResolver } from './pricing';
+import type { EmailMessage } from '../../background/messages';
+import { t } from '../../email/catalog';
+import * as comms from '../comms/service';
+import type { DiscountRuleData } from './discounts';
+import { chargeAgain } from './invoicing';
 import * as repo from './repository';
 
 // Every function here waits for D1 once to read and, if it writes, once more to write (D-102).
@@ -334,6 +352,12 @@ export function toInvoiceLine(
     taxName: row.taxName,
     taxRateBps: row.taxRateBps,
     taxInclusive: row.taxInclusive,
+    discount: money(row.discountAmount),
+    discounts: (row.discounts ?? []).map((d) => ({
+      ruleId: d.ruleId,
+      name: d.name,
+      amount: money(d.amount),
+    })),
     subtotal: money(row.subtotalAmount),
     tax: money(row.taxAmount),
     total: money(row.totalAmount),
@@ -552,8 +576,16 @@ export async function updateInvoice(
   return as(updated);
 }
 
-/** A draft becomes issued: from then on its family's parents can see it. */
-export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Promise<Invoice> {
+/**
+ * A draft becomes issued: from then on its family's parents can see it, and, when the org's
+ * notification settings say so, its guardians are sent it (TUI-70).
+ */
+export async function issueInvoice(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  queue?: Queue<EmailMessage>,
+): Promise<Invoice> {
   const { row: before, as } = await readInvoice(ctx, access, id);
   if (before.status !== 'draft') {
     throw unprocessable('Only a draft invoice can be issued.', { status: ['Not a draft'] });
@@ -561,7 +593,30 @@ export async function issueInvoice(ctx: OrgCtx, access: Access, id: string): Pro
   const issued = await repo.issueInvoice(ctx, before);
   // No row came back: another request issued it between the read and the write. The answer is
   // still the invoice as it now is, which takes a read.
-  return issued ? as(issued) : getInvoice(ctx, access, id);
+  if (!issued) return getInvoice(ctx, access, id);
+  const invoice = as(issued);
+  if (queue) await tellFamily(ctx, queue, invoice);
+  return invoice;
+}
+
+/** Queues the automatic message for an issued invoice. It costs the request no database call. */
+async function tellFamily(ctx: OrgCtx, queue: Queue<EmailMessage>, invoice: Invoice) {
+  const org = await orgs.getOrg(ctx);
+  const total = formatMoney(invoice.total, org.locale);
+  await comms.queueNotice(ctx, queue, {
+    event: 'invoice_issued',
+    subject: t('invoice.issued.subject', { orgName: org.name, total }),
+    body: t('invoice.issued.body', {
+      familyName: invoice.familyName,
+      total,
+      due: invoice.dueDate
+        ? t('invoice.issued.due', { dueDate: formatDate(invoice.dueDate, org.dateFormat) })
+        : '',
+      bankReference: invoice.bankReference ?? '',
+    }),
+    familyIds: [invoice.familyId],
+    audience: { type: 'custom', ids: [invoice.familyId] },
+  });
 }
 
 /**
@@ -763,4 +818,458 @@ export async function deletePayment(ctx: OrgCtx, access: Access, id: string): Pr
   ]);
   if (!before) throw notFound('Payment');
   await repo.softDeletePayment(ctx, before, allocations);
+}
+
+// ── An enrolment's new dates (TUI-46) ───────────────────────────────────────
+
+/** An enrolment's lines on invoices that aren't void, each with its invoice. */
+export function linesOfEnrolment(ctx: OrgCtx, enrolmentId: string) {
+  return repo.linesOfEnrolment(ctx, enrolmentId);
+}
+export type EnrolmentLine = Awaited<ReturnType<typeof linesOfEnrolment>>[number];
+
+/**
+ * What an enrolment's new dates do to its invoices, pro rata by lessons (D-086), at the price
+ * each line was charged at (D-093). A draft's line is charged again, or taken off when no lesson
+ * is left, with statements for the caller's batch; a draft left with no lines is voided. An
+ * issued invoice's lines are fixed (D-095), so they are only reported, with what they would
+ * charge now. Pack lines are left alone: packs are bought up front. `lessonDates` are the class's
+ * lessons in every period the lines cover.
+ */
+export function adjustForDates(
+  ctx: OrgCtx,
+  lines: EnrolmentLine[],
+  enrolment: { startDate: string; endDate: string | null },
+  lessonDates: string[],
+) {
+  const statements: ReturnType<typeof repo.rechargeDraftLine> = [];
+  const adjustments: InvoiceAdjustment[] = [];
+  const left = new Map(lines.map(({ invoice }) => [invoice.id, invoice.lines]));
+  for (const { line, invoice } of lines) {
+    if (line.basis === 'pack') continue;
+    const charge = chargeAgain(line, enrolment, lessonDates);
+    const lessonsAfter = charge?.lessons ?? 0;
+    const totalAfter = charge?.total ?? 0;
+    if (lessonsAfter === line.lessons && totalAfter === line.totalAmount) continue;
+    const draft = invoice.status === 'draft';
+    let status = invoice.status;
+    if (draft) {
+      const remaining = (left.get(invoice.id) ?? 1) - (charge ? 0 : 1);
+      left.set(invoice.id, remaining);
+      if (remaining === 0) status = 'void';
+      statements.push(...repo.rechargeDraftLine(ctx, line, charge, remaining === 0));
+    }
+    adjustments.push({
+      invoiceId: invoice.id,
+      invoiceLineId: line.id,
+      invoiceStatus: status,
+      adjusted: draft,
+      lessonsBefore: line.lessons,
+      lessonsAfter,
+      before: { amount: line.totalAmount, currency: invoice.currency },
+      after: { amount: totalAfter, currency: invoice.currency },
+    });
+  }
+  return { statements, adjustments };
+}
+
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+// Every staff role that reads billing reads them. Only the owner adds, changes and deletes them:
+// like an org-wide price rule, a discount changes prices for the whole org (D-111).
+
+export function toDiscountRule(row: repo.DiscountRuleRow): DiscountRule {
+  const money = (amount: number | null) =>
+    amount === null || row.currency === null ? null : { amount, currency: row.currency };
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    percentBps: row.percentBps,
+    amount: money(row.amount),
+    fixedPrice: money(row.fixedPrice),
+    minCount: row.minCount,
+    courseIds: row.courseIds ?? null,
+    studentIds: row.studentIds ?? null,
+    familyIds: row.familyIds ?? null,
+    cutoffDate: row.cutoffDate,
+    termId: row.termId,
+    startsOn: row.startsOn,
+    endsOn: row.endsOn,
+    active: row.active,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** A rule as an invoice run reads it. */
+export function toDiscountData(row: repo.DiscountRuleRow): DiscountRuleData {
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    percentBps: row.percentBps,
+    amount: row.amount,
+    fixedPrice: row.fixedPrice,
+    minCount: row.minCount,
+    courseIds: row.courseIds ?? null,
+    studentIds: row.studentIds ?? null,
+    familyIds: row.familyIds ?? null,
+    cutoffDate: row.cutoffDate,
+    termId: row.termId,
+    startsOn: row.startsOn,
+    endsOn: row.endsOn,
+    active: row.active,
+  };
+}
+
+function discountReader(access: Access) {
+  if (access.role === 'teacher' || access.role === 'parent') throw forbidden();
+}
+
+function discountWriter(access: Access) {
+  if (access.role !== 'owner') throw forbidden();
+}
+
+export async function listDiscountRules(
+  ctx: OrgCtx,
+  access: Access,
+  limit: number,
+  cursor: string | undefined,
+  kind?: string,
+) {
+  discountReader(access);
+  const rows = await repo.listDiscountRules(ctx, limit, decodeCursor(cursor), kind);
+  const { data, nextCursor } = toPage(rows, limit);
+  return { data: data.map(toDiscountRule), nextCursor };
+}
+
+/** The columns of a rule as given, with money in the org's currency (400 otherwise). */
+function discountColumns(input: Partial<CreateDiscountRule>, currency: string) {
+  const fields: Record<string, string[]> = {};
+  for (const field of ['amount', 'fixedPrice'] as const) {
+    const money = input[field];
+    if (money && money.currency !== currency) {
+      fields[`${field}.currency`] = [`Must be the organisation's currency, ${currency}`];
+    }
+  }
+  if (Object.keys(fields).length > 0) throw validationFailed(fields);
+  const columns: Partial<repo.NewDiscountRuleRow> = {};
+  for (const field of [
+    'name',
+    'percentBps',
+    'minCount',
+    'courseIds',
+    'studentIds',
+    'familyIds',
+    'cutoffDate',
+    'termId',
+    'startsOn',
+    'endsOn',
+    'active',
+  ] as const) {
+    if (input[field] !== undefined) Object.assign(columns, { [field]: input[field] });
+  }
+  if (input.amount !== undefined) columns.amount = input.amount?.amount ?? null;
+  if (input.fixedPrice !== undefined) columns.fixedPrice = input.fixedPrice?.amount ?? null;
+  return columns;
+}
+
+export async function createDiscountRule(
+  ctx: OrgCtx,
+  access: Access,
+  input: CreateDiscountRule,
+): Promise<DiscountRule> {
+  discountWriter(access);
+  // A term the org doesn't have is 404.
+  const [org] = await Promise.all([
+    orgs.getOrg(ctx),
+    input.termId ? calendar.getTerm(ctx, input.termId) : null,
+  ]);
+  const row = await repo.insertDiscountRule(ctx, {
+    id: newId('discountRule'),
+    orgId: ctx.orgId,
+    kind: input.kind,
+    currency: org.currency,
+    name: input.name,
+    ...discountColumns(input, org.currency),
+  });
+  return toDiscountRule(row);
+}
+
+export async function updateDiscountRule(
+  ctx: OrgCtx,
+  access: Access,
+  id: string,
+  input: UpdateDiscountRule,
+): Promise<DiscountRule> {
+  const { updatedAt, ...changes } = input;
+  const [before, org] = await Promise.all([repo.findDiscountRule(ctx, id), orgs.getOrg(ctx)]);
+  if (!before) throw notFound('Discount rule');
+  discountWriter(access);
+  if (before.updatedAt !== updatedAt) throw staleData();
+  if (Object.keys(changes).length === 0) return toDiscountRule(before);
+  const after = { ...toDiscountRule(before), ...changes, kind: before.kind };
+  const issues = discountRuleIssues(after);
+  if (issues) {
+    const fields: Record<string, string[]> = {};
+    for (const issue of issues) (fields[issue.path.join('.') || '_'] ??= []).push(issue.message);
+    throw validationFailed(fields);
+  }
+  if (changes.termId) await calendar.getTerm(ctx, changes.termId);
+  const updated = await repo.updateDiscountRule(
+    ctx,
+    before,
+    discountColumns(changes, org.currency),
+  );
+  if (!updated) throw notFound('Discount rule');
+  return toDiscountRule(updated);
+}
+
+export async function deleteDiscountRule(ctx: OrgCtx, access: Access, id: string) {
+  const before = await repo.findDiscountRule(ctx, id);
+  if (!before) throw notFound('Discount rule');
+  discountWriter(access);
+  await repo.softDeleteDiscountRule(ctx, before);
+}
+
+// ── Money reports (TUI-63) and the dashboard (TUI-62) ───────────────────────
+
+/** The days between two local dates. */
+const daysBetween = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
+/** What is owed today, by how long past its due date. */
+function agedDebt(rows: Awaited<ReturnType<typeof repo.owing>>, today: string, currency: string) {
+  const money = (amount: number) => ({ amount, currency });
+  const buckets = { notDue: 0, days1to30: 0, days31to60: 0, days61to90: 0, over90: 0 };
+  let invoices = 0;
+  for (const row of rows) {
+    const owed = row.total - row.paid;
+    if (owed <= 0) continue;
+    invoices++;
+    const late = row.dueDate && row.dueDate < today ? daysBetween(row.dueDate, today) : 0;
+    if (late === 0) buckets.notDue += owed;
+    else if (late <= 30) buckets.days1to30 += owed;
+    else if (late <= 60) buckets.days31to60 += owed;
+    else if (late <= 90) buckets.days61to90 += owed;
+    else buckets.over90 += owed;
+  }
+  const total = Object.values(buckets).reduce((a, b) => a + b, 0);
+  return {
+    asOf: today,
+    invoices,
+    total: money(total),
+    notDue: money(buckets.notDue),
+    days1to30: money(buckets.days1to30),
+    days31to60: money(buckets.days31to60),
+    days61to90: money(buckets.days61to90),
+    over90: money(buckets.over90),
+  };
+}
+
+/**
+ * Invoiced against received, by month; what is owed by age; and tax by rate, for the families the
+ * caller reaches: branch staff their branches' families, an accountant and the owner every one.
+ * One stage: the four reads go together.
+ */
+export async function moneyReport(
+  ctx: OrgCtx,
+  access: Access,
+  range: { from: string; to: string },
+): Promise<MoneyReport> {
+  if (range.to > addDays(range.from, MAX_REPORT_DAYS - 1)) {
+    throw validationFailed({ to: [`At most ${MAX_REPORT_DAYS} days from \`from\``] });
+  }
+  const org = await orgs.getOrg(ctx);
+  const reach = invoiceReach(ctx, access);
+  const from = localToUtc(range.from, '00:00', org.timezone);
+  const to = localToUtc(addDays(range.to, 1), '00:00', org.timezone);
+  const [issued, received, owed, tax] = await Promise.all([
+    repo.issuedBetween(ctx, from, to, reach),
+    repo.receivedBetween(
+      ctx,
+      { startDate: range.from, endDate: range.to },
+      paymentReach(ctx, access),
+    ),
+    repo.owing(ctx, reach),
+    repo.taxBetween(ctx, from, to, reach),
+  ]);
+  const money = (amount: number) => ({ amount, currency: org.currency });
+  const months = new Map<string, { invoiced: number; received: number }>();
+  const month = (key: string) => {
+    const entry = months.get(key) ?? { invoiced: 0, received: 0 };
+    months.set(key, entry);
+    return entry;
+  };
+  // Every month in the dates, so a month with nothing shows as 0.
+  const last = range.to.slice(0, 7);
+  for (let m = range.from.slice(0, 7); m <= last; m = addDays(`${m}-01`, 31).slice(0, 7)) month(m);
+  let invoiced = 0;
+  for (const row of issued) {
+    if (row.status === 'void' || !row.issuedAt) continue;
+    invoiced += row.total;
+    month(utcToLocal(row.issuedAt, org.timezone).date.slice(0, 7)).invoiced += row.total;
+  }
+  const byMethod = new Map<string, number>();
+  let receivedTotal = 0;
+  for (const row of received) {
+    receivedTotal += row.amount;
+    month(row.receivedOn.slice(0, 7)).received += row.amount;
+    byMethod.set(row.method, (byMethod.get(row.method) ?? 0) + row.amount);
+  }
+  return {
+    from: range.from,
+    to: range.to,
+    invoiced: money(invoiced),
+    received: money(receivedTotal),
+    byMonth: [...months]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([key, m]) => ({
+        month: key,
+        invoiced: money(m.invoiced),
+        received: money(m.received),
+      })),
+    receivedByMethod: [...byMethod].map(([method, amount]) => ({
+      method: method as MoneyReport['receivedByMethod'][number]['method'],
+      amount: money(amount),
+    })),
+    agedDebt: agedDebt(owed, localNow(org.timezone).date, org.currency),
+    tax: tax.map((row) => ({
+      taxRateId: row.taxRateId,
+      name: row.taxName,
+      rateBps: row.taxRateBps,
+      inclusive: row.taxInclusive,
+      taxable: money(row.subtotal),
+      tax: money(row.tax),
+    })),
+    taxTotal: money(tax.reduce((sum, row) => sum + row.tax, 0)),
+  };
+}
+
+/** The money on the dashboard: what is owed, what is overdue, and this month's payments. */
+export async function moneySummary(ctx: OrgCtx, access: Access) {
+  const org = await orgs.getOrg(ctx);
+  const today = localNow(org.timezone).date;
+  const reach = invoiceReach(ctx, access);
+  const [owed, received, drafts] = await Promise.all([
+    repo.owing(ctx, reach),
+    repo.receivedBetween(
+      ctx,
+      { startDate: `${today.slice(0, 7)}-01`, endDate: today },
+      paymentReach(ctx, access),
+    ),
+    repo.countDrafts(ctx, reach),
+  ]);
+  const money = (amount: number) => ({ amount, currency: org.currency });
+  let owing = 0;
+  let overdue = 0;
+  let overdueInvoices = 0;
+  for (const row of owed) {
+    const left = row.total - row.paid;
+    owing += left;
+    if (row.dueDate && row.dueDate < today && left > 0) {
+      overdue += left;
+      overdueInvoices++;
+    }
+  }
+  return {
+    owing: money(owing),
+    overdue: money(overdue),
+    overdueInvoices,
+    receivedThisMonth: money(received.reduce((sum, row) => sum + row.amount, 0)),
+    draftInvoices: drafts,
+  };
+}
+
+// ── Overdue reminders (TUI-67) ──────────────────────────────────────────────
+
+/** A reminder day passed longer ago than this isn't sent late, only marked as done. */
+export const REMINDER_CATCH_UP_DAYS = 3;
+
+/**
+ * Reminds families of their overdue invoices, for the hourly cron at the org's reminder hour.
+ * An invoice is reminded once for each of `reminderDays` (days past its due date) it reaches,
+ * one reminder per run at most. The days are marked before the reminders are queued, so a
+ * failure sends one too few, never one twice. A day reached more than REMINDER_CATCH_UP_DAYS
+ * ago (the cron missed it, or the setting was changed) is marked without sending.
+ */
+export async function remindOverdue(
+  ctx: OrgCtx,
+  queue: Queue<EmailMessage>,
+  reminderDays: number[],
+  today: string,
+) {
+  const rows = await repo.overdue(ctx, today);
+  const marks: { id: string; remindedDays: number[] }[] = [];
+  const toSend: (typeof rows)[number][] = [];
+  for (const row of rows) {
+    if (!row.dueDate || row.total - row.paid <= 0) continue;
+    const late = diffDays(row.dueDate, today);
+    const reached = reminderDays.filter((day) => day <= late && !row.remindedDays.includes(day));
+    if (reached.length === 0) continue;
+    marks.push({
+      id: row.id,
+      remindedDays: [...row.remindedDays, ...reached].sort((a, b) => a - b),
+    });
+    if (late - Math.max(...reached) < REMINDER_CATCH_UP_DAYS) toSend.push(row);
+  }
+  if (marks.length === 0) return { reminded: 0 };
+  await repo.markReminded(
+    ctx,
+    marks,
+    toSend.map((row) => row.id),
+  );
+  if (toSend.length === 0) return { reminded: 0 };
+
+  const [org, families] = await Promise.all([
+    orgs.getOrg(ctx),
+    people.familyLabels(
+      ctx,
+      toSend.map((row) => row.familyId),
+    ),
+  ]);
+  let reminded = 0;
+  for (const row of toSend) {
+    const family = families.get(row.familyId);
+    if (!family) continue;
+    const balance = formatMoney(
+      { amount: row.total - row.paid, currency: row.currency },
+      org.locale,
+    );
+    const queued = await comms.queueNotice(ctx, queue, {
+      event: 'invoice_overdue',
+      subject: t('invoice.overdue.subject', { balance }),
+      body: t('invoice.overdue.body', {
+        familyName: family.name,
+        dueDate: formatDate(row.dueDate!, org.dateFormat),
+        balance,
+        bankReference: row.bankReference ?? '',
+      }),
+      familyIds: [row.familyId],
+      audience: { type: 'custom', ids: [row.familyId] },
+    });
+    if (queued) reminded++;
+  }
+  return { reminded };
+}
+
+// ── PDFs (TUI-59) ───────────────────────────────────────────────────────────
+
+/** One payment within reach, as the list shows it. One stage. */
+export async function getPayment(ctx: OrgCtx, access: Access, id: string): Promise<Payment> {
+  const reach = paymentReach(ctx, access);
+  const [row, allocations, families] = await Promise.all([
+    repo.findPayment(ctx, id, reach),
+    repo.listAllocations(ctx, repo.paymentWithin(ctx, id, reach)),
+    people.familyLabels(ctx, repo.familyOfPayment(ctx, id, reach)),
+  ]);
+  if (!row) throw notFound('Payment');
+  const family = families.get(row.familyId);
+  if (!family) throw notFound('Payment');
+  return toPayment(row, family, allocations);
+}
+
+/** What the family still owes, for erasing it (TUI-79). */
+export function owedBy(ctx: OrgCtx, familyId: string) {
+  return repo.owedBy(ctx, familyId);
 }

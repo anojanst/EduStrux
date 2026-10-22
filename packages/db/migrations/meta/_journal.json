@@ -134,6 +134,104 @@
       "when": 1792569457231,
       "tag": "0018_staff_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792573465061,
+      "tag": "0019_people_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792573465712,
+      "tag": "0020_backfill_guardian_phone_norm",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792574637579,
+      "tag": "0021_comms",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1792575039703,
+      "tag": "0022_session_moves",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1792575570562,
+      "tag": "0023_makeups",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792576168177,
+      "tag": "0024_discounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792577016254,
+      "tag": "0025_admissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792577288234,
+      "tag": "0026_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1792577419338,
+      "tag": "0027_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1792577675007,
+      "tag": "0028_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1792609038843,
+      "tag": "0029_overdue_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1792609689428,
+      "tag": "0030_org_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1792610107724,
+      "tag": "0031_admin_access_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792610375467,
+      "tag": "0032_privacy",
+      "breakpoints": true
     }
   ]
 }

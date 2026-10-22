@@ -312,6 +312,8 @@ is the only deployed environment).
 
 ## D-025 · 2026-10-07 · PDFs render server-side with Cloudflare Browser Rendering
 
+**Superseded in part by D-142** (PDFs go through Browser Rendering's REST API, not a Worker binding; batch PDF jobs aren't built).
+
 - **Context:** Open question: render invoice and receipt PDFs in the browser or server-side.
 - **Decision:** Render server-side with Cloudflare Browser Rendering: headless Chrome turns
   HTML/CSS templates into PDFs. Reasons:
@@ -956,6 +958,8 @@ get them without the default price).
   enrolment carries the student's name (D-061).
 
 ## D-052 · 2026-10-11 · No consent fields yet: consents wait for privacy controls
+
+**Superseded by D-155** (student consents `photos` and `medical_treatment`, in `student_consents`).
 
 - **Context:** The handoff listed "consents" on family and student records (§7, §8) without
   naming them. The owner was asked during the TUI-32 build whether to add photo or medical
@@ -2110,6 +2114,8 @@ rules; branch managers and front desk write class rules in their branches). Read
 
 ## D-090 · 2026-10-13 · Invoice runs apply no discounts yet; an enrolment with no price is skipped
 
+**Superseded in part by D-140** (invoice runs apply discount rules; an enrolment with no price is still skipped).
+
 - **Context:** The TUI-37 task note listed discounts, and D-082 left it to TUI-37 to say what a
   run does with an enrolment that has no price. Both were set as defaults and stated to the
   owner before the build. They weren't put as questions, and the owner didn't object.
@@ -2252,6 +2258,8 @@ rules; branch managers and front desk write class rules in their branches). Read
 - **Tasks:** TUI-37.
 
 ## D-095 · 2026-10-13 · Invoice statuses, due date and notes, issuing and voiding
+
+**Superseded in part by D-137** (issuing now emails the family unless the owner turns it off).
 
 - **Context:** The handoff listed the invoice statuses and the issue and void actions with no
   rules.
@@ -3889,3 +3897,578 @@ under "Not changed here" for a reach that is a subquery.
     member), nobody changing their own membership, who `GET /staff` lists and what a parent
     membership may change, the audit rows, and the trip count.
 - **Tasks:** TUI-42 (and TUI-65, TUI-72).
+
+## D-132 · 2026-10-22 · Search, and duplicate warnings as a check before saving
+
+- **Context:** TUI-43 builds `GET /search` with duplicate warnings. It was built in the session of
+  2026-10-21, which took the recommended option at each question without stopping (Q-1 to Q-4 in
+  [build-questions-2026-10-21.md](build-questions-2026-10-21.md)). The owner asked on 2026-10-22
+  for those answers to be logged.
+- **Decision:**
+  - Duplicate warnings are a check the client calls while the form is open,
+    `GET /search/duplicates` (added). `POST` on families, students and guardians keep their shapes
+    and refuse nothing. Not taken: a `duplicates` field on the `POST` answer, or a 409 until the
+    client confirms.
+  - The check looks only at what the caller reaches, as every other read. Front desk at one branch
+    isn't warned about the same child at another branch; the owner and staff with no branch limit
+    see everything.
+  - Phones match exactly on their digits alone (`+64 21-555 0100` = `64215550100`; `021 555 0100`
+    doesn't, as no country code is assumed), stored in `guardians.phone_norm` with a backfill
+    migration.
+  - `GET /search` needs `people:read`, with each role's usual reach (a teacher their students and
+    their families, a parent their own families). The duplicate check needs `people:write`. An
+    accountant gets 403 on both.
+  - An 8-character search also finds the family with that bank reference (D-097), so a bank
+    transfer can be matched from the search box.
+- **Consequences:** Prefix or country-aware phone matching would need a phone library. Migrations
+  `0019_people_search` and `0020_backfill_guardian_phone_norm`.
+  - Assumption: taken during the build without asking (Q-1 to Q-4); the owner hasn't stated it.
+- **Tasks:** TUI-43.
+
+## D-133 · 2026-10-22 · Changing, withdrawing and transferring an enrolment
+
+- **Context:** TUI-46 builds transfer and withdraw with pro-rata. Built in the session of
+  2026-10-21 (Q-5 to Q-10).
+- **Decision:**
+  - One route, `PATCH /enrolments/{id}`, as the endpoint list has it: plain changes,
+    `status: "withdrawn"`, or `transfer: {...}`. It answers `{ enrolment, transferredTo, invoices }`.
+    Not taken: `POST …/withdraw` and `…/transfer` actions.
+  - Pro-rata on invoices already made: a **draft** invoice's line is charged again for the new
+    dates, pro rata by lessons, at the price it was charged at (D-093); a draft left with no lines
+    is voided. An **issued** invoice's line is only reported, with what it would charge now: issued
+    invoices stay fixed (D-095) and credits are v1.1. Pack lines are left alone. A new
+    `priceOverride` applies from the next run and touches no invoice.
+  - A withdrawal sets `endDate` and `status: withdrawn`. The student is billed and stays on
+    attendance and notes rosters up to their last day: invoice runs now bill withdrawn enrolments
+    for the lessons before the student left. Only an active enrolment gives a teacher or a parent
+    reach (D-060) and holds a place.
+  - With no `endDate`, a withdrawal ends today, or the day before the start when that is still to
+    come. An `endDate` before the day before the start is 400.
+  - A transfer starts the new enrolment on `transfer.startDate` (default today, or the new class's
+    first day when later) and ends the old one the day before. The caller must reach the new class
+    (404), and the rules of a new enrolment apply (409 already enrolled, 422 full or outside the
+    class's dates). The price override isn't carried over; `transfer.priceOverride` sets one. One
+    `enrolment.transferred` audit row holds both.
+  - `classes:write`, reaching the enrolment through its class or its student, as reads do: the
+    class's branch can withdraw a child from another home branch. Teachers, parents and
+    accountants get 403.
+- **Consequences:** The change reads in two stages before its write, one over the D-102 budget.
+  - Assumption: taken during the build without asking (Q-5 to Q-10); the owner hasn't stated it.
+- **Tasks:** TUI-46.
+
+## D-134 · 2026-10-22 · Clash detection is a report, and refuses nothing
+
+- **Context:** TUI-50 builds clash detection. Built in the session of 2026-10-21 (Q-11 to Q-13).
+- **Decision:**
+  - `GET /timetable/clashes?from&to` lists clashing pairs. Nothing is refused or warned on save:
+    clashes are sometimes intended. The web app can call it after a save.
+  - A clash is two scheduled lessons on one date whose times overlap (end touching start isn't)
+    with the same room, the same teacher, a student whose enrolments cover that date in both
+    classes (withdrawn ones up to their last day), or two different courses of one grade level.
+    Two groups of the same course aren't a grade clash. Cancelled lessons are ignored.
+  - At most 92 days per request (400 beyond), not paged. `classes:read` with the class reach:
+    branch staff see their branches' lessons only, a teacher their own classes. Parents and
+    accountants get 403.
+- **Consequences:** A teacher shared with another branch shows no clash to branch-limited staff.
+  Warnings on save can come with the calendar UI.
+  - Assumption: taken during the build without asking (Q-11 to Q-13); the owner hasn't stated it.
+- **Tasks:** TUI-50.
+
+## D-135 · 2026-10-22 · Announcements: recipients, audiences and who reads them
+
+- **Context:** TUI-69 builds announcements and message templates. Built in the session of
+  2026-10-21 (Q-14 to Q-16).
+- **Decision:**
+  - A message goes to every guardian of each family in its audience, one recipient row each.
+    Guardians with no email get the portal only (`emailStatus: skipped`). `preferredChannel` is
+    still only stored: everyone with an address is emailed. Not taken: the billing contact only,
+    or only guardians who prefer email.
+  - Audiences: `all`; `branch` (families whose home branch it is); `grade` (students with that
+    grade in the current academic year); `subject`, `class`, `teacher` (students with an active
+    enrolment in such a class); `custom` (family ids, 404 for one out of reach). The audience is
+    cut down to the families the sender reaches. Unknown ids reach nobody; an audience that
+    reaches nobody is 422.
+  - The owner reads every message, automatic ones included. Everyone else reads only the
+    announcements they sent. Parents read theirs at `GET /portal/messages` (added) and get 403 on
+    `GET /messages`.
+  - Anyone who sends can list templates; only the owner (`org:write`) adds, changes or deletes
+    them.
+- **Consequences:** Tables `messages`, `message_recipients`, `message_templates` (migration
+  `0021_comms`).
+  - Assumption: taken during the build without asking (Q-14 to Q-16); the owner hasn't stated it.
+- **Tasks:** TUI-69.
+
+## D-136 · 2026-10-22 · Email goes through the queue to Resend's API
+
+- **Context:** TUI-65 builds the email queue consumer. Built in the session of 2026-10-21 (Q-17),
+  with no infrastructure changes.
+- **Decision:**
+  - Each email is a queue message. The consumer renders it (plain text body to escaped HTML, the
+    server-side English catalog, D-015) and posts it to Resend's API with an `Idempotency-Key` per
+    recipient, so a retry never sends twice.
+  - 429 and 5xx are retried with backoff up to the queue's 5 retries, then marked `failed`. Other
+    refusals fail at once.
+  - Configuration the owner sets: the `RESEND_API_KEY` secret and `EMAIL_FROM` (a sender on a
+    domain verified with Resend), and optionally `APP_URL` for links in invitation emails. Without
+    them every email is marked `failed` with "Email sending is not set up". Tests force both empty.
+- **Consequences:** None of these values are set yet, so no email is sent in production until the
+  owner adds them. Sending the `invitation` email (D-131) is covered.
+  - Assumption: taken during the build without asking (Q-17); the owner hasn't stated it.
+- **Tasks:** TUI-65.
+
+## D-137 · 2026-10-22 · Automatic messages, notification settings, and issuing emails the family
+
+- **Context:** TUI-70 builds automatic messages and notification settings. D-095 said issuing an
+  invoice sends no email yet. Built in the session of 2026-10-21 (Q-18 to Q-20).
+- **Decision:**
+  - `GET|PUT /notification-settings`: every role reads, the owner writes. Three switches,
+    `sessionChanges`, `invoiceIssued` and `overdueReminders` (all on by default), the reminder
+    days after the due date (default 1, 7, 14), the local hour reminders go out (default 9) and a
+    reply-to address. `PUT` replaces them all, the later save winning (no `updatedAt`).
+  - Automatic messages are stored like announcements (`kind: automatic`, with `event`), so the
+    portal shows them and their delivery is tracked.
+  - Issuing an invoice queues an `invoice_issued` message to the family's guardians (total, due
+    date, bank reference) unless `invoiceIssued` is off. The PDF isn't attached.
+  - A request only queues a notice. The email consumer applies the settings, finds the guardians,
+    writes the message (with the requester as the audit actor) and queues its emails, so the
+    message appears a moment after the response. This keeps requests within D-102.
+- **Consequences:** D-095's "issuing sends no email" no longer holds. Table
+  `notification_settings` (migration `0021_comms`).
+  - Assumption: taken during the build without asking (Q-18 to Q-20); the owner hasn't stated it.
+- **Tasks:** TUI-70 (and TUI-65).
+
+## D-138 · 2026-10-22 · One-off lesson changes and family notices
+
+- **Context:** TUI-49 builds moving and cancelling a single lesson. Built in the session of
+  2026-10-21 (Q-21 to Q-23).
+- **Decision:**
+  - `PATCH /sessions/{id}` changes `date`, `startTime`, `endTime`, `roomId`, `teacherId` or
+    `status` (cancel, or put back on) of a lesson that hasn't started (422 once it has), never to a
+    time that has passed (422). Another of the class's lessons at the new date and time is 409.
+    Takes `updatedAt`. `classes:write` with the class reach.
+  - A moved lesson remembers where it was first scheduled (`movedFrom`; columns
+    `sessions.original_date` and `original_start_time`). Saving the weekly schedule again never
+    re-adds its first slot, nor moves or removes it. Moving it back clears `movedFrom`.
+  - Families hear about a move to another date, a new start time, a cancellation and a lesson put
+    back on; a new end time, room or teacher alone sends nothing. `notify: false` sends nothing; an
+    optional `note` is added. It goes to the families of the students expected at the lesson, on
+    its old date and its new one, when `sessionChanges` is on (D-137).
+- **Consequences:** Migration `0022_session_moves`.
+  - Assumption: taken during the build without asking (Q-21 to Q-23); the owner hasn't stated it.
+- **Tasks:** TUI-49.
+
+## D-139 · 2026-10-22 · Make-up policy, credits and staff booking
+
+- **Context:** TUI-55 builds the make-up policy, automatic credits and staff booking. Built in the
+  session of 2026-10-21 (Q-24 to Q-26).
+- **Decision:**
+  - One policy per org, `GET|PUT /makeup-policy` (every role reads, the owner writes), off until
+    saved. An `excused` mark (on by default) and/or an `absent` mark (off by default) earns one
+    credit per student and missed lesson; with `requireNotice` (on by default) only when an absence
+    notice covering the date was given before the lesson started. Only students enrolled for the
+    lesson earn one. A credit lapses `expiryDays` after the missed lesson (default 60; null =
+    never). Changing the mark while the credit is unused takes it back.
+  - Lessons the centre cancels earn nothing automatically (bulk credits are v1.1).
+  - Staff with `classes:write` book a credit into a scheduled lesson still to come, on or before
+    the credit's last day, of the same course when `sameCourseOnly` (on by default), that the
+    student isn't already in, with a place free (enrolled students plus bookings, against the
+    capacity). The student then shows on that lesson's attendance roster. Cancelling a booking
+    before the lesson gives the credit back. A unique index stops one credit being booked twice.
+  - Parents see credits at `GET /portal/makeup-credits` but don't book (v1.1).
+- **Consequences:** Marking attendance stays at 3 stages but makes 11 trips instead of 8; reading
+  a roster costs one more. Tables `makeup_policies`, `makeup_credits`, `makeup_bookings`
+  (migration `0023_makeups`).
+  - Assumption: taken during the build without asking (Q-24 to Q-26); the owner hasn't stated it.
+- **Tasks:** TUI-55.
+
+## D-140 · 2026-10-22 · Discount rules: six kinds, stacking, and who writes them
+
+- **Context:** TUI-58 builds discounts and bundles (D-079). D-090 had invoice runs apply none until
+  then. Built in the session of 2026-10-21 (Q-27 to Q-29).
+- **Decision:**
+  - One rule type, `discount_rules`, with six kinds, each a percentage or an amount off a line's
+    charge before tax, or for a bundle a fixed total:
+    - `sibling`: in a family with `minCount` (default 2) or more children billed in the run, every
+      child but the one charged most (ties: the earliest student).
+    - `multi_class`: a student with `minCount` or more lines in the run, on all but their dearest.
+      Lines priced by a bundle neither count nor get it (D-079).
+    - `early_bird`: enrolments made on or before `cutoffDate`, in one term's run or any. Not
+      taken: paid before a date, which would need credit notes.
+    - `scholarship` (students) and `manual` (families): standing discounts while the rule is
+      active. A one-off discount on one invoice isn't built.
+    - `bundle`: a student billed for every one of `courseIds` pays `fixedPrice` for those lines
+      together, split by charge, or the percentage or amount off each.
+  - Rules apply in id order, each on the charge before discounts, and together take off at most
+    the whole charge. Tax is worked out on what is left.
+  - Each invoice line carries `discount` and `discounts` (`[{ ruleId, name, amount }]`). Discounts
+    apply when a run makes the invoice; a rule changed later doesn't touch invoices made. A draft
+    line's discounts follow its charge when an enrolment's dates change (D-133).
+  - Only the owner writes rules, as for org-wide price rules (D-111). Branch staff and accountants
+    read; teachers and parents get 403.
+- **Consequences:** D-090's "no discounts" no longer holds. Migration `0024_discounts`
+  (`discount_rules`; `invoice_lines.discount_amount` and `discounts`).
+  - Assumption: taken during the build without asking (Q-27 to Q-29); the owner hasn't stated it.
+- **Tasks:** TUI-58.
+
+## D-141 · 2026-10-22 · Home dashboard and money report
+
+- **Context:** TUI-62 and TUI-63 build the reports. Built in the session of 2026-10-21 (Q-30 to
+  Q-32).
+- **Decision:**
+  - `GET /reports/dashboard` (`reports:read`, as far as the caller reaches): families, students
+    with an active enrolment, classes still running, today's lessons, students away today, lessons
+    in the last 14 days with no marks, and make-up credits waiting. `money` (owing, overdue, received
+    this month, drafts) only for roles with `reports:money` in it: the owner and branch managers.
+    Front desk ("Limited") and teachers get the counts; an accountant gets 403.
+  - `GET /reports/money?from&to` (`reports:money`, at most 366 days): **invoiced** = invoices issued
+    in the dates by `issuedAt` in the org's timezone, void ones left out; **received** = payments by
+    `receivedOn`, also by method; **aged debt** = what is owed today on issued and part-paid
+    invoices, by days past due (not due / 1–30 / 31–60 / 61–90 / 90+); **tax collected** = tax on
+    the lines of invoices issued in the dates, by rate (accrual basis). Not taken: tax on payments
+    received (cash basis).
+  - The accountant's "export" is not a CSV of this report yet; the full data export (D-147)
+    carries the raw invoices and payments.
+- **Consequences:**
+  - Assumption: taken during the build without asking (Q-30 to Q-32); the owner hasn't stated it.
+- **Tasks:** TUI-62, TUI-63.
+
+## D-142 · 2026-10-22 · PDFs through Browser Rendering's REST API, with a printable HTML fallback
+
+- **Context:** TUI-59 builds invoice PDFs and payment receipts. D-025 chose Cloudflare Browser
+  Rendering; its Worker binding is a wrangler change, which the session didn't make. Built in the
+  session of 2026-10-21 (Q-33 to Q-35).
+- **Decision:**
+  - The API renders the printable HTML itself (English catalog, the org's locale and date format,
+    brand colour, tax number; nothing org-written trusted as HTML) and posts it to Browser
+    Rendering's **REST API**, which needs no binding.
+  - The owner sets `BROWSER_RENDERING_ACCOUNT_ID` and `BROWSER_RENDERING_TOKEN` (an API token with
+    Browser Rendering: Edit). Until then a PDF is 503 `unavailable` (a new error code), and
+    `?format=html` gives the printable page.
+  - Invoices have no sequential number: the paper shows the last 8 characters of the id in
+    capitals, as do receipts.
+  - Not built: batch PDF jobs, and attaching the PDF to the invoice email.
+- **Consequences:** Browser time may be billed on the account's plan (D-065). A sequential
+  per-org invoice number (some tax authorities require one) would need a counter and a migration.
+  - Assumption: taken during the build without asking (Q-33 to Q-35); the owner hasn't stated it.
+- **Tasks:** TUI-59.
+
+## D-143 · 2026-10-22 · Year-end promotion
+
+- **Context:** TUI-45 builds year-end promotion as a job. Built in the session of 2026-10-21
+  (Q-36).
+- **Decision:**
+  - `POST /students/promote` (`people:write`, a job, takes an `Idempotency-Key`) with
+    `fromAcademicYearId`, `toAcademicYearId` (must start after, 422) and optional `exceptions`
+    (`{ studentId, gradeLevelId | null }`: repeat, skip to any grade, or none).
+  - Every student with a grade in the old year gets the next grade in the org's order in the new
+    year; the last grade gets none. A student who already has a grade in the new year keeps it, so
+    a second run changes nothing. Branch staff promote only their branches' students.
+  - One `students.promoted` audit row for the run (D-045). Enrolments aren't touched (roll-over is
+    v1.1).
+- **Consequences:**
+  - Assumption: taken during the build without asking (Q-36); the owner hasn't stated it.
+- **Tasks:** TUI-45.
+
+## D-144 · 2026-10-22 · Public enquiry and enrolment forms, bot protection, and approving
+
+- **Context:** TUI-47 builds the public forms and staff approval. Built in the session of
+  2026-10-21 (Q-37 to Q-39), with no infrastructure changes.
+- **Decision:**
+  - No sign-in, by the org's slug (D-020): `GET /api/v1/public/{orgSlug}/form` (added: the org's
+    name, branches, running classes with their weekly times, subjects, grade levels and courses),
+    `POST …/enquiries` and `POST …/enrolment-requests`. A suspended or cancelled org is 404.
+  - Staff: `GET /enquiries` and `PATCH /enquiries/{id}` (`new` / `handled`) with `people:write`
+    (added). A lead pipeline is v1.1.
+  - Bot protection in the app: a hidden `website` field (filled in = a bot, answered as received,
+    nothing stored); at most 10 forms an hour from one address to one org (429), counted from a
+    SHA-256 of the IP, never the IP itself; Cloudflare Turnstile once the owner sets
+    `TURNSTILE_SECRET_KEY` (then a form without a valid `turnstileToken` is 400).
+  - `POST /enrolment-requests/{id}/approve` (`classes:write`, `Idempotency-Key`) adds a family in
+    `branchId` (default the request's, else the first class's) or joins `familyId` (reusing its
+    guardian with the same email), then the guardian, each child and their enrolments, with the
+    usual rules and the approver's reach. A class that refuses is listed in `result.skipped` and
+    the rest goes ahead. These are separate writes, each with its audit row: a failure halfway
+    leaves what was made and the request still pending. `…/reject` takes an optional reason.
+  - Branch staff see requests naming one of their branches, or none.
+- **Consequences:** Nobody is emailed about a new request or the decision yet. Cloudflare
+  rate-limit rules (TUI-81) would sit in front. Tables `enquiries`, `enrolment_requests` (migration
+  `0025_admissions`).
+  - Assumption: taken during the build without asking (Q-37 to Q-39); the owner hasn't stated it.
+- **Tasks:** TUI-47.
+
+## D-145 · 2026-10-22 · File uploads through links the Worker signs
+
+- **Context:** TUI-61 builds uploads to R2 with signed links. R2's own presigned URLs need S3 API
+  keys, an infra and credentials change. Built in the session of 2026-10-21 (Q-40, Q-41).
+- **Decision:**
+  - The Worker serves the links over the existing `FILES` binding. `POST /files/upload-url` makes
+    the file's record and a link to `PUT` its bytes (15 minutes); `GET /files/{id}` gives a download
+    link (5 minutes). The links are `PUT|GET /api/v1/files/{fileId}/content` (added), each carrying
+    an expiry and an HMAC of method, file id and expiry; a wrong or stale one is 404.
+  - The owner sets `FILES_SIGNING_SECRET` (any long random string); without it these routes are 503.
+  - CSV, PDF, PNG or JPEG, at most 10 MB, since files stream through the Worker.
+  - Uploading needs `people:write`. A file is read by the member who uploaded it and the owner;
+    anyone else gets 404, as for jobs (D-018). Import files are removed by the daily clean-up after
+    a week.
+- **Consequences:** Table `files` (migration `0026_files`).
+  - Assumption: taken during the build without asking (Q-40, Q-41); the owner hasn't stated it.
+- **Tasks:** TUI-61.
+
+## D-146 · 2026-10-22 · Spreadsheet import: CSV, one student per row
+
+- **Context:** TUI-60 builds the import with manual column mapping (D-022). Built in the session
+  of 2026-10-21 (Q-42 to Q-44).
+- **Decision:**
+  - Imports read CSV (RFC 4180, with a BOM), at most 1000 rows. Excel `.xlsx` would need a parsing
+    library in the Worker; staff save the sheet as CSV.
+  - One row is one student with their family and one guardian: student first and last name
+    (required), date of birth (`YYYY-MM-DD` or the org's date format), notes, grade (a grade
+    level's name, for the current year), family name (default the guardian's or student's last
+    name), branch (a name, or a default branch), address, guardian first and last name, email,
+    phone, relationship. Rows with the same family name, branch and guardian email (or guardian
+    name with no email) are one family; its first guardian is the billing contact.
+  - Flow: `POST /imports` (from an uploaded file) gives headers, row count and the first 5 rows;
+    `PATCH /imports/{id}` sets the mapping and checks every row (the first 100 problems, with
+    spreadsheet row numbers; `ready` with none); `POST /imports/{id}/commit` runs a job that adds
+    everything in one batch with one `import.committed` audit row, or nothing.
+  - Records already in the org aren't matched: an import adds new families even when a name is on
+    record. Branch staff import only into their own branches. An import is seen by whoever started
+    it and the owner.
+- **Consequences:** Run the duplicate check (D-132) or search before importing. Table `imports`
+  (migration `0027_imports`).
+  - Assumption: taken during the build without asking (Q-42 to Q-44); the owner hasn't stated it.
+- **Tasks:** TUI-60.
+
+## D-147 · 2026-10-22 · Full data export as one JSON file
+
+- **Context:** TUI-78 builds the full data export. Built in the session of 2026-10-21 (Q-45).
+- **Decision:**
+  - `POST /exports` (owner only) runs a job that writes one JSON file with every org table
+    (`{ format, version, exportedAt, org, tables }`), deleted rows included; internal columns
+    (normalised names, IP hashes, token hashes, R2 keys) left out; members' names and emails from
+    `users`. Kept a week; `GET /exports/{id}` gives a 5-minute download link once done.
+  - The export reads every module's tables directly, a documented exception to "a repository reads
+    only its own module's tables".
+  - It works while the org is read-only (D-153).
+- **Consequences:** Per-table CSVs in a zip would need a zip library. Table `exports` (migration
+  `0028_exports`).
+  - Assumption: taken during the build without asking (Q-45); the owner hasn't stated it.
+- **Tasks:** TUI-78.
+
+## D-148 · 2026-10-22 · Hourly cron: overdue reminders and credit expiry
+
+- **Context:** TUI-67 builds the hourly cron. Built in the session of 2026-10-21 (Q-46, Q-47).
+- **Decision:**
+  - Each hour the cron works out every org's local time; suspended, cancelled and read-only orgs
+    are skipped (D-153). At the org's `reminderHour` it reminds the family of each issued or
+    part-paid invoice with a balance, once for each of `overdueReminderDays` the invoice reaches.
+  - The days reminded are kept on the invoice (`invoices.reminded_days`) and marked before the
+    reminder is queued, so a failure sends one too few, never two. A day reached more than 3 days
+    ago is marked without sending, so old debts don't all get a reminder at once.
+  - One `invoices.reminded` audit row per org per run.
+  - Credits past their last day expire at the org's local midnight, and again at 1am in case a
+    daylight-saving change skips midnight.
+- **Consequences:** Migration `0029_overdue_reminders`.
+  - Assumption: taken during the build without asking (Q-46, Q-47); the owner hasn't stated it.
+- **Tasks:** TUI-67.
+
+## D-149 · 2026-10-22 · Daily cron: sessions ahead, nightly backups, clean-up
+
+- **Context:** TUI-68 builds the daily cron. Built in the session of 2026-10-21 (Q-48 to Q-50).
+- **Decision:**
+  - Each day every open-ended class still running gets what saving its schedule again does:
+    sessions kept 91 days (13 weeks) ahead (D-044), holidays and moved lessons respected. One
+    `class.sessions_extended` audit row when a class gets new sessions, none otherwise.
+  - Nightly backups: one `exports.backup` job per org (no user, so only the owner can look it up)
+    writes the same JSON as `POST /exports` to the existing `FILES` bucket at
+    `backups/{orgId}/{local date}.json`, and deletes the org's backups older than 14 nights. They
+    aren't `files` rows and can't be downloaded through the API; they are there to restore one org,
+    alongside D1's own Time Travel.
+  - It also removes expired files, stale idempotency keys and webhook records older than 30 days.
+  - Both crons loop over every org in one invocation (the backup runs in a queued job per org).
+- **Consequences:** Storage grows with org size × 14 in the existing bucket. With many orgs the
+  loops may need splitting into per-org queue messages; not needed at MVP size.
+  - Assumption: taken during the build without asking (Q-48 to Q-50); the owner hasn't stated it.
+- **Tasks:** TUI-68.
+
+## D-150 · 2026-10-22 · Clerk and Resend webhooks
+
+- **Context:** TUI-71 builds signed, idempotent webhooks. Built in the session of 2026-10-21 (Q-51
+  to Q-53).
+- **Decision:**
+  - `POST /api/v1/webhooks/clerk` and `/resend` check the Svix signature both senders use
+    (HMAC-SHA256, 5-minute tolerance, any of several `v1` signatures while a secret rotates) with
+    WebCrypto, no library. The owner sets `CLERK_WEBHOOK_SECRET` and `RESEND_WEBHOOK_SECRET`;
+    without one, that webhook is 503 and the sender retries. A bad or stale signature is 401.
+  - Each delivery is recorded by its id in `webhook_events` after it is handled, so a redelivery
+    answers `duplicate: true`. Records older than 30 days are dropped by the daily cron.
+  - Clerk: `user.created` and `user.updated` store the primary email (lower-cased) and name on
+    `users`, adding the row if needed. `user.deleted` suspends the user's memberships in every org
+    (one `membership.updated` audit row per org, by no one), so records and history stay. Other
+    events are ignored.
+  - Resend: `email.delivered`, `bounced`, `complained` and `failed` update the message recipient
+    named by the email's `org_id` and `recipient_id` tags. A late "delivered" doesn't undo a
+    bounce. Invitation emails carry no recipient tag, so their events are ignored.
+- **Consequences:** Both paths need a Cloudflare Access bypass while Access covers all traffic
+  (D-069), which is the owner's to add. If a deleted Clerk user was an org's only owner, that org
+  has no active owner until support (D-154) steps in. A bounce doesn't yet flag the guardian's
+  email as bad. `webhook_events` is platform-wide, with no `org_id` (migration `0021_comms`).
+  - Assumption: taken during the build without asking (Q-51 to Q-53); the owner hasn't stated it.
+- **Tasks:** TUI-71.
+
+## D-151 · 2026-10-22 · Parent portal sign-in needs no API work
+
+- **Context:** TUI-72 is parent sign-in by email link. Reviewed in the session of 2026-10-21
+  (Q-54).
+- **Decision:** Nothing is built in the API. Parents sign in through Clerk and are linked to their
+  family by accepting a guardian invitation (D-131); every `/portal/*` route works off that link.
+  The owner turns on email code (or magic link) sign-in in the Clerk dashboard and confirms.
+- **Consequences:** Not built: linking a signed-in parent to a guardian by matching email without
+  an invitation (it would change D-053's "linked by invite"), and inviting many guardians at once.
+  - Assumption: taken during the build without asking (Q-54); the owner hasn't stated it.
+- **Tasks:** TUI-72.
+
+## D-152 · 2026-10-22 · Paddle subscriptions and their webhook
+
+> **Superseded by D-157** once TUI-106 is built: billing moves to Stripe.
+
+- **Context:** TUI-73 builds Paddle subscription billing. Built in the session of 2026-10-21 (Q-55
+  to Q-57), with no Paddle account changes.
+- **Decision:**
+  - `GET /billing/subscription` (plan, status, `canWrite`, the cap and active students, the
+    subscription), `POST /billing/checkout { plan, interval }` (creates a Paddle transaction with
+    the org's id in `custom_data` for Paddle.js; `checkoutUrl` when the account has a default
+    payment link) and `POST /billing/portal` (a Paddle customer-portal link). All three owner only
+    (`org:write`). An org with a live subscription (active, trialing, past due or paused) can't
+    start a second checkout (422): plan changes go through the portal. Plain fetch, no Paddle SDK.
+  - Configuration: `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_ENVIRONMENT` (`sandbox` by
+    default) and `PADDLE_PRICE_IDS` as JSON (`solo_month`, `solo_year`, `small_month`,
+    `small_year`). The hand-set local prices (D-027) live on those Paddle prices. Without them
+    checkout and the portal are 503.
+  - `POST /api/v1/webhooks/paddle` checks Paddle's own signature (HMAC-SHA256 of `ts:body`,
+    5-minute tolerance), deduplicated by `event_id` in `webhook_events`. Every `subscription.*`
+    event stores the subscription in `org_subscriptions`: plan (a price not in `PADDLE_PRICE_IDS`
+    is `custom`), interval, status, period end and a scheduled cancellation. Older events than the
+    last applied are ignored.
+  - The org's plan and status follow its newest subscription: active or trialing → `active`,
+    past_due → `past_due`, paused → `suspended`, canceled → `cancelled`. An unknown org is logged
+    and ignored. One `subscription.created` or `.updated` audit row by no one. Transaction events
+    aren't stored.
+- **Consequences:** The webhook path needs the Access bypass too (D-069). Migration
+  `0030_org_subscriptions`.
+  - Assumption: taken during the build without asking (Q-55 to Q-57); the owner hasn't stated it.
+- **Tasks:** TUI-73.
+
+## D-153 · 2026-10-22 · Trial, read-only orgs, and the cap on active students
+
+- **Context:** TUI-74 builds sign-up, trial and plan limits. Built in the session of 2026-10-21
+  (Q-58 to Q-60).
+- **Decision:**
+  - Sign-up is Clerk then `POST /orgs`: a 14-day trial, plan `trial`, with the Small plan's room
+    (150). The trial ending is worked out on the fly, not by a cron.
+  - Once a trial ends with no subscription, or while the org is `suspended` or `cancelled`, every
+    write to the org is **402 `subscription_required`**. Reads still work, and so do `/billing/*`
+    and `POST /exports`, so an org can always subscribe and take its data. `past_due` keeps
+    working while Paddle retries. The crons skip read-only orgs.
+  - The cap (Solo 30, Small 150, custom none) counts students with an active enrolment that hasn't
+    ended, not every student on record. It is checked when enrolling: a student not yet counted,
+    past the cap, is **402 `plan_limit`**; enrolling a counted student in another class is fine.
+    An approval reports a capped enrolment in `skipped`. Adding students and families isn't
+    capped. A smaller plan removes nobody: enrolments are refused until the count is under the
+    cap.
+  - New error codes `subscription_required` and `plan_limit`, both HTTP 402.
+- **Consequences:** `POST /enrolments` makes 10 D1 calls in its read stage (was 9).
+  - Assumption: taken during the build without asking (Q-58 to Q-60); the owner hasn't stated it.
+- **Tasks:** TUI-74.
+
+## D-154 · 2026-10-22 · Super-admin console and impersonation through Clerk actor tokens
+
+- **Context:** TUI-75 builds the super-admin console with logged impersonation. Built in the
+  session of 2026-10-21 (Q-61 to Q-63).
+- **Decision:**
+  - Super-admins are the Clerk user ids in the secret `SUPER_ADMIN_CLERK_USER_IDS`
+    (comma-separated), not a role or a column, so nothing in the database can grant it. Anyone
+    else, an admin while impersonating included, gets 404.
+  - `GET /api/v1/admin/orgs` (newest first, with owners; `?q` by the start of name or slug,
+    `?status`), `GET /admin/orgs/{id}` (adds the billing overview, active members, families and
+    students), `PATCH /admin/orgs/{id}` (plan, status, trial end, with `updatedAt`; recorded in the
+    org's audit log as `org.admin_updated`). A later Paddle event sets plan and status again.
+    Deleting an org isn't offered.
+  - `POST /admin/orgs/{id}/impersonate { userId?, reason }` asks Clerk for a one-time actor-token
+    link (10 minutes; the session lasts at most an hour) that signs the admin in as the member, the
+    org's first owner by default. Needs `CLERK_SECRET_KEY` (503 without). The org's audit log gets
+    `org.impersonated` with the reason.
+  - Every request in an impersonated session (Clerk's `act` claim) and every admin request is
+    written to the platform-wide `admin_access_log` before it runs. The session can do anything
+    the member can.
+- **Consequences:** No endpoint reads `admin_access_log` yet (read it in D1). Migration
+  `0031_admin_access_log`; the table is platform-wide, its `org_id` optional.
+  - Assumption: taken during the build without asking (Q-61 to Q-63); the owner hasn't stated it.
+- **Tasks:** TUI-75.
+
+## D-155 · 2026-10-22 · Student consents, erasing a family, and retention
+
+- **Context:** TUI-79 builds privacy controls. D-052 left which consents exist to it. Built in the
+  session of 2026-10-21 (Q-64 to Q-66).
+- **Decision:**
+  - Two consent types per student, `photos` and `medical_treatment`, in `student_consents` (one
+    row per student and type, changed in place; the audit log keeps the history). Each records
+    granted or refused, the guardian who gave it (one of the family's), a note and who recorded
+    it. `GET /students/{id}/consents` (anyone who reads the student),
+    `PUT /students/{id}/consents/{type}` (`people:write`), and
+    `PUT /portal/students/{id}/consents/{type}` for a parent, recorded as their guardian.
+  - `POST /families/{id}/erase`, owner only, irreversible: names become "Erased family / guardian /
+    student"; address, emails, phones, date of birth, notes, relationship and language are
+    cleared; guardians are unlinked from their sign-ins; consents, lesson notes on the students
+    and invitations to the guardians are deleted; absence reasons, the email copied onto messages
+    and what the public form sent are cleared; the audit log's `before`/`after` for the family,
+    its guardians and students are cleared (the rows stay). One batch, one `family.erased` audit
+    row. Kept: ids, the bank reference, grades, enrolments, attendance, invoices and payments.
+    Refused (422) while the family owes money or its students have enrolments running. Works on a
+    deleted family; erasing again answers the same.
+  - Retention: archiving old audit rows stays deferred (D-113), and nothing is erased
+    automatically. What exists: uploaded and import files a week, exports a week, backups 14
+    nights, webhook records 30 days, idempotency keys 24 hours.
+- **Consequences:** D-052 is settled. Erasing a single student and staff members' own data aren't
+  built. More consent types are one line each. Migration `0032_privacy` (`student_consents`,
+  `families.erased_at`).
+  - Assumption: taken during the build without asking (Q-64 to Q-66); the owner hasn't stated it.
+- **Tasks:** TUI-79.
+
+## D-156 · 2026-10-22 · The org isolation sweep reads the API's own spec
+
+- **Context:** TUI-82 is the org isolation review. Built in the session of 2026-10-21 (Q-67).
+- **Decision:**
+  - `test/org-isolation.test.ts` reads the API's OpenAPI document, so a route added later is
+    covered without being listed. Someone who isn't a member gets 404 on every org route. An
+    owner using another org's ids gets 404 on every route with an id in its path (the two
+    parent-only portal routes are 403 first). Write bodies pass the schema, so the 404 comes from
+    the id lookup.
+  - A source check fails if anything outside a repository queries D1. Allowed outside
+    repositories: each module's `for-*.ts` query files (D-104), `src/db/`, the `db` and
+    idempotency middleware, and the job runner's own `jobs` table.
+  - Fixed by the review: `GET /me`, the admin log and the daily cron's idempotency clean-up now go
+    through a repository or the middleware that owns the table.
+- **Consequences:** Ids sent in a body (another org's `studentId` in `POST /enrolments`) are
+  covered by each module's own tests, not the sweep.
+  - Assumption: taken during the build without asking (Q-67); the owner hasn't stated it.
+- **Tasks:** TUI-82.
+
+## D-157 · 2026-10-22 · Subscription billing moves to Stripe
+
+- **Context:** The handoff named Paddle for the SaaS's own subscription billing (merchant of
+  record, 5% + $0.50 a transaction), and TUI-73 was built on it (D-152). Asked why Paddle, the
+  owner chose Stripe.
+- **Decision:** EduStrux bills its subscriptions through **Stripe**, not Paddle. The switch is
+  made later, before launch, in TUI-106; until then the API stays on Paddle as built.
+- **Alternatives considered:** Paddle (rejected: about 10% of a $9.90 Solo plan in fees, less
+  control over checkout). Lemon Squeezy, another merchant of record (not chosen).
+- **Consequences:**
+  - Stripe isn't the merchant of record: EduStrux is the seller, so sales tax, VAT and GST are
+    ours to calculate, register for and file where thresholds are crossed. Stripe Tax can do the
+    calculating for a fee. Which countries to register in is still open (handoff §11).
+  - The plan limits and read-only rules (D-153) don't depend on the provider and stay.
+  - D-027's hand-set NZD, AUD and GBP prices become Stripe prices in those currencies.
+  - The fee and profit figures in handoff §1 are Paddle's and need redoing with Stripe's.
+- **Supersedes:** D-152 (when TUI-106 is built).
+- **Tasks:** TUI-106.

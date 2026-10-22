@@ -1,0 +1,1 @@
+ALTER TABLE `invoices` ADD `reminded_days` text DEFAULT '[]' NOT NULL;

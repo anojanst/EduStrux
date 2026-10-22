@@ -51,3 +51,8 @@ export async function getJob(ctx: OrgCtx, role: Role, jobId: string): Promise<Jo
   }
   return toJob(row);
 }
+
+/** Clears the audit log's copies of erased records (TUI-79), for the erasure's one batch. */
+export function eraseAuditStatements(ctx: OrgCtx, entityIds: string[]) {
+  return repo.eraseAuditStatements(ctx, entityIds);
+}

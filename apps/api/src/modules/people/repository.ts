@@ -1,5 +1,6 @@
-import { families, guardians, now, studentGrades, students } from '@edustrux/db';
-import { and, asc, count, eq, gt, or, sql, type SQL } from 'drizzle-orm';
+import { families, guardians, now, studentConsents, studentGrades, students } from '@edustrux/db';
+import { and, asc, count, eq, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
   changedFields,
@@ -757,4 +758,477 @@ export async function countStudentsInGrade(ctx: OrgCtx, gradeLevelId: string) {
     .where(inOrg(ctx, studentGrades, eq(studentGrades.gradeLevelId, gradeLevelId)))
     .get();
   return row?.n ?? 0;
+}
+
+// ── Search and duplicate warnings (TUI-43) ──────────────────────────────────
+// A name is matched by prefix on the normalised columns, an email, phone or bank reference
+// exactly (D-026). Each read keeps to the caller's reach, as the lists do.
+
+/**
+ * Order by these columns without letting the order pick the index: a search goes to the indexes
+ * its name ranges and exact values fit, then sorts the few rows it found. Ordered by the plain
+ * columns, SQLite would read the org's whole name index in order to save that sort.
+ */
+const sortedBy = (...columns: SQLiteColumn[]) => columns.map((column) => sql`+${column}`);
+
+/** Values starting with `prefix`, as a range an index on the column can go to. */
+const startsWith = (column: SQLiteColumn, prefix: string) =>
+  and(gte(column, prefix), lt(column, `${prefix}\u{10FFFF}`));
+
+/**
+ * A typed name against a first and a last name: "aroha per" is Aroha Per…, Per… Aroha, or a
+ * first or last name that starts with all of it. One word is the start of either name. Each of
+ * those starts with the first word, so the rows are found by that word's two ranges, which the
+ * name indexes go to, and the rest only checks them. The terms are for an `or()` of the caller's:
+ * SQLite goes to an index for each term of one flat OR, not of an OR nested in it.
+ */
+function namePrefix(first: SQLiteColumn, last: SQLiteColumn, typed: string) {
+  const [head = '', ...rest] = typed.split(' ');
+  const tail = rest.join(' ');
+  if (!tail) return [startsWith(last, head), startsWith(first, head)];
+  const fits = or(
+    and(startsWith(first, head), startsWith(last, tail)),
+    and(startsWith(last, head), startsWith(first, tail)),
+    startsWith(last, typed),
+    startsWith(first, typed),
+  );
+  return [and(startsWith(last, head), fits), and(startsWith(first, head), fits)];
+}
+
+/** What a family is matched by: any one of these. Names are normalised. */
+export type FamilyMatch = { namePrefix?: string; name?: string; bankReference?: string };
+
+/** What a person is matched by: any one of these. Names are normalised, phone digits only. */
+export type PersonMatch = {
+  namePrefix?: string;
+  name?: { first: string; last: string };
+  email?: string;
+  phone?: string;
+};
+
+/** The families within reach that match, in name order. At most `limit`. */
+export function matchFamilies(ctx: OrgCtx, match: FamilyMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: families.id,
+      name: families.name,
+      branchId: families.branchId,
+      bankReference: families.bankReference,
+    })
+    .from(families)
+    .where(
+      inOrg(
+        ctx,
+        families,
+        or(
+          match.namePrefix !== undefined
+            ? startsWith(families.nameNorm, match.namePrefix)
+            : undefined,
+          match.name !== undefined ? eq(families.nameNorm, match.name) : undefined,
+          match.bankReference !== undefined
+            ? eq(families.bankReference, match.bankReference)
+            : undefined,
+        ),
+        within(ctx, reach),
+      ),
+    )
+    .orderBy(...sortedBy(families.nameNorm, families.id))
+    .limit(limit);
+}
+
+/** The students within reach that match, with their family's name and home branch. */
+export function matchStudents(ctx: OrgCtx, match: PersonMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: students.id,
+      familyId: students.familyId,
+      familyName: families.name,
+      branchId: families.branchId,
+      firstName: students.firstName,
+      lastName: students.lastName,
+      dateOfBirth: students.dateOfBirth,
+    })
+    .from(students)
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          students,
+          or(
+            ...(match.namePrefix !== undefined
+              ? namePrefix(students.firstNameNorm, students.lastNameNorm, match.namePrefix)
+              : []),
+            match.name
+              ? and(
+                  eq(students.firstNameNorm, match.name.first),
+                  eq(students.lastNameNorm, match.name.last),
+                )
+              : undefined,
+          ),
+          ...studentReach(ctx, reach),
+        ),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(...sortedBy(students.lastNameNorm, students.firstNameNorm, students.id))
+    .limit(limit);
+}
+
+/**
+ * The guardians within reach that match, with their family's name and home branch. A teacher
+ * reaches the guardians of their students' families, and a parent those of their own families.
+ * Send a name, an email and a phone in separate calls: with no table statistics, SQLite reads
+ * the org's whole index sooner than go to the email and phone indexes for one OR.
+ */
+export function matchGuardians(ctx: OrgCtx, match: PersonMatch, limit: number, reach: Reach) {
+  return ctx.db
+    .select({
+      id: guardians.id,
+      familyId: guardians.familyId,
+      familyName: families.name,
+      branchId: families.branchId,
+      firstName: guardians.firstName,
+      lastName: guardians.lastName,
+      relationship: guardians.relationship,
+      email: guardians.email,
+      phone: guardians.phone,
+      phoneNorm: guardians.phoneNorm,
+    })
+    .from(guardians)
+    .innerJoin(families, eq(families.id, guardians.familyId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          guardians,
+          or(
+            ...(match.namePrefix !== undefined
+              ? namePrefix(guardians.firstNameNorm, guardians.lastNameNorm, match.namePrefix)
+              : []),
+            match.name
+              ? and(
+                  eq(guardians.firstNameNorm, match.name.first),
+                  eq(guardians.lastNameNorm, match.name.last),
+                )
+              : undefined,
+            match.email !== undefined ? eq(guardians.email, match.email) : undefined,
+            match.phone !== undefined ? eq(guardians.phoneNorm, match.phone) : undefined,
+          ),
+          and(
+            reach.guardianMembershipId
+              ? inIds(guardians.familyId, familiesOfGuardian(ctx, reach.guardianMembershipId))
+              : undefined,
+            reach.studentIds
+              ? inIds(guardians.familyId, familiesOfStudents(ctx, reach.studentIds))
+              : undefined,
+          ),
+        ),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(...sortedBy(guardians.lastNameNorm, guardians.firstNameNorm, guardians.id))
+    .limit(limit);
+}
+
+// ── Who a message goes to (TUI-69) ──────────────────────────────────────────
+
+/** The families of these students, as ids to filter by. */
+export function familiesOfStudentIds(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return familiesOfStudents(ctx, studentIds);
+}
+
+/** The students with one of these grade levels in this academic year, as ids to filter by. */
+export function studentsInGrades(
+  ctx: OrgCtx,
+  gradeLevelIds: string[],
+  academicYearId: IdQuery,
+): IdQuery {
+  return idsFrom(
+    ctx,
+    studentGrades,
+    studentGrades.studentId,
+    inIds(studentGrades.gradeLevelId, gradeLevelIds),
+    inIds(studentGrades.academicYearId, academicYearId),
+  );
+}
+
+/** The guardians of these families within reach, each with their email, oldest first. */
+export function guardiansOf(ctx: OrgCtx, familyIds: Ids, reach: Reach) {
+  return ctx.db
+    .select({ id: guardians.id, familyId: guardians.familyId, email: guardians.email })
+    .from(guardians)
+    .innerJoin(families, eq(families.id, guardians.familyId))
+    .where(
+      and(
+        inOrg(ctx, guardians, inIds(guardians.familyId, familyIds)),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    )
+    .orderBy(asc(guardians.familyId), asc(guardians.id));
+}
+
+/** Of these families, the ones within reach: those a family id given in a request may name. */
+export function familiesFound(ctx: OrgCtx, ids: string[], reach: Reach) {
+  return ctx.db
+    .select({ id: families.id })
+    .from(families)
+    .where(inOrg(ctx, families, inIds(families.id, ids), within(ctx, reach)));
+}
+
+/** How many families are within reach (TUI-62). */
+export async function countFamiliesWithin(ctx: OrgCtx, reach: Reach) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(families)
+    .where(inOrg(ctx, families, within(ctx, reach)))
+    .get();
+  return row?.n ?? 0;
+}
+
+// ── Year-end promotion (TUI-45) ─────────────────────────────────────────────
+
+/** The grades in one academic year of the students within reach. */
+export function gradesInYear(ctx: OrgCtx, academicYearId: string, reach: Reach) {
+  return ctx.db
+    .select({ studentId: studentGrades.studentId, gradeLevelId: studentGrades.gradeLevelId })
+    .from(studentGrades)
+    .innerJoin(students, eq(students.id, studentGrades.studentId))
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(ctx, studentGrades, eq(studentGrades.academicYearId, academicYearId)),
+        inOrg(ctx, students),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    );
+}
+
+// A student grade row binds 7 values.
+const GRADES_PER_INSERT = 14;
+
+/**
+ * Gives students their grades for a year, as one batch with one audit row for the whole run
+ * (D-045). A student who has a grade for that year by then keeps it: the unique index skips them,
+ * so running it again changes nothing.
+ */
+export async function insertGrades(
+  ctx: OrgCtx,
+  rows: (NewGradeRow & { id: string })[],
+  audit: { entityId: string; after: Record<string, unknown> },
+) {
+  const inserts = [];
+  for (let i = 0; i < rows.length; i += GRADES_PER_INSERT) {
+    inserts.push(
+      ctx.db
+        .insert(studentGrades)
+        .values(rows.slice(i, i + GRADES_PER_INSERT))
+        .onConflictDoNothing(),
+    );
+  }
+  await writeWithAudit(ctx, inserts, {
+    action: 'students.promoted',
+    entityType: 'job',
+    entityId: audit.entityId,
+    after: audit.after,
+  });
+}
+
+/** Of these students, the ones within reach. */
+export async function studentsAmong(ctx: OrgCtx, ids: string[], reach: Reach) {
+  const rows = await ctx.db
+    .select({ id: students.id })
+    .from(students)
+    .innerJoin(families, eq(families.id, students.familyId))
+    .where(
+      and(
+        inOrg(ctx, students, inIds(students.id, ids), studentWithin(reach)),
+        inOrg(ctx, families, within(ctx, reach)),
+      ),
+    );
+  return rows.map((row) => row.id);
+}
+
+// ── Spreadsheet import (TUI-60) ─────────────────────────────────────────────
+
+// Bound values per row: a family 11, a guardian 18, a student 12, a grade 7.
+const PER_INSERT = { families: 9, guardians: 5, students: 8, grades: 14 } as const;
+
+/**
+ * Writes an import's families, guardians, students and grades as one batch with one audit row
+ * for the import (D-045): all of them or none.
+ */
+export async function insertImported(
+  ctx: OrgCtx,
+  rows: {
+    families: (NewFamilyRow & { id: string })[];
+    guardians: (NewGuardianRow & { id: string })[];
+    students: (NewStudentRow & { id: string })[];
+    grades: (NewGradeRow & { id: string })[];
+  },
+  audit: { entityId: string; after: Record<string, unknown> },
+) {
+  const insert = <T extends object>(
+    table: Parameters<typeof ctx.db.insert>[0],
+    list: T[],
+    size: number,
+  ) => {
+    const out = [];
+    for (let i = 0; i < list.length; i += size) {
+      out.push(ctx.db.insert(table).values(list.slice(i, i + size) as never));
+    }
+    return out;
+  };
+  await writeWithAudit(
+    ctx,
+    [
+      ...insert(families, rows.families, PER_INSERT.families),
+      ...insert(guardians, rows.guardians, PER_INSERT.guardians),
+      ...insert(students, rows.students, PER_INSERT.students),
+      ...insert(studentGrades, rows.grades, PER_INSERT.grades),
+    ],
+    {
+      action: 'import.committed',
+      entityType: 'import',
+      entityId: audit.entityId,
+      after: audit.after,
+    },
+  );
+}
+
+// ── Consents (TUI-79) ───────────────────────────────────────────────────────
+
+export type ConsentRow = typeof studentConsents.$inferSelect;
+export type NewConsentRow = typeof studentConsents.$inferInsert;
+
+/** The consents on record for the student. */
+export function consentsOf(ctx: OrgCtx, studentId: Ids) {
+  return ctx.db
+    .select()
+    .from(studentConsents)
+    .where(inOrg(ctx, studentConsents, inIds(studentConsents.studentId, studentId)));
+}
+
+/** Records a consent, adding its row or changing it, with one `consent.recorded` audit row. */
+export async function saveConsent(
+  ctx: OrgCtx,
+  before: ConsentRow | undefined,
+  row: NewConsentRow & { id: string },
+) {
+  const { id, orgId: _org, studentId: _student, type: _type, ...fields } = row;
+  const [, saved] = await writeWithAudit(
+    ctx,
+    [
+      before
+        ? ctx.db
+            .update(studentConsents)
+            .set(fields)
+            .where(inOrg(ctx, studentConsents, eq(studentConsents.id, before.id)))
+            .returning()
+        : ctx.db.insert(studentConsents).values(row).returning(),
+    ],
+    {
+      action: 'consent.recorded',
+      entityType: 'student',
+      entityId: row.studentId,
+      before: before && { type: before.type, granted: before.granted },
+      after: { type: row.type, granted: row.granted, guardianId: row.guardianId ?? null },
+    },
+  );
+  return (saved as ConsentRow[])[0]!;
+}
+
+// ── Erasing a family (TUI-79) ───────────────────────────────────────────────
+// Erasing reaches deleted rows too: a family deleted earlier still holds its people's details.
+
+/** The family, deleted or not. */
+export function familyToErase(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(families)
+    .where(and(eq(families.orgId, ctx.orgId), eq(families.id, id)))
+    .get();
+}
+
+/** Every guardian and student the family has had, deleted or not. */
+export async function peopleOfFamily(ctx: OrgCtx, familyId: string) {
+  const [g, s] = await Promise.all([
+    ctx.db
+      .select({ id: guardians.id })
+      .from(guardians)
+      .where(and(eq(guardians.orgId, ctx.orgId), eq(guardians.familyId, familyId))),
+    ctx.db
+      .select({ id: students.id })
+      .from(students)
+      .where(and(eq(students.orgId, ctx.orgId), eq(students.familyId, familyId))),
+  ]);
+  return { guardianIds: g.map((r) => r.id), studentIds: s.map((r) => r.id) };
+}
+
+const ERASED = 'Erased';
+
+/**
+ * Clears the family's, its guardians' and its students' details, unlinks the guardians from
+ * their sign-ins, deletes the students' consents, and deletes all of them that aren't already.
+ * Ids, the bank reference and grades stay, so invoices, payments and attendance still add up.
+ */
+export function eraseStatements(
+  ctx: OrgCtx,
+  familyId: string,
+  studentIds: string[],
+  at: string,
+): BatchItem<'sqlite'>[] {
+  const gone = (column: SQLiteColumn) => sql`coalesce(${column}, ${at})`;
+  return [
+    ctx.db
+      .update(families)
+      .set({
+        name: `${ERASED} family`,
+        nameNorm: 'erased family',
+        address: null,
+        erasedAt: at,
+        deletedAt: gone(families.deletedAt),
+      })
+      .where(and(eq(families.orgId, ctx.orgId), eq(families.id, familyId))),
+    ctx.db
+      .update(guardians)
+      .set({
+        firstName: ERASED,
+        lastName: 'guardian',
+        firstNameNorm: 'erased',
+        lastNameNorm: 'guardian',
+        relationship: null,
+        email: null,
+        phone: null,
+        phoneNorm: null,
+        language: null,
+        membershipId: null,
+        deletedAt: gone(guardians.deletedAt),
+      })
+      .where(and(eq(guardians.orgId, ctx.orgId), eq(guardians.familyId, familyId))),
+    ctx.db
+      .update(students)
+      .set({
+        firstName: ERASED,
+        lastName: 'student',
+        firstNameNorm: 'erased',
+        lastNameNorm: 'student',
+        dateOfBirth: null,
+        notes: null,
+        deletedAt: gone(students.deletedAt),
+      })
+      .where(and(eq(students.orgId, ctx.orgId), eq(students.familyId, familyId))),
+    ...(studentIds.length
+      ? [
+          ctx.db
+            .delete(studentConsents)
+            .where(
+              and(
+                eq(studentConsents.orgId, ctx.orgId),
+                inIds(studentConsents.studentId, studentIds),
+              ),
+            ),
+        ]
+      : []),
+  ];
 }

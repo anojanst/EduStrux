@@ -3,6 +3,9 @@ import { and, eq } from 'drizzle-orm';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
 import { INVOICE_RUN, generateInvoices } from '../modules/billing/generation';
+import { PROMOTION, promoteStudents } from '../modules/people/service';
+import { BACKUP, EXPORT, makeBackup, makeExport } from '../modules/platform/exports';
+import { IMPORT_COMMIT, commitImportJob } from '../modules/platform/imports';
 import type { JobMessage } from './messages';
 
 /** Must match `max_retries` for the jobs consumer in wrangler.jsonc. */
@@ -28,6 +31,10 @@ export type JobContext = OrgCtx & {
  */
 export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<unknown>> = {
   [INVOICE_RUN]: generateInvoices,
+  [PROMOTION]: promoteStudents,
+  [IMPORT_COMMIT]: commitImportJob,
+  [EXPORT]: makeExport,
+  [BACKUP]: makeBackup,
 };
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));

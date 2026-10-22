@@ -4,7 +4,7 @@
 
 import { holidays, terms } from '@edustrux/db';
 import { gte, isNull, or } from 'drizzle-orm';
-import { inIds, inOrg, type Ids, type OrgCtx } from '../../db/scope';
+import { idsFrom, inIds, inOrg, type IdQuery, type Ids, type OrgCtx } from '../../db/scope';
 
 /** The dates of the terms with these ids. */
 export function termDates(ctx: OrgCtx, termIds: Ids) {
@@ -30,4 +30,9 @@ export function closedFrom(ctx: OrgCtx, branchIds: Ids, from: string) {
         or(isNull(holidays.branchId), inIds(holidays.branchId, branchIds)),
       ),
     );
+}
+
+/** The terms that end on or after a date, as ids to filter classes by (TUI-62). */
+export function termsRunningFrom(ctx: OrgCtx, date: string): IdQuery {
+  return idsFrom(ctx, terms, terms.id, gte(terms.endDate, date));
 }

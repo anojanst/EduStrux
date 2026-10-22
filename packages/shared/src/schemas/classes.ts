@@ -193,11 +193,74 @@ export const Session = z
     }),
     endsAt: Timestamp.openapi({ example: '2026-10-14T04:00:00.000Z' }),
     status: z.enum(SESSION_STATUSES),
+    movedFrom: z
+      .object({ date: LocalDate, startTime: LocalTime })
+      .nullable()
+      .openapi({
+        description:
+          'Where the lesson was first scheduled, if it was moved by hand. A moved lesson is ' +
+          'left alone when the weekly schedule is saved again.',
+      }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
   .openapi('Session');
 export type Session = z.infer<typeof Session>;
+
+export const UpdateSession = z
+  .object({
+    updatedAt: Timestamp.openapi({
+      description: 'The updatedAt you last read. A newer value on the server returns 409.',
+    }),
+    date: LocalDate.openapi({ description: 'Move the lesson to this date.' }),
+    startTime: LocalTime,
+    endTime: LocalTime,
+    roomId: z.string().nullable().openapi({ description: 'A room in the class’s branch.' }),
+    teacherId: z.string().nullable().openapi({ description: 'An active member of staff.' }),
+    status: z.enum(SESSION_STATUSES).openapi({
+      description: '`cancelled` cancels the lesson; `scheduled` puts a cancelled one back on.',
+    }),
+    note: z.string().trim().min(1).max(500).optional().openapi({
+      description: 'Added to the message families get, e.g. why it changed.',
+    }),
+    notify: z
+      .boolean()
+      .default(true)
+      .openapi({
+        description:
+          'Tell the families of the students expected at the lesson when it moves, changes time, ' +
+          'is cancelled or is back on. The notification settings can turn this off for everyone.',
+      }),
+  })
+  .partial()
+  .required({ updatedAt: true })
+  .refine(
+    (v) =>
+      v.startTime === undefined ||
+      v.endTime === undefined ||
+      !LocalTime.safeParse(v.startTime).success ||
+      !LocalTime.safeParse(v.endTime).success ||
+      v.endTime > v.startTime,
+    { message: 'Must be after startTime', path: ['endTime'] },
+  )
+  .openapi('UpdateSession');
+export type UpdateSession = z.infer<typeof UpdateSession>;
+
+export const SessionUpdate = z
+  .object({
+    session: Session,
+    messageId: z
+      .string()
+      .nullable()
+      .openapi({
+        description:
+          'The id the message to families gets once the queue sends it, moments later. None is ' +
+          'sent when the notification settings turn lesson changes off. null when nothing was ' +
+          'queued: a change families needn’t hear of, `notify: false`, or nobody expected.',
+      }),
+  })
+  .openapi('SessionUpdate');
+export type SessionUpdate = z.infer<typeof SessionUpdate>;
 
 export const SessionQuery = PageQuery.extend({
   from: LocalDate.openapi({ description: 'The first date to include', example: '2026-10-12' }),
@@ -216,3 +279,57 @@ export const SessionQuery = PageQuery.extend({
     !LocalDate.safeParse(q.from).success || !LocalDate.safeParse(q.to).success || q.to >= q.from,
   { message: 'Must be on or after from', path: ['to'] },
 );
+
+// ── Clashes (TUI-50) ────────────────────────────────────────────────────────
+
+export const CLASH_KINDS = ['room', 'teacher', 'student', 'grade'] as const;
+export type ClashKind = (typeof CLASH_KINDS)[number];
+
+/** At most this many days, both ends included, in one clash check. */
+export const CLASH_RANGE_DAYS = 92;
+
+export const ClashQuery = z
+  .object({
+    from: LocalDate.openapi({ description: 'The first date to check', example: '2026-10-12' }),
+    to: LocalDate.openapi({
+      description: `The last date to check, at most ${CLASH_RANGE_DAYS} days on from \`from\``,
+      example: '2026-12-20',
+    }),
+    branchId: z.string().optional().openapi({ description: 'Only this branch’s classes' }),
+  })
+  .refine(
+    (q) =>
+      !LocalDate.safeParse(q.from).success || !LocalDate.safeParse(q.to).success || q.to >= q.from,
+    { message: 'Must be on or after from', path: ['to'] },
+  );
+
+const ClashSession = z
+  .object({
+    id: z.string(),
+    classId: z.string(),
+    className: z.string(),
+    branchId: z.string(),
+    startTime: LocalTime,
+    endTime: LocalTime,
+  })
+  .openapi('ClashSession');
+
+export const Clash = z
+  .object({
+    kind: z.enum(CLASH_KINDS).openapi({
+      description:
+        '`room`: one room, two lessons. `teacher`: one teacher, two lessons. `student`: a ' +
+        'student enrolled in both on that date. `grade`: two courses of the same grade level ' +
+        'at once, so a student of that grade can’t take both.',
+    }),
+    date: LocalDate,
+    sessions: z.array(ClashSession).length(2),
+    roomId: z.string().nullable(),
+    teacherId: z.string().nullable(),
+    gradeLevelId: z.string().nullable(),
+    studentId: z.string().nullable(),
+    studentFirstName: z.string().nullable(),
+    studentLastName: z.string().nullable(),
+  })
+  .openapi('Clash');
+export type Clash = z.infer<typeof Clash>;

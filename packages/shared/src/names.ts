@@ -5,3 +5,12 @@
 export function normaliseName(name: string): string {
   return name.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
+
+/**
+ * A phone number's digits alone, for an exact search: "+64 21-555 0100" → "64215550100". null
+ * when there are none.
+ */
+export function normalisePhone(phone: string | null | undefined): string | null {
+  const digits = phone?.replace(/\D/g, '') ?? '';
+  return digits.length > 0 ? digits : null;
+}

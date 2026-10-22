@@ -1,4 +1,4 @@
-import { ENROLMENT_STATUSES } from '@edustrux/shared';
+import { ENQUIRY_STATUSES, ENROLMENT_REQUEST_STATUSES, ENROLMENT_STATUSES } from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';
@@ -29,5 +29,54 @@ export const enrolments = sqliteTable(
     uniqueIndex('enrolments_org_student_class_active_uq')
       .on(t.orgId, t.studentId, t.classId)
       .where(sql`${t.deletedAt} is null and ${t.status} = 'active'`),
+  ],
+);
+
+// An enquiry from the public form (TUI-47): someone asking about classes. Not a family yet.
+export const enquiries = sqliteTable(
+  'enquiries',
+  {
+    ...orgColumns(),
+    branchId: text('branch_id'),
+    name: text('name').notNull(),
+    email: text('email').notNull(),
+    phone: text('phone'),
+    studentName: text('student_name'),
+    message: text('message').notNull(),
+    status: text('status', { enum: ENQUIRY_STATUSES }).notNull().default('new'),
+    // SHA-256 of the sender's IP address, to slow down floods. The address itself isn't kept.
+    ipHash: text('ip_hash'),
+  },
+  (t) => [
+    uniqueIndex('enquiries_org_id_uq').on(t.orgId, t.id),
+    index('enquiries_org_status_idx').on(t.orgId, t.status, t.id),
+    index('enquiries_org_ip_idx').on(t.orgId, t.ipHash, t.createdAt),
+  ],
+);
+
+// A family asking online to enrol children in classes (TUI-47). Staff approve it, which adds
+// the family, guardian, students and enrolments, or reject it.
+export const enrolmentRequests = sqliteTable(
+  'enrolment_requests',
+  {
+    ...orgColumns(),
+    branchId: text('branch_id'),
+    status: text('status', { enum: ENROLMENT_REQUEST_STATUSES }).notNull().default('pending'),
+    // `{ firstName, lastName, email, phone }`.
+    guardian: text('guardian', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    // `[{ firstName, lastName, dateOfBirth, classIds }]`.
+    students: text('students', { mode: 'json' }).$type<Record<string, unknown>[]>().notNull(),
+    notes: text('notes'),
+    ipHash: text('ip_hash'),
+    decidedByUserId: text('decided_by_user_id'),
+    decidedAt: text('decided_at'),
+    reason: text('reason'),
+    // What approving made: `{ familyId, guardianId, studentIds, enrolmentIds, skipped }`.
+    result: text('result', { mode: 'json' }).$type<Record<string, unknown>>(),
+  },
+  (t) => [
+    uniqueIndex('enrolment_requests_org_id_uq').on(t.orgId, t.id),
+    index('enrolment_requests_org_status_idx').on(t.orgId, t.status, t.id),
+    index('enrolment_requests_org_ip_idx').on(t.orgId, t.ipHash, t.createdAt),
   ],
 );

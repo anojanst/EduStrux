@@ -3,13 +3,21 @@ import {
   localNow,
   newId,
   normaliseName,
+  normalisePhone,
   type AcademicYear,
   type CreateFamily,
   type CreateGuardian,
   type CreateStudent,
+  type DuplicateMatches,
+  type DuplicateQuery,
+  type DuplicateReason,
   type Family,
   type Guardian,
   type Org,
+  type PromoteStudents,
+  type PromotionResult,
+  type SearchQuery,
+  type SearchResults,
   type Student,
   type StudentEmergencyContacts,
   type UpdateFamily,
@@ -25,6 +33,9 @@ import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
+import type { JobContext } from '../../background/jobs';
+import type { JobMessage } from '../../background/messages';
+import { startJob } from '../platform/service';
 import * as repo from './repository';
 
 // Every function here waits for D1 once to read and, if it writes, once more to write (D-102).
@@ -61,6 +72,7 @@ export function toGuardian(row: repo.GuardianRow): Guardian {
     deletedAt: _deleted,
     firstNameNorm: _first,
     lastNameNorm: _last,
+    phoneNorm: _phone,
     ...guardian
   } = row;
   return guardian;
@@ -107,7 +119,8 @@ export function toFamily(
   guardians: repo.GuardianRow[],
   students: Student[],
 ): Family {
-  const { orgId: _org, deletedAt: _deleted, nameNorm: _norm, ...family } = row;
+  // An erased family is always deleted, so `erasedAt` is never one to show.
+  const { orgId: _org, deletedAt: _deleted, nameNorm: _norm, erasedAt: _erased, ...family } = row;
   return { ...family, guardians: guardians.map(toGuardian), students };
 }
 
@@ -337,6 +350,7 @@ export async function createGuardian(
       relationship: input.relationship ?? null,
       email: input.email ?? null,
       phone: input.phone ?? null,
+      phoneNorm: normalisePhone(input.phone),
       preferredChannel: input.preferredChannel,
       language: input.language ?? null,
       emergencyContact: input.emergencyContact,
@@ -361,6 +375,7 @@ export async function updateGuardian(
   if (Object.keys(changes).length === 0) return toGuardian(before);
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
   if (changes.lastName !== undefined) changes.lastNameNorm = normaliseName(changes.lastName);
+  if (changes.phone !== undefined) changes.phoneNorm = normalisePhone(changes.phone);
 
   const updated = await repo.updateGuardian(ctx, before, changes);
   if (!updated) throw notFound('Guardian');
@@ -732,4 +747,434 @@ export async function studentNames(ctx: OrgCtx, ids: Ids) {
 /** How many students have been in this grade level, in any year. It can't be deleted while any have. */
 export function countStudentsInGrade(ctx: OrgCtx, gradeLevelId: string) {
   return repo.countStudentsInGrade(ctx, gradeLevelId);
+}
+
+// ── Search and duplicate warnings (TUI-43) ──────────────────────────────────
+
+/** A phone as typed into a search: only phone characters, and at least 3 digits. */
+function phoneIn(typed: string) {
+  if (!/^[0-9+() .-]+$/.test(typed)) return undefined;
+  const digits = normalisePhone(typed);
+  return digits && digits.length >= 3 ? digits : undefined;
+}
+
+/** A family's bank reference as typed: 8 letters and digits, matched in capitals. */
+const bankReferenceIn = (typed: string) =>
+  /^[0-9a-z]{8}$/i.test(typed) ? typed.toUpperCase() : undefined;
+
+const withoutPhoneNorm = <T extends { phoneNorm: string | null }>({ phoneNorm: _p, ...row }: T) =>
+  row;
+
+/**
+ * The guardians that match by name, email or phone, each once, in name order. The three are read
+ * apart (see `repo.matchGuardians`), in the same stage.
+ */
+async function matchGuardians(
+  ctx: OrgCtx,
+  { email, phone, ...names }: repo.PersonMatch,
+  limit: number,
+  reach: repo.Reach,
+) {
+  const byName = names.namePrefix !== undefined || names.name !== undefined;
+  const reads = await Promise.all([
+    byName ? repo.matchGuardians(ctx, names, limit, reach) : [],
+    email !== undefined ? repo.matchGuardians(ctx, { email }, limit, reach) : [],
+    phone !== undefined ? repo.matchGuardians(ctx, { phone }, limit, reach) : [],
+  ]);
+  const found = new Map(reads.flat().map((row) => [row.id, row]));
+  const key = (row: { lastName: string; firstName: string; id: string }) =>
+    `${normaliseName(row.lastName)}\u0000${normaliseName(row.firstName)}\u0000${row.id}`;
+  return [...found.values()]
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
+    .slice(0, limit);
+}
+
+/**
+ * Families, students and guardians within the caller's reach that `q` finds: the start of a name,
+ * or an exact email, phone or bank reference (D-026). One stage: the three reads go together.
+ */
+export async function search(
+  ctx: OrgCtx,
+  access: Access,
+  query: SearchQuery,
+): Promise<SearchResults> {
+  const typed = query.q.trim();
+  const namePrefix = normaliseName(typed);
+  const reach = reachOf(ctx, access);
+  const person: repo.PersonMatch = {
+    namePrefix,
+    email: typed.includes('@') ? typed.toLowerCase() : undefined,
+    phone: phoneIn(typed),
+  };
+  const [families, students, guardians] = await Promise.all([
+    repo.matchFamilies(
+      ctx,
+      { namePrefix, bankReference: bankReferenceIn(typed) },
+      query.limit,
+      reach,
+    ),
+    repo.matchStudents(ctx, { namePrefix }, query.limit, reach),
+    matchGuardians(ctx, person, query.limit, reach),
+  ]);
+  return { families, students, guardians: guardians.map(withoutPhoneNorm) };
+}
+
+const DUPLICATE_LIMIT = 20;
+
+/**
+ * Who within the caller's reach may already be on record as the family, student or guardian
+ * about to be added, and why. A warning only: nothing stops the add. One stage.
+ */
+export async function duplicates(
+  ctx: OrgCtx,
+  access: Access,
+  query: DuplicateQuery,
+): Promise<DuplicateMatches> {
+  const reach = reachOf(ctx, access);
+  const empty: DuplicateMatches = { families: [], students: [], guardians: [] };
+  const name =
+    query.firstName && query.lastName
+      ? { first: normaliseName(query.firstName), last: normaliseName(query.lastName) }
+      : undefined;
+
+  if (query.kind === 'family') {
+    const rows = await repo.matchFamilies(
+      ctx,
+      { name: normaliseName(query.name ?? '') },
+      DUPLICATE_LIMIT,
+      reach,
+    );
+    return { ...empty, families: rows.map((row) => ({ ...row, reasons: ['same_name'] })) };
+  }
+
+  if (query.kind === 'student') {
+    const rows = await repo.matchStudents(ctx, { name }, DUPLICATE_LIMIT, reach);
+    return {
+      ...empty,
+      students: rows.map((row) => ({
+        ...row,
+        reasons: [
+          query.dateOfBirth && row.dateOfBirth === query.dateOfBirth
+            ? 'same_name_and_birth_date'
+            : 'same_name',
+        ],
+      })),
+    };
+  }
+
+  const email = query.email || undefined;
+  const phone = normalisePhone(query.phone) ?? undefined;
+  const rows = await matchGuardians(ctx, { name, email, phone }, DUPLICATE_LIMIT, reach);
+  return {
+    ...empty,
+    guardians: rows.map((row) => {
+      const reasons: DuplicateReason[] = [];
+      if (
+        name &&
+        normaliseName(row.firstName) === name.first &&
+        normaliseName(row.lastName) === name.last
+      ) {
+        reasons.push('same_name');
+      }
+      if (email && row.email === email) reasons.push('same_email');
+      if (phone && row.phoneNorm === phone) reasons.push('same_phone');
+      return { ...withoutPhoneNorm(row), reasons };
+    }),
+  };
+}
+
+// ── Who a message goes to (TUI-69) ──────────────────────────────────────────
+
+/** The families of these students, as ids to filter by. */
+export function familiesOfStudentIds(ctx: OrgCtx, studentIds: Ids): IdQuery {
+  return repo.familiesOfStudentIds(ctx, studentIds);
+}
+
+/** The students with one of these grade levels in the current academic year. */
+export async function studentsInGrades(ctx: OrgCtx, gradeLevelIds: string[]): Promise<IdQuery> {
+  return repo.studentsInGrades(ctx, gradeLevelIds, await currentAcademicYear(ctx));
+}
+
+/**
+ * The guardians of these families that the caller reaches, with their emails: who a message to
+ * those families goes to. Branch staff reach their branches' families, a teacher their students'.
+ */
+export function guardiansToMessage(ctx: OrgCtx, access: Access, familyIds: Ids) {
+  return repo.guardiansOf(ctx, familyIds, reachOf(ctx, access));
+}
+
+/** The guardians of these families, whoever asks: an automatic message goes to all of them. */
+export function guardiansOfFamilies(ctx: OrgCtx, familyIds: Ids) {
+  return repo.guardiansOf(ctx, familyIds, {});
+}
+
+/** Of these family ids, the ones the caller reaches. */
+export async function familiesReached(ctx: OrgCtx, access: Access, ids: string[]) {
+  return (await repo.familiesFound(ctx, ids, reachOf(ctx, access))).map((row) => row.id);
+}
+
+/** Every family in the org, as ids to filter by. Wide: all of them. */
+export function allFamilies(ctx: OrgCtx): IdQuery {
+  return repo.familiesWithin(ctx, {});
+}
+
+/** How many families the caller reaches, for the dashboard. */
+export function countFamiliesReached(ctx: OrgCtx, access: Access) {
+  return repo.countFamiliesWithin(ctx, reachOf(ctx, access));
+}
+
+// ── Year-end promotion (TUI-45) ─────────────────────────────────────────────
+
+/** The job type of a year-end promotion. */
+export const PROMOTION = 'students.promote';
+
+type PromotionInput = PromoteStudents & { branchIds: string[] | null };
+
+/**
+ * Checks a promotion and queues it as a job: both years must be the org's (404), the new one
+ * starting after the old, and an exception's student must be one the caller reaches (404) and its
+ * grade one of the org's (404). Branch staff promote their branches' students only.
+ */
+export async function startPromotion(
+  ctx: OrgCtx,
+  access: Access,
+  queue: Queue<JobMessage>,
+  input: PromoteStudents,
+): Promise<string> {
+  const reach = reachOf(ctx, access);
+  const named = input.exceptions.map((e) => e.studentId);
+  const [from, to, grades, reached] = await Promise.all([
+    held(calendar.getAcademicYear(ctx, input.fromAcademicYearId)),
+    held(calendar.getAcademicYear(ctx, input.toAcademicYearId)),
+    curriculum.listGradeLevels(ctx),
+    named.length > 0 ? repo.studentsAmong(ctx, named, reach) : [],
+  ]);
+  const fromYear = orThrow(from);
+  const toYear = orThrow(to);
+  if (toYear.startDate <= fromYear.startDate) {
+    throw unprocessable('The new academic year must start after the one being promoted from.', {
+      toAcademicYearId: ['Not after fromAcademicYearId'],
+    });
+  }
+  const gradeIds = new Set(grades.data.map((g) => g.id));
+  for (const e of input.exceptions) {
+    if (e.gradeLevelId && !gradeIds.has(e.gradeLevelId)) throw notFound('Grade level');
+  }
+  if (reached.length < named.length) throw notFound('Student');
+  const jobInput: PromotionInput = {
+    ...input,
+    branchIds: access.scope === 'branch' ? access.branchIds : null,
+  };
+  return startJob(ctx, queue, PROMOTION, jobInput);
+}
+
+/**
+ * The job behind a promotion. Every student with a grade in the old year, within the reach of
+ * whoever started it, gets the next grade in the org's order in the new year, or what their
+ * exception says; one in the last grade gets none. A student who already has a grade in the new
+ * year keeps it, so the job can run again safely (D-017).
+ */
+export async function promoteStudents(ctx: JobContext): Promise<PromotionResult> {
+  const input = ctx.input as PromotionInput;
+  const reach: repo.Reach = input.branchIds ? { branchIds: input.branchIds } : {};
+  const [current, next, grades] = await Promise.all([
+    repo.gradesInYear(ctx, input.fromAcademicYearId, reach),
+    repo.gradesInYear(ctx, input.toAcademicYearId, {}),
+    curriculum.listGradeLevels(ctx),
+  ]);
+  const order = grades.data.toSorted((a, b) => a.sortOrder - b.sortOrder).map((g) => g.id);
+  const exceptionOf = new Map(input.exceptions.map((e) => [e.studentId, e.gradeLevelId]));
+  const already = new Set(next.map((g) => g.studentId));
+  const result: PromotionResult = {
+    fromAcademicYearId: input.fromAcademicYearId,
+    toAcademicYearId: input.toAcademicYearId,
+    promoted: 0,
+    exceptions: 0,
+    finished: 0,
+    alreadySet: 0,
+  };
+  const rows: (repo.NewGradeRow & { id: string })[] = [];
+  for (const { studentId, gradeLevelId } of current) {
+    if (already.has(studentId)) {
+      result.alreadySet++;
+      continue;
+    }
+    let target: string | null;
+    if (exceptionOf.has(studentId)) {
+      target = exceptionOf.get(studentId) ?? null;
+      if (target) result.exceptions++;
+    } else {
+      const at = order.indexOf(gradeLevelId);
+      target = at >= 0 && at + 1 < order.length ? order[at + 1]! : null;
+      if (target) result.promoted++;
+    }
+    if (!target) {
+      result.finished++;
+      continue;
+    }
+    rows.push({
+      id: newId('studentGrade'),
+      orgId: ctx.orgId,
+      studentId,
+      academicYearId: input.toAcademicYearId,
+      gradeLevelId: target,
+    });
+  }
+  await ctx.setProgress(50);
+  if (rows.length > 0) {
+    await repo.insertGrades(ctx, rows, { entityId: ctx.jobId, after: { ...result } });
+  }
+  return result;
+}
+
+// ── Spreadsheet import (TUI-60) ─────────────────────────────────────────────
+
+/** One row of an import, checked and resolved to ids. */
+export type ImportedRow = {
+  familyName: string;
+  branchId: string;
+  address: string | null;
+  guardian: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    relationship: string | null;
+  } | null;
+  student: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string | null;
+    notes: string | null;
+  };
+  gradeLevelId: string | null;
+};
+
+/**
+ * Adds an import's rows as families, guardians and students, in one batch with one audit row.
+ * Rows of the same family name and home branch whose guardian has the same email (or the same
+ * name, with no email) are one family; a family's first guardian is its billing contact.
+ */
+export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: string) {
+  const { current } = await calendar.academicYears(ctx);
+  const familyRows: (repo.NewFamilyRow & { id: string })[] = [];
+  const guardianRows: (repo.NewGuardianRow & { id: string })[] = [];
+  const studentRows: (repo.NewStudentRow & { id: string })[] = [];
+  const gradeRows: (repo.NewGradeRow & { id: string })[] = [];
+  const familyOf = new Map<string, repo.NewFamilyRow & { id: string }>();
+  const guardianOf = new Map<string, string>();
+
+  for (const row of rows) {
+    const who = row.guardian
+      ? (row.guardian.email ?? normaliseName(`${row.guardian.firstName} ${row.guardian.lastName}`))
+      : '';
+    const familyKey = `${normaliseName(row.familyName)}|${row.branchId}|${who}`;
+    let family = familyOf.get(familyKey);
+    if (!family) {
+      const id = newId('family');
+      family = {
+        id,
+        orgId: ctx.orgId,
+        name: row.familyName,
+        nameNorm: normaliseName(row.familyName),
+        branchId: row.branchId,
+        address: row.address,
+        billingGuardianId: null,
+        bankReference: bankReferenceFor(id),
+      };
+      familyOf.set(familyKey, family);
+      familyRows.push(family);
+    }
+    if (row.guardian) {
+      const guardianKey = `${family.id}|${who}`;
+      if (!guardianOf.has(guardianKey)) {
+        const id = newId('guardian');
+        guardianOf.set(guardianKey, id);
+        guardianRows.push({
+          id,
+          orgId: ctx.orgId,
+          familyId: family.id,
+          firstName: row.guardian.firstName,
+          lastName: row.guardian.lastName,
+          firstNameNorm: normaliseName(row.guardian.firstName),
+          lastNameNorm: normaliseName(row.guardian.lastName),
+          relationship: row.guardian.relationship,
+          email: row.guardian.email,
+          phone: row.guardian.phone,
+          phoneNorm: normalisePhone(row.guardian.phone),
+          preferredChannel: 'email',
+          language: null,
+          emergencyContact: true,
+          membershipId: null,
+        });
+        family.billingGuardianId ??= id;
+      }
+    }
+    const studentId = newId('student');
+    studentRows.push({
+      id: studentId,
+      orgId: ctx.orgId,
+      familyId: family.id,
+      firstName: row.student.firstName,
+      lastName: row.student.lastName,
+      firstNameNorm: normaliseName(row.student.firstName),
+      lastNameNorm: normaliseName(row.student.lastName),
+      dateOfBirth: row.student.dateOfBirth,
+      notes: row.student.notes,
+    });
+    if (row.gradeLevelId && current) {
+      gradeRows.push({
+        id: newId('studentGrade'),
+        orgId: ctx.orgId,
+        studentId,
+        academicYearId: current.id,
+        gradeLevelId: row.gradeLevelId,
+      });
+    }
+  }
+  const counts = {
+    families: familyRows.length,
+    guardians: guardianRows.length,
+    students: studentRows.length,
+  };
+  await repo.insertImported(
+    ctx,
+    { families: familyRows, guardians: guardianRows, students: studentRows, grades: gradeRows },
+    { entityId: importId, after: counts },
+  );
+  return counts;
+}
+
+// ── Privacy (TUI-79) ────────────────────────────────────────────────────────
+
+/** The student, if the caller reaches them, and the consents on record for them. One stage. */
+export async function consentsOf(ctx: OrgCtx, access: Access, studentId: string) {
+  const reach = reachOf(ctx, access);
+  const [found, consents] = await Promise.all([
+    repo.findStudent(ctx, studentId, reach),
+    repo.consentsOf(ctx, repo.studentFound(ctx, studentId, reach)),
+  ]);
+  if (!found) throw notFound('Student');
+  return { student: found.student, consents };
+}
+
+/** The guardians of the student's family, to check who gave a consent. Reads by the student. */
+export function guardiansOfStudent(ctx: OrgCtx, studentId: string) {
+  return repo.listGuardians(ctx, repo.familiesOfStudentIds(ctx, [studentId]));
+}
+
+export function saveConsent(...args: Parameters<typeof repo.saveConsent>) {
+  return repo.saveConsent(...args);
+}
+
+export function familyToErase(ctx: OrgCtx, id: string) {
+  return repo.familyToErase(ctx, id);
+}
+
+export function peopleOfFamily(ctx: OrgCtx, familyId: string) {
+  return repo.peopleOfFamily(ctx, familyId);
+}
+
+export function eraseStatements(...args: Parameters<typeof repo.eraseStatements>) {
+  return repo.eraseStatements(...args);
 }

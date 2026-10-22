@@ -6,11 +6,14 @@ import type { AppEnv } from './env';
 import { ApiError, errorBody } from './lib/errors';
 import { createRouter } from './lib/openapi';
 import { withDb } from './middleware/db';
+import { adminRoutes } from './modules/admin/routes';
+import { admissionRoutes } from './modules/admissions/routes';
 import { attendanceRoutes } from './modules/attendance/routes';
 import { billingRoutes } from './modules/billing/routes';
 import { branchRoutes } from './modules/branches/routes';
 import { calendarRoutes } from './modules/calendar/routes';
 import { classRoutes } from './modules/classes/routes';
+import { commsRoutes } from './modules/comms/routes';
 import { curriculumRoutes } from './modules/curriculum/routes';
 import { enrolmentRoutes } from './modules/enrolment/routes';
 import { learningRoutes } from './modules/learning/routes';
@@ -19,7 +22,11 @@ import { orgRoutes } from './modules/orgs/routes';
 import { peopleRoutes } from './modules/people/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { portalRoutes } from './modules/portal/routes';
+import { privacyRoutes } from './modules/privacy/routes';
+import { reportRoutes } from './modules/reports/routes';
 import { staffRoutes } from './modules/staff/routes';
+import { subscriptionRoutes } from './modules/subscriptions/routes';
+import { webhookRoutes } from './modules/webhooks/routes';
 
 const docsEnabled = createMiddleware<AppEnv>(async (c, next) => {
   if (c.env.ENABLE_DOCS !== 'true') return c.json(errorBody('not_found', 'Route not found'), 404);
@@ -41,10 +48,17 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.route('/', classRoutes);
   app.route('/', peopleRoutes);
   app.route('/', enrolmentRoutes);
+  app.route('/', admissionRoutes);
   app.route('/', attendanceRoutes);
   app.route('/', learningRoutes);
   app.route('/', billingRoutes);
+  app.route('/', commsRoutes);
   app.route('/', portalRoutes);
+  app.route('/', reportRoutes);
+  app.route('/', privacyRoutes);
+  app.route('/', subscriptionRoutes);
+  app.route('/', webhookRoutes);
+  app.route('/', adminRoutes);
 
   // API docs: generated from the route definitions above.
   app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {

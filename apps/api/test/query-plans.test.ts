@@ -10,6 +10,7 @@ import { currentAcademicYear } from '../src/modules/calendar/for-people';
 import { classOfSession, dateOfSession } from '../src/modules/classes/for-attendance';
 import * as classes from '../src/modules/classes/repository';
 import * as classesService from '../src/modules/classes/service';
+import * as comms from '../src/modules/comms/repository';
 import * as curriculum from '../src/modules/curriculum/repository';
 import { studentsExpectedIn } from '../src/modules/enrolment/for-attendance';
 import * as enrolment from '../src/modules/enrolment/repository';
@@ -1428,5 +1429,108 @@ describe('staff and invitations (D-131)', () => {
   it('finds a user’s membership in the (org, user) index', async () => {
     const plan = await planOf((ctx) => staff.findMembershipOfUser(ctx, 'usr_a'));
     expect(plan).toMatch(searchIn('memberships', 'memberships_org_user_uq'));
+  });
+});
+
+describe('search reads name ranges and exact values from their indexes (TUI-43)', () => {
+  const plan = (send: Send) => planOf(send);
+
+  it('finds families by the start of a name or a bank reference', async () => {
+    const found = await plan((ctx) =>
+      people.matchFamilies(ctx, { namePrefix: 'per', bankReference: 'ABCD1234' }, 20, {}),
+    );
+    expect(found).toMatch(searchIn('families', 'families_org_name_idx'));
+    expect(found).toMatch(searchIn('families', 'families_org_bank_reference_uq'));
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds students by the start of a first or last name', async () => {
+    const found = await plan((ctx) =>
+      people.matchStudents(ctx, { namePrefix: 'aroha per' }, 20, { branchIds: ['brn_a'] }),
+    );
+    expect(found).toMatch(searchIn('students', 'students_org_name_idx'));
+    expect(found).toMatch(searchIn('students', 'students_org_first_name_idx'));
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds guardians by name, and by email or phone', async () => {
+    const byName = await plan((ctx) =>
+      people.matchGuardians(ctx, { namePrefix: 'mere p' }, 20, {}),
+    );
+    expect(byName).toMatch(searchIn('guardians', 'guardians_org_name_idx'));
+    expect(byName).toMatch(searchIn('guardians', 'guardians_org_first_name_idx'));
+    expect(byName).not.toMatch(READS_AN_ORG);
+    const byEmail = await plan((ctx) => people.matchGuardians(ctx, { email: 'a@b.c' }, 20, {}));
+    expect(byEmail).toMatch(searchBy('guardians', 'email'));
+    const byPhone = await plan((ctx) => people.matchGuardians(ctx, { phone: '6421' }, 20, {}));
+    expect(byPhone).toMatch(searchBy('guardians', 'phone_norm'));
+    const exactName = await plan((ctx) =>
+      people.matchGuardians(ctx, { name: { first: 'mere', last: 'perera' } }, 20, {}),
+    );
+    expect(exactName).toMatch(searchIn('guardians', 'guardians_org_name_idx'));
+  });
+
+  it('never reads a whole org for a parent', async () => {
+    const found = await plan((ctx) =>
+      people.matchGuardians(ctx, { namePrefix: 'mere' }, 20, { guardianMembershipId: 'mem_a' }),
+    );
+    expect(found).not.toMatch(READS_AN_ORG);
+  });
+});
+
+describe('changing an enrolment reads it and its invoice lines by id (TUI-46)', () => {
+  it('finds the enrolment by its id, and its lines by the enrolment', async () => {
+    const one = await planOf((ctx) => enrolment.findEnrolment(ctx, 'enr_a', {}));
+    expect(one).toMatch(searchBy('enrolments', 'id'));
+    const lines = await planOf((ctx) => billing.linesOfEnrolment(ctx, 'enr_a'));
+    expect(lines).toMatch(searchBy('invoice_lines', 'enrolment_id'));
+    expect(lines).not.toMatch(READS_AN_ORG);
+  });
+
+  it('finds a lesson’s roll from the class’s enrolments, withdrawn ones too', async () => {
+    const roll = await planOf((ctx) =>
+      people.studentNames(ctx, enrolment.rollStudents(ctx, ['cls_a'])),
+    );
+    expect(roll).toMatch(searchBy('enrolments', 'class_id'));
+  });
+});
+
+describe('a clash check reads the dates’ sessions by date (TUI-50)', () => {
+  const range = { startDate: '2026-10-12', endDate: '2026-12-20' };
+  it('goes to the sessions in the dates through the date index', async () => {
+    const plan = await planOf((ctx) => classes.sessionsToCheck(ctx, range, undefined, {}));
+    expect(plan).toMatch(searchIn('sessions', 'sessions_org_date_idx'));
+  });
+
+  it('reads the enrolments of those sessions’ classes by class', async () => {
+    const plan = await planOf((ctx) =>
+      enrolment.spansIn(ctx, classes.classesToCheck(ctx, range, undefined, {})),
+    );
+    expect(plan).toMatch(searchBy('enrolments', 'class_id'));
+    expect(plan).toMatch(searchIn('sessions', 'sessions_org_date_idx'));
+  });
+});
+
+describe('messages are read through their indexes (TUI-69)', () => {
+  it('pages the org’s messages, or a sender’s own, in id order', async () => {
+    const all = await planOf((ctx) => comms.listMessages(ctx, 50, undefined, {}));
+    expect(all).toMatch(searchIn('messages', 'messages_org_id_uq'));
+    expect(all).not.toContain(SORT);
+    const own = await planOf((ctx) =>
+      comms.listMessages(ctx, 50, undefined, { sentByMembershipId: 'mem_a' }),
+    );
+    expect(own).toMatch(searchBy('messages', 'sent_by_membership_id'));
+    expect(own).not.toContain(SORT);
+  });
+
+  it('reads a message’s recipients by the message', async () => {
+    const plan = await planOf((ctx) => comms.listRecipients(ctx, ['msg_a']));
+    expect(plan).toMatch(searchBy('message_recipients', 'message_id'));
+  });
+
+  it('finds a parent’s messages from their families’ recipient rows', async () => {
+    const plan = await planOf((ctx) => comms.messagesToFamilies(ctx, ['fam_a'], 50, undefined));
+    expect(plan).toMatch(searchBy('message_recipients', 'family_id'));
+    expect(plan).not.toMatch(READS_AN_ORG);
   });
 });

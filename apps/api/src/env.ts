@@ -12,6 +12,50 @@ export type Bindings = {
   CLERK_AUTHORIZED_PARTIES: string;
   CLERK_SECRET_KEY?: string;
   CLERK_JWT_KEY?: string;
+  /** Resend's API key, a secret the owner sets. Without it (or EMAIL_FROM) no email is sent. */
+  RESEND_API_KEY?: string;
+  /** The sender of every email, `Name <address>`, on a domain verified with Resend. */
+  EMAIL_FROM?: string;
+  /** The web app's address, for links in emails. Without it, emails carry codes, not links. */
+  APP_URL?: string;
+  /**
+   * Cloudflare Browser Rendering's REST API, which turns invoice and receipt HTML into PDFs
+   * (D-025): the account id, and an API token with Browser Rendering: Edit. Secrets the owner
+   * sets. Without them a PDF is 503, and `?format=html` still gives the printable page.
+   */
+  BROWSER_RENDERING_ACCOUNT_ID?: string;
+  BROWSER_RENDERING_TOKEN?: string;
+  /**
+   * Cloudflare Turnstile's secret, for the public forms (TUI-47). With it, a form must carry a
+   * valid `turnstileToken`; without it, only the hidden field and the hourly limit guard them.
+   */
+  TURNSTILE_SECRET_KEY?: string;
+  /**
+   * Signs the short-lived links files are uploaded and downloaded through (TUI-61). A secret the
+   * owner sets: any long random string. Without it, files can't be uploaded or fetched (503).
+   */
+  FILES_SIGNING_SECRET?: string;
+  /**
+   * The signing secrets (`whsec_…`) of the Clerk and Resend webhooks (TUI-71), from each
+   * dashboard's webhook endpoint. Without one, that webhook answers 503 and the sender retries.
+   */
+  CLERK_WEBHOOK_SECRET?: string;
+  RESEND_WEBHOOK_SECRET?: string;
+  /**
+   * Paddle Billing (TUI-73): an API key, the webhook's secret key, `sandbox` (the default) or
+   * `production`, and the price ids as JSON by `{plan}_{interval}`:
+   * `{"solo_month":"pri_…","solo_year":"pri_…","small_month":"pri_…","small_year":"pri_…"}`.
+   * Without them, checkout and the portal are 503 and the webhook refuses.
+   */
+  PADDLE_API_KEY?: string;
+  PADDLE_WEBHOOK_SECRET?: string;
+  PADDLE_ENVIRONMENT?: string;
+  PADDLE_PRICE_IDS?: string;
+  /**
+   * The Clerk user ids of the super-admins (TUI-75), comma-separated. Only they reach
+   * `/api/v1/admin/*`; with none set, nobody does.
+   */
+  SUPER_ADMIN_CLERK_USER_IDS?: string;
 };
 
 export type AuthUser = {
@@ -42,6 +86,8 @@ export type Variables = {
   org: OrgRow;
   /** Set by requirePermission: how far this role's permission reaches. */
   scope: Scope;
+  /** The Clerk id of the super-admin signed in as this user, when one is (TUI-75). */
+  impersonatedBy?: string;
 };
 
 export type AppEnv = { Bindings: Bindings; Variables: Variables };

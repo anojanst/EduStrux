@@ -263,3 +263,52 @@ export type UpdateFamily = z.infer<typeof UpdateFamily>;
 export const FamilyQuery = PageQuery.extend({
   branchId: z.string().optional().openapi({ description: 'Only families of this home branch' }),
 });
+
+// ── Year-end promotion (TUI-45) ─────────────────────────────────────────────
+
+export const PromoteStudents = z
+  .object({
+    fromAcademicYearId: z.string().openapi({ description: 'The year whose grades move up.' }),
+    toAcademicYearId: z.string().openapi({ description: 'The year that starts after it.' }),
+    exceptions: z
+      .array(
+        z.object({
+          studentId: z.string(),
+          gradeLevelId: z
+            .string()
+            .nullable()
+            .openapi({
+              description:
+                'The grade for the new year instead of the next one: the same grade to repeat ' +
+                'it, any other, or null for none (the student has left).',
+            }),
+        }),
+      )
+      .max(1000)
+      .default([])
+      .refine((list) => new Set(list.map((e) => e.studentId)).size === list.length, {
+        message: 'Each student once',
+      }),
+  })
+  .refine((v) => v.fromAcademicYearId !== v.toAcademicYearId, {
+    message: 'Must be another year',
+    path: ['toAcademicYearId'],
+  })
+  .openapi('PromoteStudents');
+export type PromoteStudents = z.infer<typeof PromoteStudents>;
+
+export const PromotionResult = z
+  .object({
+    fromAcademicYearId: z.string(),
+    toAcademicYearId: z.string(),
+    promoted: z.number().int().openapi({ description: 'Moved up to the next grade.' }),
+    exceptions: z.number().int().openapi({ description: 'Given the grade an exception named.' }),
+    finished: z.number().int().openapi({
+      description: 'In the last grade, or given none by an exception: no grade in the new year.',
+    }),
+    alreadySet: z.number().int().openapi({
+      description: 'Already had a grade in the new year, which was left as it was.',
+    }),
+  })
+  .openapi('PromotionResult');
+export type PromotionResult = z.infer<typeof PromotionResult>;

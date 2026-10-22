@@ -1,5 +1,6 @@
 import { lessonHomework, lessonNotes, now } from '@edustrux/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import { idsFrom, inIds, inOrg, writeWithAudit, type IdQuery, type OrgCtx } from '../../db/scope';
 
 export type HomeworkRow = typeof lessonHomework.$inferSelect;
@@ -123,4 +124,14 @@ export async function saveNotes(
   const savedHomework = homework?.text != null ? (results[1] as HomeworkRow[])[0] : undefined;
   const notes = inserts.length === 0 ? [] : (results.slice(-inserts.length) as SavedNote[][]);
   return { homework: savedHomework, notes: notes.flat() };
+}
+
+/** Deletes the lesson notes on these students, when their family is erased (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'sqlite'>[] {
+  if (studentIds.length === 0) return [];
+  return [
+    ctx.db
+      .delete(lessonNotes)
+      .where(and(eq(lessonNotes.orgId, ctx.orgId), inIds(lessonNotes.studentId, studentIds))),
+  ];
 }

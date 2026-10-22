@@ -467,6 +467,35 @@ export async function setSchedule(
   );
 }
 
+/**
+ * The org's open-ended classes still running on `today`, for the daily cron to extend their
+ * sessions (TUI-68).
+ */
+export function openEndedClasses(ctx: OrgCtx, today: string) {
+  return ctx.db
+    .select()
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        isNull(classes.termId),
+        sql`${classes.startDate} is not null`,
+        or(isNull(classes.endDate), gte(classes.endDate, today)),
+      ),
+    );
+}
+
+/** The daily cron's sessions for an open-ended class, in one batch with one audit row. */
+export async function extendSessions(ctx: OrgCtx, classId: string, plan: SessionPlan) {
+  await writeWithAudit(ctx, sessionStatements(ctx, plan), {
+    action: 'class.sessions_extended',
+    entityType: 'class',
+    entityId: classId,
+    after: { sessionsAdded: plan.add.length, sessionsRemoved: plan.removeIds.length },
+  });
+}
+
 // ── Sessions ────────────────────────────────────────────────────────────────
 
 /** Removals first: a replaced session frees its (class, date, start time) for the new one. */
@@ -624,4 +653,242 @@ export function removeSessionsClosedBy(
     .update(sessions)
     .set({ deletedAt: now() })
     .where(closedBy(ctx, holiday, from));
+}
+
+// ── Clashes (TUI-50) ────────────────────────────────────────────────────────
+
+/** What finds the scheduled sessions in the dates, within reach: the clash check reads them. */
+const clashConditions = (
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+) => ({
+  ofSession: [
+    eq(sessions.status, 'scheduled'),
+    gte(sessions.date, range.startDate),
+    lte(sessions.date, range.endDate),
+    sessionReach(ctx, reach),
+  ],
+  ofClass: [branchId ? eq(classes.branchId, branchId) : undefined, within(reach)],
+});
+
+/** The scheduled sessions in the dates within reach, each with its class's name, course and grade. */
+export function sessionsToCheck(
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+) {
+  const { ofSession, ofClass } = clashConditions(ctx, range, branchId, reach);
+  return ctx.db
+    .select({
+      id: sessions.id,
+      classId: sessions.classId,
+      roomId: sessions.roomId,
+      teacherMembershipId: sessions.teacherMembershipId,
+      date: sessions.date,
+      startTime: sessions.startTime,
+      endTime: sessions.endTime,
+      className: classes.name,
+      courseId: classes.courseId,
+      branchId: classes.branchId,
+      gradeLevelId: classes.gradeLevelId,
+    })
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(and(inOrg(ctx, sessions, ...ofSession), inOrg(ctx, classes, ...ofClass)))
+    .orderBy(asc(sessions.date), asc(sessions.startTime), asc(sessions.id));
+}
+
+/** The classes of those sessions, as ids: their enrolments are read by them in the same stage. */
+export function classesToCheck(
+  ctx: OrgCtx,
+  range: DateRange,
+  branchId: string | undefined,
+  reach: Reach,
+): IdQuery {
+  const { ofSession, ofClass } = clashConditions(ctx, range, branchId, reach);
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    ...ofClass,
+    inIds(classes.id, idsFrom(ctx, sessions, sessions.classId, ...ofSession)),
+  );
+}
+
+/** The classes of these courses, or taught by these members, as ids to filter by (TUI-69). */
+export function classesOf(
+  ctx: OrgCtx,
+  by: { courseIds?: Ids; teacherMembershipIds?: string[] },
+): IdQuery {
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    by.courseIds ? inIds(classes.courseId, by.courseIds) : undefined,
+    by.teacherMembershipIds
+      ? inIds(classes.teacherMembershipId, by.teacherMembershipIds)
+      : undefined,
+  );
+}
+
+// ── One lesson changed by hand (TUI-49) ─────────────────────────────────────
+
+export type SessionChanges = Partial<
+  Pick<
+    NewSessionRow,
+    | 'date'
+    | 'startTime'
+    | 'endTime'
+    | 'roomId'
+    | 'teacherMembershipId'
+    | 'status'
+    | 'originalDate'
+    | 'originalStartTime'
+  >
+>;
+
+/**
+ * Changes one lesson, with its audit row. It holds only while the lesson is as read, so a second
+ * change racing this one changes nothing and the caller answers 409. Returns the lesson as
+ * changed, from the same batch.
+ */
+export async function updateSession(
+  ctx: OrgCtx,
+  before: SessionRow,
+  changes: SessionChanges,
+  action: string,
+) {
+  const [, updated] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(sessions)
+        .set({ ...changes, updatedAt: now() })
+        .where(
+          inOrg(
+            ctx,
+            sessions,
+            eq(sessions.id, before.id),
+            eq(sessions.updatedAt, before.updatedAt),
+          ),
+        )
+        .returning(),
+    ],
+    {
+      action,
+      entityType: 'session',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
+  );
+  return (updated as SessionRow[])[0];
+}
+
+/** Whether an error is the unique index refusing a second lesson at one date and time. */
+export function sessionTaken(error: unknown): boolean {
+  for (let e: unknown = error; e instanceof Error; e = e.cause) {
+    if (
+      e.message.includes('sessions_org_class_date_start_uq') ||
+      e.message.includes('sessions.start_time')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/** How many classes within reach run on or after a date: their own end, else their term's. */
+export async function countRunningClasses(ctx: OrgCtx, reach: Reach, date: string, terms: IdQuery) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(classes)
+    .where(
+      inOrg(
+        ctx,
+        classes,
+        or(
+          gte(classes.endDate, date),
+          and(isNull(classes.endDate), isNull(classes.termId)),
+          and(isNull(classes.endDate), inIds(classes.termId, terms)),
+        ),
+        within(reach),
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}
+
+/** The lessons within reach in the dates, both included: id, date and status. */
+export function lessonsBetween(ctx: OrgCtx, range: DateRange, reach: Reach) {
+  return ctx.db
+    .select({ id: sessions.id, date: sessions.date, status: sessions.status })
+    .from(sessions)
+    .innerJoin(classes, eq(classes.id, sessions.classId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          sessions,
+          gte(sessions.date, range.startDate),
+          lte(sessions.date, range.endDate),
+          sessionReach(ctx, reach),
+        ),
+        inOrg(ctx, classes, within(reach)),
+      ),
+    );
+}
+
+/** Those lessons, scheduled ones only, as ids: their marks are read by them in the same stage. */
+export function scheduledBetween(ctx: OrgCtx, range: DateRange, reach: Reach): IdQuery {
+  return idsFrom(
+    ctx,
+    sessions,
+    sessions.id,
+    eq(sessions.status, 'scheduled'),
+    gte(sessions.date, range.startDate),
+    lte(sessions.date, range.endDate),
+    sessionReach(ctx, reach),
+    reach.branchIds ? inIds(sessions.classId, classesWithin(ctx, reach)) : undefined,
+  );
+}
+
+/** The classes running on or after a date, with what a public form shows of them (TUI-47). */
+export function runningClasses(ctx: OrgCtx, date: string, terms: IdQuery) {
+  const running = or(
+    gte(classes.endDate, date),
+    and(isNull(classes.endDate), isNull(classes.termId)),
+    and(isNull(classes.endDate), inIds(classes.termId, terms)),
+  );
+  return ctx.db
+    .select({
+      id: classes.id,
+      name: classes.name,
+      branchId: classes.branchId,
+      courseId: classes.courseId,
+      gradeLevelId: classes.gradeLevelId,
+      startDate: classes.startDate,
+      endDate: classes.endDate,
+    })
+    .from(classes)
+    .where(inOrg(ctx, classes, running))
+    .orderBy(asc(classes.id));
+}
+
+/** Those classes, as ids: their weekly slots are read beside them. */
+export function runningClassIds(ctx: OrgCtx, date: string, terms: IdQuery): IdQuery {
+  return idsFrom(
+    ctx,
+    classes,
+    classes.id,
+    or(
+      gte(classes.endDate, date),
+      and(isNull(classes.endDate), isNull(classes.termId)),
+      and(isNull(classes.endDate), inIds(classes.termId, terms)),
+    ),
+  );
 }

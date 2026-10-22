@@ -174,6 +174,21 @@ export async function removeStaffMember(ctx: OrgCtx, access: Access, id: string)
   await repo.softDeleteMember(ctx, before, also);
 }
 
+/**
+ * Suspends the user's memberships in every org, when Clerk says the user was deleted (TUI-71).
+ * Their records stay; an owner can remove them. One audit row in each org, by no one. Returns
+ * how many were suspended.
+ */
+export async function suspendEverywhere(db: Db, userId: string) {
+  const rows = await repo.activeMembershipsOfUser(db, userId);
+  for (const row of rows) {
+    await repo.updateMember({ db, orgId: row.orgId, actorUserId: null }, row, {
+      status: 'suspended',
+    });
+  }
+  return rows.length;
+}
+
 // ── Invitations ─────────────────────────────────────────────────────────────
 
 /** A random URL-safe token, and the hash that is all we store of it. */
@@ -343,4 +358,9 @@ export async function acceptInvitation(db: Db, user: AuthUser, token: string) {
     branchIds,
     org: { id: org.id, name: org.name, slug: org.slug },
   };
+}
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, guardianIds: string[]) {
+  return repo.eraseStatements(ctx, guardianIds);
 }

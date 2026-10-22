@@ -1,6 +1,6 @@
 import { memberships, orgs, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { changedFields, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 import type { OrgRow } from '../../env';
@@ -93,4 +93,43 @@ export async function updateOrg(ctx: OrgCtx, before: OrgRow, changes: OrgChanges
   const row = (updated as OrgRow[])[0];
   if (!row) throw new Error('Org missing after update');
   return row;
+}
+
+/** An org by its slug, for the public forms. */
+export function findBySlug(db: Db, slug: string) {
+  return db
+    .select()
+    .from(orgs)
+    .where(and(eq(orgs.slug, slug), isNull(orgs.deletedAt)))
+    .get();
+}
+
+/**
+ * Every org the crons act for: not deleted, and not suspended or cancelled (nothing is sent on
+ * their behalf). Only what the crons need to work out each org's local time.
+ */
+export function orgsForCron(db: Db) {
+  return db
+    .select({
+      id: orgs.id,
+      timezone: orgs.timezone,
+      status: orgs.status,
+      trialEndsAt: orgs.trialEndsAt,
+    })
+    .from(orgs)
+    .where(and(isNull(orgs.deletedAt), notInArray(orgs.status, ['suspended', 'cancelled'])));
+}
+
+/** The statement that sets the org's plan and status, for the subscription's own batch. */
+export function setPlanStatement(
+  db: Db,
+  orgId: string,
+  changes: Pick<OrgChanges, 'plan' | 'status'>,
+) {
+  return db.update(orgs).set(changes).where(eq(orgs.id, orgId));
+}
+
+/** The org's row by id, where there is no request (webhooks). Deleted orgs too. */
+export function findOrgById(db: Db, orgId: string) {
+  return db.select().from(orgs).where(eq(orgs.id, orgId)).get();
 }

@@ -17,6 +17,27 @@ export default defineConfig(async () => ({
       miniflare: {
         bindings: {
           ENVIRONMENT: 'test',
+          // Never send real email from tests, even when .dev.vars has a key for local work.
+          RESEND_API_KEY: '',
+          EMAIL_FROM: '',
+          BROWSER_RENDERING_ACCOUNT_ID: '',
+          BROWSER_RENDERING_TOKEN: '',
+          TURNSTILE_SECRET_KEY: '',
+          FILES_SIGNING_SECRET: 'test-files-signing-secret',
+          CLERK_WEBHOOK_SECRET: 'whsec_dGVzdC1jbGVyay13ZWJob29rLXNlY3JldA==',
+          RESEND_WEBHOOK_SECRET: 'whsec_dGVzdC1yZXNlbmQtd2ViaG9vay1zZWNyZXQ=',
+          // Never call Clerk's Backend API from tests (impersonation), even with a key in .dev.vars.
+          CLERK_SECRET_KEY: '',
+          SUPER_ADMIN_CLERK_USER_IDS: 'user_super_admin, user_super_admin_2',
+          PADDLE_API_KEY: '',
+          PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_test_secret',
+          PADDLE_ENVIRONMENT: 'sandbox',
+          PADDLE_PRICE_IDS: JSON.stringify({
+            solo_month: 'pri_solo_month',
+            solo_year: 'pri_solo_year',
+            small_month: 'pri_small_month',
+            small_year: 'pri_small_year',
+          }),
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,
           TEST_MIGRATIONS: await readD1Migrations('../../packages/db/migrations'),

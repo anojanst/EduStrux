@@ -1,7 +1,7 @@
 import { z } from '../zod';
 import { CurrencyCode, LocalDate, Money, PageQuery, Timestamp } from './common';
 
-/** `withdrawn` arrives with transfers and withdrawals; only `active` is written so far. */
+/** `withdrawn`: the student left the class, by a withdrawal or a transfer, after `endDate`. */
 export const ENROLMENT_STATUSES = ['active', 'withdrawn'] as const;
 export type EnrolmentStatus = (typeof ENROLMENT_STATUSES)[number];
 
@@ -75,3 +75,84 @@ export const EnrolmentQuery = PageQuery.extend({
   studentId: z.string().optional().openapi({ description: 'Only this student’s enrolments' }),
   classId: z.string().optional().openapi({ description: 'Only this class’s enrolments' }),
 });
+
+// ── Changing, withdrawing and transferring (TUI-46) ─────────────────────────
+
+const UpdatedAt = Timestamp.openapi({
+  description: 'The updatedAt you last read. A newer value on the server returns 409.',
+});
+
+export const UpdateEnrolment = z
+  .object({
+    updatedAt: UpdatedAt,
+    startDate: LocalDate.openapi({ description: 'Inside the class’s dates.' }),
+    endDate: LocalDate.nullable().openapi({
+      description:
+        'The last day in the class; null = until it ends. With `status: "withdrawn"`, the last ' +
+        'day before leaving, today when left out; the day before `startDate` means the student ' +
+        'never started.',
+    }),
+    priceOverride: PriceOverride,
+    status: z.literal('withdrawn').openapi({
+      description: 'Withdraws the student. A withdrawn enrolment can’t be changed again.',
+    }),
+    transfer: z
+      .object({
+        classId: z.string().openapi({ description: 'The class the student moves to.' }),
+        startDate: LocalDate.optional().openapi({
+          description:
+            'The first day in the new class. Leave out for today, or the new class’s first day ' +
+            'when that is still to come. The old enrolment ends the day before.',
+        }),
+        priceOverride: PriceOverride.optional().openapi({
+          description: 'For the new enrolment. Not carried over from the old one.',
+        }),
+      })
+      .openapi('EnrolmentTransfer'),
+  })
+  .partial()
+  .required({ updatedAt: true })
+  .refine((v) => !(v.transfer && (v.status || v.endDate !== undefined || v.startDate)), {
+    message: 'A transfer sets the dates itself; send it on its own',
+    path: ['transfer'],
+  })
+  .openapi('UpdateEnrolment');
+export type UpdateEnrolment = z.infer<typeof UpdateEnrolment>;
+
+export const InvoiceAdjustment = z
+  .object({
+    invoiceId: z.string(),
+    invoiceLineId: z.string(),
+    invoiceStatus: z.enum(['draft', 'issued', 'part_paid', 'paid', 'void']).openapi({
+      description: 'The invoice’s status after the change.',
+    }),
+    adjusted: z.boolean().openapi({
+      description:
+        'true: a draft’s line was charged again for the new dates (or removed when no lesson ' +
+        'is left), and the draft’s totals changed with it. false: the invoice is issued, so ' +
+        'its lines are fixed; `after` is what the line would charge now. Void it and generate ' +
+        'again to bill the new amount, while nothing is paid towards it.',
+    }),
+    lessonsBefore: z.number().int(),
+    lessonsAfter: z.number().int(),
+    before: Money.openapi({ description: 'The line’s total before the change.' }),
+    after: Money.openapi({ description: 'The line’s total for the new dates.' }),
+  })
+  .openapi('InvoiceAdjustment');
+export type InvoiceAdjustment = z.infer<typeof InvoiceAdjustment>;
+
+export const EnrolmentUpdate = z
+  .object({
+    enrolment: Enrolment,
+    transferredTo: z.union([Enrolment, z.null()]).openapi({
+      description: 'The new enrolment a transfer made. null otherwise.',
+    }),
+    invoices: z.array(InvoiceAdjustment).openapi({
+      description:
+        'The enrolment’s invoice lines whose charge the new dates change, pro rata by lessons. ' +
+        'Per-term, per-month and per-lesson lines only: packs are bought up front and carry ' +
+        'over.',
+    }),
+  })
+  .openapi('EnrolmentUpdate');
+export type EnrolmentUpdate = z.infer<typeof EnrolmentUpdate>;

@@ -1,8 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  CreateDiscountRule,
   CreatePayment,
   CreatePriceRule,
   CreateTaxRate,
+  DiscountRule,
+  DiscountRuleQuery,
   GenerateInvoices,
   GenerateMonthlyInvoices,
   Invoice,
@@ -15,6 +18,7 @@ import {
   PriceRule,
   PriceRuleQuery,
   TaxRate,
+  UpdateDiscountRule,
   UpdateInvoice,
   UpdatePriceRule,
   UpdateTaxRate,
@@ -25,6 +29,9 @@ import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { byOrg, idempotent } from '../../middleware/idempotency';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
+import { invoiceHtml, invoiceReference, receiptHtml } from '../../pdf/documents';
+import { DocumentQuery, documentResponse, sendDocument } from '../../pdf/respond';
+import * as orgs from '../orgs/service';
 import { startInvoiceRun } from './generation';
 import * as service from './service';
 
@@ -258,6 +265,22 @@ const getInvoiceRoute = createRoute({
   },
 });
 
+const invoicePdfRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/invoices/{invoiceId}/pdf',
+  tags: ['Billing'],
+  summary: 'An invoice as a PDF',
+  description:
+    'Made from the printable page (`?format=html`) by Cloudflare Browser Rendering (D-025). ' +
+    'A draft or void invoice says so across the top. 503 while Browser Rendering isn’t set up.',
+  middleware: orgAccess('billing:read'),
+  request: { params: InvoiceParams, query: DocumentQuery },
+  responses: {
+    200: documentResponse('The invoice'),
+    ...errors(400, 401, 403, 404, 503),
+  },
+});
+
 const updateInvoiceRoute = createRoute({
   method: 'patch',
   path: '/api/v1/orgs/{orgId}/invoices/{invoiceId}',
@@ -281,8 +304,9 @@ const issueInvoiceRoute = createRoute({
   tags: ['Billing'],
   summary: 'Issue an invoice',
   description:
-    'A draft becomes `issued`, and the family’s parents can see it from then on. Anything but ' +
-    'a draft is 422. Takes an `Idempotency-Key`.',
+    'A draft becomes `issued`, and the family’s parents can see it from then on. Its guardians ' +
+    'are sent it, by email and in the portal, unless the notification settings turn that off. ' +
+    'Anything but a draft is 422. Takes an `Idempotency-Key`.',
   middleware: billingAction,
   request: { params: InvoiceParams },
   responses: {
@@ -360,6 +384,98 @@ const deletePaymentRoute = createRoute({
   responses: {
     204: { description: 'Deleted' },
     ...errors(401, 403, 404),
+  },
+});
+
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+
+const DiscountRuleParams = OrgParams.extend({
+  discountRuleId: z.string().openapi({ param: { name: 'discountRuleId', in: 'path' } }),
+});
+
+const listDiscountRulesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/discount-rules',
+  tags: ['Billing'],
+  summary: 'List discount rules',
+  description:
+    'Oldest first. The owner, branch managers, front desk and accountants read them; a teacher ' +
+    'or a parent gets 403.',
+  middleware: orgAccess('billing:read'),
+  request: { params: OrgParams, query: DiscountRuleQuery },
+  responses: {
+    200: json(page(DiscountRule).openapi('DiscountRulePage'), 'A page of discount rules'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const createDiscountRuleRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/orgs/{orgId}/discount-rules',
+  tags: ['Billing'],
+  summary: 'Add a discount rule',
+  description:
+    'Applied by invoice runs from then on, to each line’s charge before tax. `sibling`: every ' +
+    'child of a family with `minCount` (default 2) or more children billed, but the one charged ' +
+    'most. `multi_class`: a student’s lines but their dearest, with `minCount` or more. ' +
+    '`early_bird`: enrolments made on or before `cutoffDate`, in `termId`’s run or any. ' +
+    '`scholarship`: `studentIds`. `manual`: `familyIds`. `bundle`: a student billed for every ' +
+    'one of `courseIds` pays `fixedPrice` for them together, or the percentage or amount off ' +
+    'each; their lines get no multi-class discount (D-079). One of `percentBps`, `amount` or ' +
+    '`fixedPrice` (a bundle only). Money is in the organisation’s currency (400). Rules add up, ' +
+    'to at most the whole charge. Owner only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: OrgParams, body: jsonBody(CreateDiscountRule) },
+  responses: {
+    201: json(DiscountRule, 'The new rule'),
+    ...errors(400, 401, 403, 404),
+  },
+});
+
+const updateDiscountRuleRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/orgs/{orgId}/discount-rules/{discountRuleId}',
+  tags: ['Billing'],
+  summary: 'Update a discount rule',
+  description:
+    'Anything but `kind`; the rule must still suit its kind (400). `active: false` pauses it. ' +
+    'Invoices already made keep their discounts. Send the `updatedAt` you last read (409). Owner ' +
+    'only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: DiscountRuleParams, body: jsonBody(UpdateDiscountRule) },
+  responses: {
+    200: json(DiscountRule, 'The updated rule'),
+    ...errors(400, 401, 403, 404, 409),
+  },
+});
+
+const deleteDiscountRuleRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/orgs/{orgId}/discount-rules/{discountRuleId}',
+  tags: ['Billing'],
+  summary: 'Delete a discount rule',
+  description: 'Invoices already made keep their discounts. Owner only.',
+  middleware: orgAccess('billing:write'),
+  request: { params: DiscountRuleParams },
+  responses: {
+    204: { description: 'Deleted' },
+    ...errors(401, 403, 404),
+  },
+});
+
+const receiptRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/payments/{paymentId}/receipt',
+  tags: ['Billing'],
+  summary: 'A payment’s receipt as a PDF',
+  description:
+    'What was received, how, and which invoices it paid towards. `?format=html` gives the ' +
+    'printable page. 503 while Browser Rendering isn’t set up.',
+  middleware: orgAccess('billing:read'),
+  request: { params: PaymentParams, query: DocumentQuery },
+  responses: {
+    200: documentResponse('The receipt'),
+    ...errors(400, 401, 403, 404, 503),
   },
 });
 
@@ -441,7 +557,10 @@ export const billingRoutes = router
   })
   .openapi(issueInvoiceRoute, async (c) => {
     const { invoiceId } = c.req.valid('param');
-    return c.json(await service.issueInvoice(orgCtx(c), access(c), invoiceId), 200);
+    return c.json(
+      await service.issueInvoice(orgCtx(c), access(c), invoiceId, c.env.EMAIL_QUEUE),
+      200,
+    );
   })
   .openapi(voidInvoiceRoute, async (c) => {
     const { invoiceId } = c.req.valid('param');
@@ -457,4 +576,40 @@ export const billingRoutes = router
   .openapi(deletePaymentRoute, async (c) => {
     await service.deletePayment(orgCtx(c), access(c), c.req.valid('param').paymentId);
     return c.body(null, 204);
+  })
+  .openapi(listDiscountRulesRoute, async (c) => {
+    const { limit, cursor, kind } = c.req.valid('query');
+    return c.json(await service.listDiscountRules(orgCtx(c), access(c), limit, cursor, kind), 200);
+  })
+  .openapi(createDiscountRuleRoute, async (c) => {
+    return c.json(await service.createDiscountRule(orgCtx(c), access(c), c.req.valid('json')), 201);
+  })
+  .openapi(updateDiscountRuleRoute, async (c) => {
+    const { discountRuleId } = c.req.valid('param');
+    return c.json(
+      await service.updateDiscountRule(orgCtx(c), access(c), discountRuleId, c.req.valid('json')),
+      200,
+    );
+  })
+  .openapi(deleteDiscountRuleRoute, async (c) => {
+    await service.deleteDiscountRule(orgCtx(c), access(c), c.req.valid('param').discountRuleId);
+    return c.body(null, 204);
+  })
+  .openapi(invoicePdfRoute, async (c) => {
+    const { invoiceId } = c.req.valid('param');
+    const [invoice, org] = await Promise.all([
+      service.getInvoice(orgCtx(c), access(c), invoiceId),
+      orgs.getOrg(orgCtx(c)),
+    ]);
+    const name = `invoice-${invoiceReference(invoice.id)}`;
+    return sendDocument(c, invoiceHtml(org, invoice), name, c.req.valid('query').format);
+  })
+  .openapi(receiptRoute, async (c) => {
+    const { paymentId } = c.req.valid('param');
+    const [payment, org] = await Promise.all([
+      service.getPayment(orgCtx(c), access(c), paymentId),
+      orgs.getOrg(orgCtx(c)),
+    ]);
+    const name = `receipt-${invoiceReference(payment.id)}`;
+    return sendDocument(c, receiptHtml(org, payment), name, c.req.valid('query').format);
   });

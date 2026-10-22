@@ -33,7 +33,7 @@ function namesFor(ctx: OrgCtx, access: Access, sessionId: string): Promise<Stude
     return [people.studentNames(ctx, people.studentsOfGuardian(ctx, access.membershipId))];
   }
   return [
-    people.studentNames(ctx, enrolment.studentsEnrolledIn(ctx, classOfSession(ctx, sessionId))),
+    people.studentNames(ctx, enrolment.studentsOnRollOf(ctx, classOfSession(ctx, sessionId))),
     people.studentNames(ctx, repo.studentsNotedAt(ctx, sessionId)),
   ];
 }
@@ -187,4 +187,9 @@ export async function updateNotes(
   for (const note of saved.notes) notesNow.set(note.studentId, note);
   const homeworkNow = homeworkChanges ? saved.homework : homework;
   return toSessionNotes(sessionId, homeworkNow, expected, notesNow, names);
+}
+
+/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]) {
+  return repo.eraseStatements(ctx, studentIds);
 }

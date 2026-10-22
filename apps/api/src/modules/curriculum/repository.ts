@@ -1,7 +1,15 @@
 import { courses, gradeLevels, now, subjects } from '@edustrux/db';
 import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
-import { changedFields, inIds, inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
+import {
+  changedFields,
+  idsFrom,
+  inIds,
+  inOrg,
+  writeWithAudit,
+  type IdQuery,
+  type OrgCtx,
+} from '../../db/scope';
 
 export type GradeLevelRow = typeof gradeLevels.$inferSelect;
 export type NewGradeLevelRow = typeof gradeLevels.$inferInsert;
@@ -413,4 +421,9 @@ export async function softDeleteCourse(ctx: OrgCtx, before: CourseRow) {
     ],
     { action: 'course.deleted', entityType: 'course', entityId: before.id, before },
   );
+}
+
+/** The courses of these subjects, as ids to filter by (TUI-69). */
+export function coursesOfSubjects(ctx: OrgCtx, subjectIds: string[]): IdQuery {
+  return idsFrom(ctx, courses, courses.id, inIds(courses.subjectId, subjectIds));
 }

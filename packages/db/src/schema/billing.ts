@@ -1,4 +1,10 @@
-import { INVOICE_STATUSES, PAYMENT_METHODS, PRICE_BASES, PRICE_SOURCES } from '@edustrux/shared';
+import {
+  DISCOUNT_KINDS,
+  INVOICE_STATUSES,
+  PAYMENT_METHODS,
+  PRICE_BASES,
+  PRICE_SOURCES,
+} from '@edustrux/shared';
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { orgColumns } from '../columns';
@@ -78,6 +84,9 @@ export const invoices = sqliteTable(
     notes: text('notes'),
     issuedAt: text('issued_at'),
     voidedAt: text('voided_at'),
+    // The days overdue (from the org's reminder days) the hourly cron has reminded the family
+    // at, so it reminds once for each (TUI-67).
+    remindedDays: text('reminded_days', { mode: 'json' }).$type<number[]>().notNull().default([]),
     // The job that generated it.
     jobId: text('job_id'),
   },
@@ -131,6 +140,12 @@ export const invoiceLines = sqliteTable(
     subtotalAmount: integer('subtotal_amount').notNull(),
     taxAmount: integer('tax_amount').notNull(),
     totalAmount: integer('total_amount').notNull(),
+    // What discounts took off the charge before tax (TUI-58), in minor units, and which rules:
+    // `[{ ruleId, name, amount }]`. 0 and null with none.
+    discountAmount: integer('discount_amount').notNull().default(0),
+    discounts: text('discounts', { mode: 'json' }).$type<
+      { ruleId: string; name: string; amount: number }[]
+    >(),
     // Set with the invoice's voided_at, so the enrolment can be invoiced for the period again.
     voidedAt: text('voided_at'),
   },
@@ -186,4 +201,36 @@ export const paymentAllocations = sqliteTable(
       .where(sql`${t.deletedAt} is null`),
     index('payment_allocations_org_invoice_idx').on(t.orgId, t.invoiceId),
   ],
+);
+
+// A discount an invoice run applies (TUI-58): sibling, multi-class, early-bird, scholarship,
+// manual, or a bundle of courses (D-079). Each takes a percentage or an amount off a line's
+// charge before tax, or for a bundle prices the bundle's lines at a fixed total.
+export const discountRules = sqliteTable(
+  'discount_rules',
+  {
+    ...orgColumns(),
+    name: text('name').notNull(),
+    kind: text('kind', { enum: DISCOUNT_KINDS }).notNull(),
+    // Exactly one of these three: basis points off, an amount off each line, or a bundle's total.
+    percentBps: integer('percent_bps'),
+    amount: integer('amount'),
+    fixedPrice: integer('fixed_price'),
+    currency: text('currency'),
+    // Sibling: children in the family; multi-class: lines of the student. At least this many.
+    minCount: integer('min_count'),
+    // Bundle: the courses a student takes together.
+    courseIds: text('course_ids', { mode: 'json' }).$type<string[]>(),
+    // Scholarship: these students. Manual: these families.
+    studentIds: text('student_ids', { mode: 'json' }).$type<string[]>(),
+    familyIds: text('family_ids', { mode: 'json' }).$type<string[]>(),
+    // Early-bird: enrolments made on or before this date, for this term's run (null = any run).
+    cutoffDate: text('cutoff_date'),
+    termId: text('term_id'),
+    // The periods it applies to: a run whose period touches these dates. null = no limit.
+    startsOn: text('starts_on'),
+    endsOn: text('ends_on'),
+    active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  },
+  (t) => [uniqueIndex('discount_rules_org_id_uq').on(t.orgId, t.id)],
 );

@@ -11,6 +11,9 @@ export const ErrorCode = z.enum([
   'request_in_progress',
   'unprocessable',
   'rate_limited',
+  'plan_limit',
+  'subscription_required',
+  'unavailable',
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

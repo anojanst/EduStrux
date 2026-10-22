@@ -1,6 +1,6 @@
-import { idempotencyKeys } from '@edustrux/db';
+import { idempotencyKeys, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
@@ -81,3 +81,8 @@ export function idempotent(scopeOf: (c: Context<AppEnv>) => string) {
 
 export const byOrg = (c: Context<AppEnv>) => c.var.membership.orgId;
 export const byUser = (c: Context<AppEnv>) => c.var.user.id;
+
+/** Drops stored responses older than `before`, for the daily cron. */
+export function forgetOldKeys(db: Db, before: string) {
+  return db.delete(idempotencyKeys).where(lt(idempotencyKeys.createdAt, before));
+}

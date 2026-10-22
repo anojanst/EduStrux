@@ -1,5 +1,6 @@
 import { createDb } from '@edustrux/db';
 import type { Bindings } from '../env';
+import { deliverEmail } from './email';
 import { runJob } from './jobs';
 import type { EmailMessage, JobMessage } from './messages';
 
@@ -14,11 +15,7 @@ export async function handleQueue(
       if (batch.queue.endsWith('-jobs')) {
         await runJob(db, env, message.body as JobMessage, message.attempts);
       } else if (batch.queue.endsWith('-email')) {
-        // TODO(comms): render template → send with Resend → update delivery status.
-        console.log(
-          'email queued (sending not implemented yet)',
-          (message.body as EmailMessage).template,
-        );
+        await deliverEmail(db, env, message.body as EmailMessage, message.attempts);
       }
       message.ack();
     } catch (err) {

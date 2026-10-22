@@ -1,16 +1,18 @@
 ---
 id: TUI-74
 title: Sign-up, trial and plan limits enforcement
-status: todo
+status: done
 phase: P5
 module: platform
 priority: P0
 size: M
 endpoints: []
-branch:
-pr:
+branch: task/tui-43-82-remaining-mvp-api
+pr: 51
 ---
 
 # TUI-74 Sign-up, trial and plan limits enforcement
 
 Student caps: Solo 30, Small 150. Trial expiry handling.
+
+Decisions: D-153 (built on `task/tui-43-82-remaining-mvp-api`; recorded as an assumption until the owner confirms it).

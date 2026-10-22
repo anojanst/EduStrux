@@ -1,7 +1,7 @@
 ---
 id: TUI-47
 title: Public enquiry form + online enrolment requests with approval
-status: todo
+status: done
 phase: P3
 module: enrolment
 priority: P0
@@ -12,10 +12,12 @@ endpoints:
   - GET /enrolment-requests
   - POST /enrolment-requests/{id}/approve
   - POST /enrolment-requests/{id}/reject
-branch:
-pr:
+branch: task/tui-43-82-remaining-mvp-api
+pr: 51
 ---
 
 # TUI-47 Public enquiry form + online enrolment requests with approval
 
 Embeddable/link forms. Rate-limit + bot protection on public routes. Public pages use the org slug (D-020).
+
+Decisions: D-144 (built on `task/tui-43-82-remaining-mvp-api`; recorded as an assumption until the owner confirms it).

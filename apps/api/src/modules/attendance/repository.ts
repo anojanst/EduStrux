@@ -1,7 +1,16 @@
-import { absenceNotices, attendance, now } from '@edustrux/db';
-import type { AttendanceStatus } from '@edustrux/shared';
-import { asc, desc, eq, gt, gte, lte, sql, type SQL } from 'drizzle-orm';
 import {
+  absenceNotices,
+  attendance,
+  makeupBookings,
+  makeupCredits,
+  makeupPolicies,
+  now,
+} from '@edustrux/db';
+import type { AttendanceStatus } from '@edustrux/shared';
+import { and, asc, count, desc, eq, gt, gte, lt, lte, sql, type SQL } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
+import {
+  changedFields,
   firstIds,
   idsFrom,
   inIds,
@@ -64,6 +73,11 @@ export async function saveMarks(
   set: (NewAttendanceRow & { id: string })[],
   clearIds: string[],
   change: { before: Mark[]; after: Mark[] },
+  credits: { statements: BatchItem<'sqlite'>[]; added: string[]; withdrawn: string[] } = {
+    statements: [],
+    added: [],
+    withdrawn: [],
+  },
 ): Promise<SavedMark[]> {
   const inserts = chunks(set, ROWS_PER_INSERT).map((rows) =>
     ctx.db
@@ -91,6 +105,7 @@ export async function saveMarks(
               .where(inOrg(ctx, attendance, inIds(attendance.id, clearIds))),
           ]
         : []),
+      ...credits.statements,
       ...inserts,
     ],
     {
@@ -98,7 +113,12 @@ export async function saveMarks(
       entityType: 'session',
       entityId: sessionId,
       before: { records: change.before },
-      after: { records: change.after },
+      after: {
+        records: change.after,
+        // The make-up credits the marks earned or took back (TUI-55), by student.
+        ...(credits.added.length > 0 ? { creditsEarned: credits.added } : {}),
+        ...(credits.withdrawn.length > 0 ? { creditsWithdrawn: credits.withdrawn } : {}),
+      },
     },
   );
   // The batch answers in the order it was sent, so the inserts' rows are its last results.
@@ -169,6 +189,7 @@ export function noticesOn(ctx: OrgCtx, studentIds: Ids, date: SQL | string) {
       studentId: absenceNotices.studentId,
       reason: absenceNotices.reason,
       source: absenceNotices.source,
+      createdAt: absenceNotices.createdAt,
     })
     .from(absenceNotices)
     .where(
@@ -197,4 +218,331 @@ export async function insertNotice(ctx: OrgCtx, notice: NewAbsenceNoticeRow & { 
   const row = (inserted as AbsenceNoticeRow[])[0];
   if (!row) throw new Error('Absence notice missing after insert');
   return row;
+}
+
+// ── Make-ups (TUI-55) ───────────────────────────────────────────────────────
+
+export type PolicyRow = typeof makeupPolicies.$inferSelect;
+export type NewPolicyRow = typeof makeupPolicies.$inferInsert;
+export type CreditRow = typeof makeupCredits.$inferSelect;
+export type NewCreditRow = typeof makeupCredits.$inferInsert;
+export type BookingRow = typeof makeupBookings.$inferSelect;
+export type NewBookingRow = typeof makeupBookings.$inferInsert;
+
+// A credit row binds 13 values.
+const CREDITS_PER_INSERT = 7;
+
+export function findPolicy(ctx: OrgCtx) {
+  return ctx.db.select().from(makeupPolicies).where(inOrg(ctx, makeupPolicies)).get();
+}
+
+/** Writes the org's policy, adding its row the first time. Returns it as stored. */
+export async function savePolicy(
+  ctx: OrgCtx,
+  before: PolicyRow | undefined,
+  values: Omit<NewPolicyRow, 'id' | 'orgId'>,
+  newId: string,
+) {
+  const statement = before
+    ? ctx.db
+        .update(makeupPolicies)
+        .set({ ...values, updatedAt: now() })
+        .where(inOrg(ctx, makeupPolicies, eq(makeupPolicies.id, before.id)))
+        .returning()
+    : ctx.db
+        .insert(makeupPolicies)
+        .values({ id: newId, orgId: ctx.orgId, ...values })
+        .returning();
+  const [, saved] = await writeWithAudit(ctx, [statement], {
+    action: 'makeup_policy.updated',
+    entityType: 'makeup_policy',
+    entityId: before?.id ?? newId,
+    ...(before ? changedFields(before, values) : { after: values }),
+  });
+  return (saved as PolicyRow[])[0]!;
+}
+
+/** The credits earned at a lesson, one per student at most. */
+export function creditsAt(ctx: OrgCtx, sessionId: string) {
+  return ctx.db
+    .select()
+    .from(makeupCredits)
+    .where(inOrg(ctx, makeupCredits, eq(makeupCredits.sessionId, sessionId)));
+}
+
+/**
+ * Statements for the attendance batch: the credits marks earn, and the unused ones a changed
+ * mark takes back. One already used stays: its make-up is booked.
+ */
+export function creditStatements(
+  ctx: OrgCtx,
+  add: (NewCreditRow & { id: string })[],
+  withdrawIds: string[],
+): BatchItem<'sqlite'>[] {
+  return [
+    ...(withdrawIds.length > 0
+      ? [
+          ctx.db
+            .update(makeupCredits)
+            .set({ deletedAt: now() })
+            .where(
+              inOrg(
+                ctx,
+                makeupCredits,
+                inIds(makeupCredits.id, withdrawIds),
+                eq(makeupCredits.status, 'available'),
+              ),
+            ),
+        ]
+      : []),
+    ...chunks(add, CREDITS_PER_INSERT).map((rows) =>
+      ctx.db.insert(makeupCredits).values(rows).onConflictDoNothing(),
+    ),
+  ];
+}
+
+export type CreditFilter = { studentId?: string; status?: string; today: string };
+
+/** What a page of credits is read by. An unused credit past its last day reads as expired. */
+const creditPage = (
+  afterId: string | undefined,
+  filter: CreditFilter,
+  reach: Ids | undefined,
+): (SQL | undefined)[] => {
+  const lapsed = and(
+    eq(makeupCredits.status, 'available'),
+    sql`${makeupCredits.expiresOn} is not null`,
+    lt(makeupCredits.expiresOn, filter.today),
+  );
+  const status =
+    filter.status === 'available'
+      ? and(eq(makeupCredits.status, 'available'), sql`not (${lapsed})`)
+      : filter.status === 'expired'
+        ? sql`(${makeupCredits.status} = 'expired' or ${lapsed})`
+        : filter.status === 'used'
+          ? eq(makeupCredits.status, 'used')
+          : undefined;
+  return [
+    filter.studentId ? inIds(makeupCredits.studentId, [filter.studentId]) : undefined,
+    reach ? inIds(makeupCredits.studentId, reach) : undefined,
+    status,
+    afterId ? lt(makeupCredits.id, afterId) : undefined,
+  ];
+};
+
+/** Newest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listCredits(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  filter: CreditFilter,
+  reach: Ids | undefined,
+) {
+  return ctx.db
+    .select()
+    .from(makeupCredits)
+    .where(inOrg(ctx, makeupCredits, ...creditPage(afterId, filter, reach)))
+    .orderBy(desc(makeupCredits.id))
+    .limit(limit + 1);
+}
+
+/** The students and the bookings of the credits on that page, read in the same stage (D-104). */
+export function onCreditPage(
+  ctx: OrgCtx,
+  column: 'studentId' | 'bookingId',
+  limit: number,
+  afterId: string | undefined,
+  filter: CreditFilter,
+  reach: Ids | undefined,
+): IdQuery {
+  return firstIds(
+    idsFrom(ctx, makeupCredits, makeupCredits[column], ...creditPage(afterId, filter, reach)),
+    limit,
+    desc(makeupCredits.id),
+  );
+}
+
+/** One credit, if its student is within reach (undefined = every student). */
+export function findCredit(ctx: OrgCtx, id: string, reach: Ids | undefined) {
+  return ctx.db
+    .select()
+    .from(makeupCredits)
+    .where(
+      inOrg(
+        ctx,
+        makeupCredits,
+        eq(makeupCredits.id, id),
+        reach ? and(inIds(makeupCredits.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+}
+
+/** These bookings. */
+export function listBookings(ctx: OrgCtx, ids: Ids) {
+  return ctx.db
+    .select()
+    .from(makeupBookings)
+    .where(inOrg(ctx, makeupBookings, inIds(makeupBookings.id, ids)));
+}
+
+/** The bookings into a lesson. */
+export function bookingsInto(ctx: OrgCtx, sessionId: string) {
+  return ctx.db
+    .select()
+    .from(makeupBookings)
+    .where(inOrg(ctx, makeupBookings, eq(makeupBookings.sessionId, sessionId)));
+}
+
+/**
+ * The students booked into a lesson, as ids: their names are read beside the roster, and are how
+ * the roster knows who is booked. `among` keeps to some students: a parent's children.
+ */
+export function studentsBookedInto(ctx: OrgCtx, sessionId: string, among?: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    makeupBookings,
+    makeupBookings.studentId,
+    eq(makeupBookings.sessionId, sessionId),
+    among ? and(inIds(makeupBookings.studentId, among)) : undefined,
+  );
+}
+
+/** One booking, if its student is within reach. */
+export function findBooking(ctx: OrgCtx, id: string, reach: Ids | undefined) {
+  return ctx.db
+    .select()
+    .from(makeupBookings)
+    .where(
+      inOrg(
+        ctx,
+        makeupBookings,
+        eq(makeupBookings.id, id),
+        reach ? and(inIds(makeupBookings.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+}
+
+/**
+ * Books the make-up and uses the credit, as one batch with its audit row. The unique indexes
+ * refuse a second booking of the credit, or of the student into the lesson, made at the same
+ * moment: the batch fails whole.
+ */
+export async function insertBooking(ctx: OrgCtx, booking: NewBookingRow & { id: string }) {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db.insert(makeupBookings).values(booking).returning(),
+      ctx.db
+        .update(makeupCredits)
+        .set({ status: 'used', bookingId: booking.id })
+        .where(inOrg(ctx, makeupCredits, eq(makeupCredits.id, booking.creditId))),
+    ],
+    { action: 'makeup.booked', entityType: 'makeup_booking', entityId: booking.id, after: booking },
+  );
+  return (inserted as BookingRow[])[0]!;
+}
+
+/** Cancels the booking and gives the credit back. */
+export async function cancelBooking(ctx: OrgCtx, before: BookingRow) {
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(makeupBookings)
+        .set({ deletedAt: now() })
+        .where(inOrg(ctx, makeupBookings, eq(makeupBookings.id, before.id))),
+      ctx.db
+        .update(makeupCredits)
+        .set({ status: 'available', bookingId: null })
+        .where(inOrg(ctx, makeupCredits, eq(makeupCredits.id, before.creditId))),
+    ],
+    { action: 'makeup.cancelled', entityType: 'makeup_booking', entityId: before.id, before },
+  );
+}
+
+/** Whether an error is a unique index refusing a second booking. */
+export function bookingTaken(error: unknown): boolean {
+  for (let e: unknown = error; e instanceof Error; e = e.cause) {
+    if (e.message.includes('makeup_bookings')) return true;
+  }
+  return false;
+}
+
+/**
+ * Marks every org's unused credits past their last day as expired, for the hourly cron. `today`
+ * is each org's local date, so it is worked out per org by the caller.
+ */
+export function expireCredits(ctx: OrgCtx, today: string) {
+  return ctx.db
+    .update(makeupCredits)
+    .set({ status: 'expired' })
+    .where(
+      inOrg(
+        ctx,
+        makeupCredits,
+        eq(makeupCredits.status, 'available'),
+        sql`${makeupCredits.expiresOn} is not null`,
+        lt(makeupCredits.expiresOn, today),
+      ),
+    )
+    .returning({ id: makeupCredits.id });
+}
+
+// ── The dashboard (TUI-62) ──────────────────────────────────────────────────
+
+/** Of these lessons, the ones with any mark. */
+export function lessonsMarked(ctx: OrgCtx, sessionIds: Ids) {
+  return ctx.db
+    .selectDistinct({ sessionId: attendance.sessionId })
+    .from(attendance)
+    .where(inOrg(ctx, attendance, inIds(attendance.sessionId, sessionIds)));
+}
+
+/** How many students within reach have a notice covering the date. */
+export async function countAwayOn(ctx: OrgCtx, date: string, reach: Ids | undefined) {
+  const row = await ctx.db
+    .select({ n: sql<number>`count(distinct ${absenceNotices.studentId})` })
+    .from(absenceNotices)
+    .where(
+      inOrg(
+        ctx,
+        absenceNotices,
+        lte(absenceNotices.startDate, date),
+        gte(absenceNotices.endDate, date),
+        reach ? and(inIds(absenceNotices.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}
+
+/** How many unused credits within reach haven't lapsed by the date. */
+export async function countCreditsAvailable(ctx: OrgCtx, date: string, reach: Ids | undefined) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(makeupCredits)
+    .where(
+      inOrg(
+        ctx,
+        makeupCredits,
+        eq(makeupCredits.status, 'available'),
+        sql`(${makeupCredits.expiresOn} is null or ${makeupCredits.expiresOn} >= ${date})`,
+        reach ? and(inIds(makeupCredits.studentId, reach)) : undefined,
+      ),
+    )
+    .get();
+  return row?.n ?? 0;
+}
+
+/** Clears the reasons on these students' absence notices, when their family is erased (TUI-79). */
+export function eraseStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'sqlite'>[] {
+  if (studentIds.length === 0) return [];
+  return [
+    ctx.db
+      .update(absenceNotices)
+      .set({ reason: null })
+      .where(and(eq(absenceNotices.orgId, ctx.orgId), inIds(absenceNotices.studentId, studentIds))),
+  ];
 }

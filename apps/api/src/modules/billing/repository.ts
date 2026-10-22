@@ -1,4 +1,5 @@
 import {
+  discountRules,
   invoiceLines,
   invoices,
   now,
@@ -9,6 +10,7 @@ import {
 } from '@edustrux/db';
 import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
 import {
+  and,
   asc,
   count,
   desc,
@@ -562,6 +564,103 @@ export function linesInvoiced(ctx: OrgCtx, enrolmentIds: Ids) {
 }
 
 /**
+ * An enrolment's lines on invoices that aren't void, each with its invoice's status, totals and
+ * how many lines it has, oldest first.
+ */
+export function linesOfEnrolment(ctx: OrgCtx, enrolmentId: string) {
+  const others = sql<number>`(select count(*) from ${invoiceLines} as l where l.org_id = ${ctx.orgId} and l.invoice_id = ${invoices.id} and l.deleted_at is null)`;
+  return ctx.db
+    .select({
+      line: invoiceLines,
+      invoice: {
+        id: invoices.id,
+        status: invoices.status,
+        currency: invoices.currency,
+        lines: others,
+      },
+    })
+    .from(invoiceLines)
+    .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+    .where(
+      and(
+        inOrg(
+          ctx,
+          invoiceLines,
+          eq(invoiceLines.enrolmentId, enrolmentId),
+          isNull(invoiceLines.voidedAt),
+        ),
+        inOrg(ctx, invoices),
+      ),
+    )
+    .orderBy(asc(invoiceLines.id));
+}
+
+/** A line's new charge: the columns `chargeAgain` works out. */
+export type LineCharge = {
+  quantity: number;
+  lessons: number;
+  freeLessons: number;
+  discountAmount: number;
+  discounts: { ruleId: string; name: string; amount: number }[] | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+};
+
+/**
+ * Statements that charge a draft's line again, or take it off the draft when `charge` is null,
+ * and move the draft's totals by the difference. A draft left with no lines is voided. Each
+ * statement holds only while the invoice is still a draft, so one issued since it was read keeps
+ * its lines.
+ */
+export function rechargeDraftLine(
+  ctx: OrgCtx,
+  line: InvoiceLineRow,
+  charge: LineCharge | null,
+  emptied: boolean,
+) {
+  const stillDraft = inIds(
+    invoiceLines.invoiceId,
+    idsFrom(
+      ctx,
+      invoices,
+      invoices.id,
+      eq(invoices.id, line.invoiceId),
+      eq(invoices.status, 'draft'),
+    ),
+  );
+  const lineChange = charge
+    ? {
+        quantity: charge.quantity,
+        lessons: charge.lessons,
+        freeLessons: charge.freeLessons,
+        discountAmount: charge.discountAmount,
+        discounts: charge.discounts,
+        subtotalAmount: charge.subtotal,
+        taxAmount: charge.tax,
+        totalAmount: charge.total,
+      }
+    : { deletedAt: now() };
+  const delta = (before: number, after: number) => after - before;
+  const draft = and(eq(invoices.id, line.invoiceId), eq(invoices.status, 'draft'));
+  return [
+    ctx.db
+      .update(invoiceLines)
+      .set(lineChange)
+      .where(and(inOrg(ctx, invoiceLines, eq(invoiceLines.id, line.id)), stillDraft)),
+    ctx.db
+      .update(invoices)
+      .set({
+        subtotalAmount: sql`${invoices.subtotalAmount} + ${delta(line.subtotalAmount, charge?.subtotal ?? 0)}`,
+        taxAmount: sql`${invoices.taxAmount} + ${delta(line.taxAmount, charge?.tax ?? 0)}`,
+        totalAmount: sql`${invoices.totalAmount} + ${delta(line.totalAmount, charge?.total ?? 0)}`,
+        ...(emptied ? { status: 'void' as const, voidedAt: now() } : {}),
+      })
+      .where(inOrg(ctx, invoices, draft)),
+  ];
+}
+
+/**
  * Writes one run's invoices and their lines as one batch with one audit row: all of them or
  * none. The unique index on a line's enrolment and period fails the whole batch if another run
  * billed one of the enrolments in the meantime.
@@ -948,4 +1047,279 @@ export async function softDeletePayment(
       },
     },
   );
+}
+
+// ── Discount rules (TUI-58) ─────────────────────────────────────────────────
+
+export type DiscountRuleRow = typeof discountRules.$inferSelect;
+export type NewDiscountRuleRow = typeof discountRules.$inferInsert;
+
+/** Every rule of the org, for an invoice run. */
+export function allDiscountRules(ctx: OrgCtx) {
+  return ctx.db.select().from(discountRules).where(inOrg(ctx, discountRules));
+}
+
+/** Oldest first. Fetches `limit + 1` rows so the caller can tell if there's another page. */
+export function listDiscountRules(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  kind: string | undefined,
+) {
+  return ctx.db
+    .select()
+    .from(discountRules)
+    .where(
+      inOrg(
+        ctx,
+        discountRules,
+        kind ? eq(discountRules.kind, kind as DiscountRuleRow['kind']) : undefined,
+        afterId ? gt(discountRules.id, afterId) : undefined,
+      ),
+    )
+    .orderBy(asc(discountRules.id))
+    .limit(limit + 1);
+}
+
+export function findDiscountRule(ctx: OrgCtx, id: string) {
+  return ctx.db
+    .select()
+    .from(discountRules)
+    .where(inOrg(ctx, discountRules, eq(discountRules.id, id)))
+    .get();
+}
+
+export async function insertDiscountRule(ctx: OrgCtx, row: NewDiscountRuleRow & { id: string }) {
+  const [, inserted] = await writeWithAudit(
+    ctx,
+    [ctx.db.insert(discountRules).values(row).returning()],
+    { action: 'discount_rule.created', entityType: 'discount_rule', entityId: row.id, after: row },
+  );
+  return (inserted as DiscountRuleRow[])[0]!;
+}
+
+export async function updateDiscountRule(
+  ctx: OrgCtx,
+  before: DiscountRuleRow,
+  changes: Partial<NewDiscountRuleRow>,
+) {
+  const [, updated] = await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(discountRules)
+        .set(changes)
+        .where(inOrg(ctx, discountRules, eq(discountRules.id, before.id)))
+        .returning(),
+    ],
+    {
+      action: 'discount_rule.updated',
+      entityType: 'discount_rule',
+      entityId: before.id,
+      ...changedFields(before, changes),
+    },
+  );
+  return (updated as DiscountRuleRow[])[0];
+}
+
+export async function softDeleteDiscountRule(ctx: OrgCtx, before: DiscountRuleRow) {
+  await writeWithAudit(
+    ctx,
+    [
+      ctx.db
+        .update(discountRules)
+        .set({ deletedAt: now() })
+        .where(inOrg(ctx, discountRules, eq(discountRules.id, before.id))),
+    ],
+    { action: 'discount_rule.deleted', entityType: 'discount_rule', entityId: before.id, before },
+  );
+}
+
+// ── Money reports (TUI-63) and the dashboard (TUI-62) ───────────────────────
+
+/** The invoices issued between two instants, within reach: what was invoiced, for a report. */
+export function issuedBetween(ctx: OrgCtx, from: string, to: string, reach: InvoiceReach) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      issuedAt: invoices.issuedAt,
+      status: invoices.status,
+      subtotal: invoices.subtotalAmount,
+      tax: invoices.taxAmount,
+      total: invoices.totalAmount,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        isNotNull(invoices.issuedAt),
+        sql`${invoices.issuedAt} >= ${from}`,
+        lt(invoices.issuedAt, to),
+        ...withinInvoiceReach(reach),
+      ),
+    );
+}
+
+/** The tax on the lines of those invoices, by rate. A void invoice's lines are left out. */
+export function taxBetween(ctx: OrgCtx, from: string, to: string, reach: InvoiceReach) {
+  const issued = idsFrom(
+    ctx,
+    invoices,
+    invoices.id,
+    isNotNull(invoices.issuedAt),
+    ne(invoices.status, 'void'),
+    sql`${invoices.issuedAt} >= ${from}`,
+    lt(invoices.issuedAt, to),
+    ...withinInvoiceReach(reach),
+  );
+  return ctx.db
+    .select({
+      taxRateId: invoiceLines.taxRateId,
+      taxName: invoiceLines.taxName,
+      taxRateBps: invoiceLines.taxRateBps,
+      taxInclusive: invoiceLines.taxInclusive,
+      subtotal: sum(invoiceLines.subtotalAmount).mapWith(Number),
+      tax: sum(invoiceLines.taxAmount).mapWith(Number),
+      lines: count(),
+    })
+    .from(invoiceLines)
+    .where(inOrg(ctx, invoiceLines, inIds(invoiceLines.invoiceId, issued)))
+    .groupBy(
+      invoiceLines.taxRateId,
+      invoiceLines.taxName,
+      invoiceLines.taxRateBps,
+      invoiceLines.taxInclusive,
+    );
+}
+
+/** What is still owed: the issued and part-paid invoices within reach, with their families. */
+export function owing(ctx: OrgCtx, reach: InvoiceReach) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      familyId: invoices.familyId,
+      dueDate: invoices.dueDate,
+      total: invoices.totalAmount,
+      paid: invoices.paidAmount,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        inArray(invoices.status, ['issued', 'part_paid']),
+        ...withinInvoiceReach(reach),
+      ),
+    );
+}
+
+/**
+ * The org's issued and part-paid invoices that were due before `today`, for the hourly cron's
+ * reminders (TUI-67). Through the status index: the org's unpaid invoices only.
+ */
+export function overdue(ctx: OrgCtx, today: string) {
+  return ctx.db
+    .select({
+      id: invoices.id,
+      familyId: invoices.familyId,
+      currency: invoices.currency,
+      dueDate: invoices.dueDate,
+      total: invoices.totalAmount,
+      paid: invoices.paidAmount,
+      bankReference: invoices.bankReference,
+      remindedDays: invoices.remindedDays,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        inArray(invoices.status, ['issued', 'part_paid']),
+        isNotNull(invoices.dueDate),
+        lt(invoices.dueDate, today),
+      ),
+    );
+}
+
+/**
+ * Records the reminder days each invoice has now been reminded at, in one batch with one
+ * `invoices.reminded` audit row for the cron's pass over the org. `sent` are the invoices whose
+ * families are being sent a reminder; the rest only caught up on days already past.
+ */
+export async function markReminded(
+  ctx: OrgCtx,
+  marks: { id: string; remindedDays: number[] }[],
+  sent: string[],
+) {
+  if (marks.length === 0) return;
+  await writeWithAudit(
+    ctx,
+    marks.map((mark) =>
+      ctx.db
+        .update(invoices)
+        .set({ remindedDays: mark.remindedDays })
+        .where(inOrg(ctx, invoices, eq(invoices.id, mark.id))),
+    ),
+    {
+      action: 'invoices.reminded',
+      entityType: 'org',
+      entityId: ctx.orgId,
+      after: { invoiceIds: marks.map((m) => m.id), sent },
+    },
+  );
+}
+
+/** The payments received in the dates, both included, within reach. */
+export function receivedBetween(
+  ctx: OrgCtx,
+  range: { startDate: string; endDate: string },
+  reach: PaymentReach,
+) {
+  return ctx.db
+    .select({ receivedOn: payments.receivedOn, amount: payments.amount, method: payments.method })
+    .from(payments)
+    .where(
+      inOrg(
+        ctx,
+        payments,
+        sql`${payments.receivedOn} >= ${range.startDate}`,
+        sql`${payments.receivedOn} <= ${range.endDate}`,
+        withinPaymentReach(reach),
+      ),
+    );
+}
+
+/** How many drafts the caller's families have. */
+export async function countDrafts(ctx: OrgCtx, reach: InvoiceReach) {
+  const row = await ctx.db
+    .select({ n: count() })
+    .from(invoices)
+    .where(inOrg(ctx, invoices, eq(invoices.status, 'draft'), ...withinInvoiceReach(reach)))
+    .get();
+  return row?.n ?? 0;
+}
+
+/** The family of one payment within reach, as a query: its label is read beside the payment. */
+export function familyOfPayment(ctx: OrgCtx, id: string, reach: PaymentReach): IdQuery {
+  return idsFrom(ctx, payments, payments.familyId, eq(payments.id, id), withinPaymentReach(reach));
+}
+
+/** What the family still owes on its issued and part-paid invoices, in minor units (TUI-79). */
+export async function owedBy(ctx: OrgCtx, familyId: string) {
+  const row = await ctx.db
+    .select({
+      owed: sql<number>`coalesce(sum(${invoices.totalAmount} - ${invoices.paidAmount}), 0)`,
+    })
+    .from(invoices)
+    .where(
+      inOrg(
+        ctx,
+        invoices,
+        eq(invoices.familyId, familyId),
+        inArray(invoices.status, ['issued', 'part_paid']),
+      ),
+    )
+    .get();
+  return row?.owed ?? 0;
 }

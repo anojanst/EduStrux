@@ -1,6 +1,6 @@
 import { memberships, orgs, users, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { ActiveMembership, AuthUser, OrgRow } from '../../env';
 
 // `users` is the one table without org_id, so this repository isn't org-scoped.
@@ -43,6 +43,26 @@ export async function findOrCreateUser(db: Db, identity: ClerkIdentity): Promise
   const created = await findUser(db, identity.clerkUserId);
   if (!created) throw new Error('User row missing after insert');
   return created;
+}
+
+/**
+ * Brings the user's email and name in line with Clerk's, for Clerk's webhook (TUI-71): adds the
+ * user when their first request hasn't yet. Returns the user's id.
+ */
+export async function syncFromClerk(db: Db, identity: ClerkIdentity) {
+  await db
+    .insert(users)
+    .values({ id: newId('user'), ...identity })
+    .onConflictDoUpdate({
+      target: users.clerkUserId,
+      set: { email: identity.email, name: identity.name },
+    });
+  return (await findUser(db, identity.clerkUserId))!.id;
+}
+
+/** The user's id, if they have ever signed in or Clerk has told us of them. */
+export async function userIdOf(db: Db, clerkUserId: string) {
+  return (await findUser(db, clerkUserId))?.id ?? null;
 }
 
 export type UserInOrg = {
@@ -103,4 +123,28 @@ export async function findOrCreateUserInOrg(
   const created = await findUserInOrg(db, identity.clerkUserId, orgId);
   if (!created) throw new Error('User row missing after insert');
   return created;
+}
+
+/** The user's active memberships in orgs that aren't deleted, by org name, for `GET /me`. */
+export function membershipsOfUser(db: Db, userId: string) {
+  return db
+    .select({
+      id: memberships.id,
+      role: memberships.role,
+      branchIds: memberships.branchIds,
+      orgId: orgs.id,
+      orgName: orgs.name,
+      orgSlug: orgs.slug,
+    })
+    .from(memberships)
+    .innerJoin(orgs, eq(orgs.id, memberships.orgId))
+    .where(
+      and(
+        eq(memberships.userId, userId),
+        eq(memberships.status, 'active'),
+        isNull(memberships.deletedAt),
+        isNull(orgs.deletedAt),
+      ),
+    )
+    .orderBy(asc(orgs.name));
 }

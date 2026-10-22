@@ -79,6 +79,10 @@ export const sessions = sqliteTable(
     startTime: text('start_time').notNull(),
     endTime: text('end_time').notNull(),
     status: text('status', { enum: SESSION_STATUSES }).notNull().default('scheduled'),
+    // Where a lesson moved by hand was first scheduled (TUI-49). The generator treats that slot
+    // as taken by it, and never moves or removes it. Both null for a lesson that hasn't moved.
+    originalDate: text('original_date'),
+    originalStartTime: text('original_start_time'),
   },
   (t) => [
     index('sessions_org_date_idx').on(t.orgId, t.date, t.startTime, t.id),
