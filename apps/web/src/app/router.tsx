@@ -6,6 +6,7 @@ import { ChooseOrgPage } from '../pages/ChooseOrgPage';
 import { InvitationPage } from '../pages/InvitationPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
+import { ProfilePage } from '../pages/ProfilePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
 import { SignUpPage } from '../pages/SignUpPage';
@@ -78,6 +79,7 @@ export const routes = [
             children: [
               { index: true, element: <HomePage /> },
               { path: 'settings/team', element: <TeamPage /> },
+              { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },
             ],
           },

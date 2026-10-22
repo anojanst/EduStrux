@@ -4539,7 +4539,7 @@ under "Not changed here" for a reach that is a subquery.
 - **Decision:**
   - **Routes:** `/sign-in`, `/sign-up`, `/invitations/:token` (the link the invite email already
     uses), `/welcome` (signed in, no org), `/onboarding`, `/orgs` (picker), `/o/:orgSlug` (the
-    org by slug, found in `GET /me`) and `/o/:orgSlug/settings/team`. A slug the user isn't a
+    org by slug, found in `GET /me`), `/o/:orgSlug/settings/team` and `/o/:orgSlug/profile`. A slug the user isn't a
     member of shows "no access".
   - **Landing:** no memberships → `/welcome`; one → that org; several → the last one opened on
     this browser, else `/orgs`. A signed-out visit to a signed-in page goes to
@@ -4563,6 +4563,13 @@ under "Not changed here" for a reach that is a subquery.
     drawer. The trial, read-only and past-due banner reads the org's status and trial end; the
     trial banner can be dismissed for the day. A parent's home lists `GET /portal/children`, so
     they can see the invite linked the right family.
+  - **Profile (`/o/:orgSlug/profile`, from the user footer):** the app's own design, not Clerk's
+    profile component, as the owner asked on 2026-10-22. First and last name (first required),
+    saved in Clerk with `user.update`; the session token is then fetched afresh so the next API
+    call stores the new name (the custom session token in handoff §4). Also the sign-in email
+    (read-only), the user's orgs with their roles, and sign out. Changing the password or email,
+    signed-in devices, a photo and deleting the account come later: Clerk asks to confirm the
+    person for some of them, and deleting relies on Clerk's webhook, which Access blocks.
 - **Consequences:** The preview tells anyone holding the token the invited email and the org;
   the token is already enough to accept it. Not built from ui-design §5 yet: top-bar search,
   "+ New", the bell, the tablet icon rail and the phone tab bar (TUI-40, TUI-84). Only Home and

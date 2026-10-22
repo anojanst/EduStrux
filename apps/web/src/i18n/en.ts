@@ -123,6 +123,7 @@ export const en = {
   'shell.closeMenu': 'Close menu',
   'shell.organisation': 'Organisation',
   'shell.current': 'Current',
+  'shell.profile': 'Your profile',
 
   'nav.home': 'Home',
   'nav.team': 'Team',
@@ -189,6 +190,20 @@ export const en = {
   'team.sent.copied': 'Copied',
   'team.sent.expires': 'The link works for 7 days, once. A new invitation replaces it.',
   'team.sent.another': 'Invite another',
+
+  'profile.overline': 'Account',
+  'profile.title': 'Your profile',
+  'profile.noName': 'No name yet',
+  'profile.nameTitle': 'Your name',
+  'profile.firstName': 'First name',
+  'profile.lastName': 'Last name',
+  'profile.nameHelper': 'Shown to the people you work with in the app.',
+  'profile.firstNameRequired': 'Enter your first name.',
+  'profile.save': 'Save name',
+  'profile.saved': 'Your name is saved.',
+  'profile.emailTitle': 'Email',
+  'profile.emailHelper': 'You sign in with this address, and invitations and emails go to it.',
+  'profile.orgsTitle': 'Your organisations',
 
   'notFound.title': 'Page not found',
   'notFound.body': 'The link may be old, or the page may have moved.',

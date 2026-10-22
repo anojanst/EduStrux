@@ -237,12 +237,23 @@ function UserFooter() {
   const queryClient = useQueryClient();
   const name = me.name ?? me.email;
   return (
-    <div className="flex items-center gap-3 rounded-xl px-1 py-2">
-      <Avatar name={me.name} fallback={me.email ?? '?'} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-label font-semibold text-white">{name}</span>
-        <span className="block text-meta">{roleLabel(membership.role)}</span>
-      </span>
+    <div className="flex items-center gap-1">
+      <NavLink
+        to={`${orgPath(membership.org.slug)}/profile`}
+        aria-label={t('shell.profile')}
+        className={({ isActive }) =>
+          cn(
+            'flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-2 transition-colors duration-150 hover:bg-sidebar-raised',
+            isActive && 'bg-sidebar-raised',
+          )
+        }
+      >
+        <Avatar name={me.name} fallback={me.email ?? '?'} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-label font-semibold text-white">{name}</span>
+          <span className="block text-meta">{roleLabel(membership.role)}</span>
+        </span>
+      </NavLink>
       <button
         type="button"
         aria-label={t('common.signOut')}

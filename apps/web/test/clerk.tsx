@@ -9,7 +9,10 @@ export const clerk = {
   signedIn: false,
   email: 'person@example.com' as string | null,
   firstName: 'Olivia' as string | null,
+  lastName: null as string | null,
   signOut: vi.fn(async () => {}),
+  updateUser: vi.fn(async (_: { firstName?: string; lastName?: string }) => ({})),
+  getToken: vi.fn(async (_?: { skipCache?: boolean }) => (clerk.signedIn ? 'test-token' : null)),
 };
 
 export function signInAs(email: string | null = 'person@example.com') {
@@ -35,13 +38,15 @@ export const clerkModule = {
     isLoaded: true,
     isSignedIn: clerk.signedIn,
     userId: clerk.signedIn ? 'user_1' : null,
-    getToken: async () => (clerk.signedIn ? 'test-token' : null),
+    getToken: clerk.getToken,
   }),
   useUser: () => ({
     isLoaded: true,
     user: clerk.signedIn
       ? {
           firstName: clerk.firstName,
+          lastName: clerk.lastName,
+          update: clerk.updateUser,
           primaryEmailAddress: clerk.email ? { emailAddress: clerk.email } : null,
         }
       : null,
