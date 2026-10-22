@@ -257,6 +257,9 @@ button and a close button where it can be dismissed.
 | Payment problem (`past_due`)                                       | warning | no           |
 | Offline                                                            | neutral | no           |
 
+The trial countdown is for the owner and branch managers only. The read-only and payment
+banners show to everyone, since saving fails for every role.
+
 ### Feedback
 
 - **Toasts** bottom right (bottom centre on phones) for completed actions, 4s, with Undo where

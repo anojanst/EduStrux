@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../src/layouts/AppShell';
+import type { Org } from '@edustrux/shared';
 import { OrgContext } from '../src/lib/org';
+import type { Role } from '../src/lib/roles';
 import { resetAccount } from './clerk';
 import { renderRoutes } from './render';
 
@@ -51,5 +53,52 @@ describe('the sidebar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
     expect(sidebar()).toHaveClass('w-[248px]');
     expect(localStorage.getItem('edustrux.sidebarCollapsed')).toBe('0');
+  });
+});
+
+describe('the trial banner', () => {
+  const trialing = {
+    status: 'trialing',
+    trialEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+  } as unknown as Org;
+  const as = (role: Role) => (tree: ReactNode) => (
+    <OrgContext.Provider
+      value={{
+        me: { id: 'usr_1', email: 'ethan@example.com', name: 'Ethan Nojan', memberships: [] },
+        membership: { id: 'mem_1', role, branchIds: null, org },
+        org: trialing,
+      }}
+    >
+      {tree}
+    </OrgContext.Provider>
+  );
+
+  it('tells the owner and branch managers the trial is running out, and nobody else', () => {
+    for (const role of ['owner', 'branch_manager'] as const) {
+      const view = renderRoutes(routes, '/o/magic', as(role));
+      expect(screen.getByText('Your free trial ends in 5 days.')).toBeVisible();
+      view.unmount();
+    }
+    for (const role of ['front_desk', 'teacher', 'accountant', 'parent'] as const) {
+      const view = renderRoutes(routes, '/o/magic', as(role));
+      expect(screen.queryByText(/free trial/)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('still tells everyone when the centre is read-only', () => {
+    const ended = { status: 'suspended', trialEndsAt: null } as unknown as Org;
+    renderRoutes(routes, '/o/magic', (tree) => (
+      <OrgContext.Provider
+        value={{
+          me: { id: 'usr_1', email: 'ethan@example.com', name: 'Ethan Nojan', memberships: [] },
+          membership: { id: 'mem_1', role: 'teacher', branchIds: null, org },
+          org: ended,
+        }}
+      >
+        {tree}
+      </OrgContext.Provider>
+    ));
+    expect(screen.getByRole('alert')).toHaveTextContent('read-only');
   });
 });

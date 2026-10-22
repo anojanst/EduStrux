@@ -25,7 +25,7 @@ import { Button } from '../components/ui/Button';
 import { t, type MessageKey } from '../i18n';
 import { cn } from '../lib/cn';
 import { useOrg } from '../lib/org';
-import { orgBanner } from '../lib/orgStatus';
+import { orgBanner, seesTrialBanner } from '../lib/orgStatus';
 import { can, roleLabel, type Role } from '../lib/roles';
 import { orgPath, rememberOrg } from '../lib/session';
 
@@ -456,7 +456,7 @@ function OrgBanner() {
 
   const owner = membership.role === 'owner';
   if (banner.kind === 'trial') {
-    if (dismissed) return null;
+    if (dismissed || !seesTrialBanner(membership.role)) return null;
     return (
       <div className="flex items-center gap-3 border-b border-border bg-warning-soft px-4 py-2.5 text-body text-text sm:px-8">
         <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden />
