@@ -6,6 +6,8 @@ import {
   House,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   TriangleAlert,
   UsersRound,
@@ -38,19 +40,49 @@ function navFor(role: Role): NavItem[] {
   return items;
 }
 
+const COLLAPSED = 'edustrux.sidebarCollapsed';
+
+/** Whether the desktop sidebar is the narrow icon rail, remembered on this browser. */
+function useCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () =>
+    setCollapsed((value) => {
+      try {
+        localStorage.setItem(COLLAPSED, value ? '0' : '1');
+      } catch {
+        // Not remembered; it opens expanded next time.
+      }
+      return !value;
+    });
+  return [collapsed, toggle] as const;
+}
+
 /**
- * The app shell (ui-design.md §5): a teal sidebar on desktop, a top bar with a drawer on smaller
- * screens, and the org's banner above the page.
+ * The app shell (ui-design.md §5): a teal sidebar on desktop that collapses to a 72px icon rail,
+ * a top bar with a drawer on smaller screens, and the org's banner above the page. The page sits
+ * next to the sidebar, not centred, so wide screens don't leave a gap beside it.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed();
   const location = useLocation();
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 
   return (
     <div className="min-h-dvh bg-canvas lg:flex">
-      <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 lg:block">
-        <Sidebar />
+      <aside
+        className={cn(
+          'sticky top-0 z-20 hidden h-dvh shrink-0 transition-[width] duration-150 ease-out lg:block',
+          collapsed ? 'w-[72px]' : 'w-[248px]',
+        )}
+      >
+        <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
       </aside>
 
       {drawerOpen ? (
@@ -62,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setDrawerOpen(false)}
           />
           <div className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] shadow-pop">
-            <Sidebar onClose={() => setDrawerOpen(false)} />
+            <Sidebar collapsed={false} onClose={() => setDrawerOpen(false)} />
           </div>
         </div>
       ) : null}
@@ -79,24 +111,46 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Logo />
         </header>
         <OrgBanner />
-        <main className="mx-auto w-full max-w-[1200px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
-          {children}
-        </main>
+        <main className="w-full max-w-[1200px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
     </div>
   );
 }
 
-function Sidebar({ onClose }: { onClose?: () => void }) {
+/** A label beside an icon in the collapsed rail, on hover and keyboard focus. */
+function RailTip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute top-1/2 left-full z-50 ml-3 -translate-y-1/2 rounded-md bg-text px-2 py-1 text-meta font-medium whitespace-nowrap text-white opacity-0 shadow-pop transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
+function Sidebar({
+  collapsed,
+  onToggle,
+  onClose,
+}: {
+  collapsed: boolean;
+  onToggle?: () => void;
+  onClose?: () => void;
+}) {
   const { membership } = useOrg();
   const base = orgPath(membership.org.slug);
   return (
     <nav
       aria-label={t('shell.nav')}
-      className="flex h-full flex-col gap-6 overflow-y-auto bg-sidebar px-4 py-5 text-sidebar-text"
+      className={cn(
+        'flex h-full flex-col gap-6 bg-sidebar py-5 text-sidebar-text',
+        // The rail's labels sit outside it, so only the full sidebar scrolls.
+        collapsed ? 'items-center px-3' : 'overflow-y-auto px-4',
+      )}
     >
-      <div className="flex items-center justify-between">
-        <Logo inverted />
+      <div className={cn('flex items-center', collapsed ? 'flex-col gap-3' : 'justify-between')}>
+        <Logo inverted markOnly={collapsed} />
         {onClose ? (
           <button
             type="button"
@@ -106,37 +160,54 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
           >
             <X className="size-5" aria-hidden />
           </button>
+        ) : onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={collapsed ? t('shell.expand') : t('shell.collapse')}
+            aria-expanded={!collapsed}
+            className="group relative inline-flex size-9 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-white"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="size-5" aria-hidden />
+            ) : (
+              <PanelLeftClose className="size-5" aria-hidden />
+            )}
+            {collapsed ? <RailTip label={t('shell.expand')} /> : null}
+          </button>
         ) : null}
       </div>
-      <OrgSwitcher />
-      <ul className="flex flex-col gap-1">
+      <OrgSwitcher collapsed={collapsed} />
+      <ul className={cn('flex flex-col gap-1', collapsed && 'w-full')}>
         {navFor(membership.role).map(({ to, label, Icon, end }) => (
           <li key={label}>
             <NavLink
               to={to ? `${base}/${to}` : base}
               end={end}
+              aria-label={collapsed ? t(label) : undefined}
               className={({ isActive }) =>
                 cn(
-                  'flex h-10 items-center gap-3 rounded-lg px-3 text-label font-medium transition-colors duration-150',
+                  'group relative flex h-10 items-center gap-3 rounded-lg text-label font-medium transition-colors duration-150',
+                  collapsed ? 'justify-center' : 'px-3',
                   isActive ? 'bg-white text-brand' : 'hover:bg-sidebar-raised hover:text-white',
                 )
               }
             >
-              <Icon className="size-5" aria-hidden />
-              {t(label)}
+              <Icon className="size-5 shrink-0" aria-hidden />
+              {collapsed ? <RailTip label={t(label)} /> : t(label)}
             </NavLink>
           </li>
         ))}
       </ul>
-      <div className="mt-auto">
-        <UserFooter />
+      <div className={cn('mt-auto', collapsed && 'w-full')}>
+        <UserFooter collapsed={collapsed} />
       </div>
     </nav>
   );
 }
 
 /** The org card in the sidebar; with more than one org it opens the list of them. */
-function OrgSwitcher() {
+function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
   const { me, membership } = useOrg();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -161,7 +232,12 @@ function OrgSwitcher() {
     };
   }, [open]);
 
-  const card = (
+  const card = collapsed ? (
+    <>
+      <Avatar name={membership.org.name} tone="org" />
+      <RailTip label={membership.org.name} />
+    </>
+  ) : (
     <>
       <Avatar name={membership.org.name} tone="org" />
       <span className="min-w-0 flex-1 text-left">
@@ -174,6 +250,10 @@ function OrgSwitcher() {
       </span>
     </>
   );
+  const box = cn(
+    'group relative flex items-center rounded-xl bg-sidebar-raised',
+    collapsed ? 'size-12 justify-center' : 'w-full gap-3 p-3',
+  );
 
   return (
     <div ref={ref} className="relative">
@@ -182,19 +262,25 @@ function OrgSwitcher() {
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-label={collapsed ? t('shell.switchOrg', { org: membership.org.name }) : undefined}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-3 rounded-xl bg-sidebar-raised p-3 transition-colors duration-150 hover:bg-sidebar-raised/80"
+          className={cn(box, 'transition-colors duration-150 hover:bg-sidebar-raised/80')}
         >
           {card}
-          <ChevronsUpDown className="size-4 shrink-0" aria-hidden />
+          {collapsed ? null : <ChevronsUpDown className="size-4 shrink-0" aria-hidden />}
         </button>
       ) : (
-        <div className="flex items-center gap-3 rounded-xl bg-sidebar-raised p-3">{card}</div>
+        <div className={box} aria-label={collapsed ? membership.org.name : undefined}>
+          {card}
+        </div>
       )}
       {open ? (
         <div
           role="menu"
-          className="absolute inset-x-0 top-full z-50 mt-2 rounded-xl border border-border bg-surface p-1 text-text shadow-pop"
+          className={cn(
+            'absolute z-50 rounded-xl border border-border bg-surface p-1 text-text shadow-pop',
+            collapsed ? 'top-0 left-full ml-3 w-[260px]' : 'inset-x-0 top-full mt-2',
+          )}
         >
           {me.memberships.map((m) => (
             <Link
@@ -231,20 +317,21 @@ function OrgSwitcher() {
   );
 }
 
-function UserFooter() {
+function UserFooter({ collapsed }: { collapsed: boolean }) {
   const { me, membership } = useOrg();
   const { signOut } = useClerk();
   const { user } = useUser();
   const queryClient = useQueryClient();
   const name = me.name ?? me.email;
   return (
-    <div className="flex items-center gap-1">
+    <div className={cn('flex items-center gap-1', collapsed && 'flex-col')}>
       <NavLink
         to={`${orgPath(membership.org.slug)}/profile`}
         aria-label={t('shell.profile')}
         className={({ isActive }) =>
           cn(
-            'flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-2 transition-colors duration-150 hover:bg-sidebar-raised',
+            'group relative flex min-w-0 items-center gap-3 rounded-xl transition-colors duration-150 hover:bg-sidebar-raised',
+            collapsed ? 'p-1.5' : 'flex-1 px-1 py-2',
             isActive && 'bg-sidebar-raised',
           )
         }
@@ -254,22 +341,27 @@ function UserFooter() {
           fallback={me.email ?? '?'}
           src={user?.hasImage ? user.imageUrl : null}
         />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-label font-semibold text-white">{name}</span>
-          <span className="block text-meta">{roleLabel(membership.role)}</span>
-        </span>
+        {collapsed ? (
+          <RailTip label={t('shell.profile')} />
+        ) : (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-label font-semibold text-white">{name}</span>
+            <span className="block text-meta">{roleLabel(membership.role)}</span>
+          </span>
+        )}
       </NavLink>
       <button
         type="button"
         aria-label={t('common.signOut')}
-        title={t('common.signOut')}
+        title={collapsed ? undefined : t('common.signOut')}
         onClick={() => {
           queryClient.clear();
           void signOut();
         }}
-        className="inline-flex size-11 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-white lg:size-9"
+        className="group relative inline-flex size-11 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-white lg:size-9"
       >
         <LogOut className="size-5" aria-hidden />
+        {collapsed ? <RailTip label={t('common.signOut')} /> : null}
       </button>
     </div>
   );

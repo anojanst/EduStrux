@@ -1,7 +1,16 @@
 import { t } from '../i18n';
 import { cn } from '../lib/cn';
 
-export function Logo({ inverted = false, className }: { inverted?: boolean; className?: string }) {
+/** The logo mark and name; `markOnly` for the collapsed sidebar, with the name for screen readers. */
+export function Logo({
+  inverted = false,
+  markOnly = false,
+  className,
+}: {
+  inverted?: boolean;
+  markOnly?: boolean;
+  className?: string;
+}) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
       <svg viewBox="0 0 64 64" className="size-8 shrink-0" aria-hidden>
@@ -13,7 +22,13 @@ export function Logo({ inverted = false, className }: { inverted?: boolean; clas
           strokeLinecap="round"
         />
       </svg>
-      <span className={cn('text-section font-semibold', inverted ? 'text-white' : 'text-text')}>
+      <span
+        className={cn(
+          'text-section font-semibold',
+          inverted ? 'text-white' : 'text-text',
+          markOnly && 'sr-only',
+        )}
+      >
         {t('app.name')}
       </span>
     </span>

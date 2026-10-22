@@ -55,7 +55,7 @@ export function ProfilePage() {
 
   return (
     <ReverifyProvider>
-      <div className="mx-auto max-w-[1100px] md:pt-1">
+      <div className="md:pt-1">
         <header className="mb-5 md:mb-7">
           <p className="text-meta font-bold tracking-[0.05em] text-brand uppercase">
             {t('profile.overline')}

@@ -129,7 +129,11 @@ widths; the app doesn't).
     showing only what the role may create.
   - Notifications bell with a dot when there's something new.
 - **Banner slot** under the top bar, full width (see §6, Banners).
-- **Content**: max width 1200px, 32px padding.
+- **Content**: max width 1200px, 32px padding, starting right beside the sidebar (not centred,
+  so a wide screen doesn't leave a band of empty space next to it).
+- **Collapsing:** a button at the top of the sidebar turns it into a 72px icon rail (logo mark,
+  org avatar, nav icons, profile avatar and sign out), with each label shown beside its icon on
+  hover and keyboard focus. The choice is remembered on that browser.
 
 ### Tablet (640–1023px)
 

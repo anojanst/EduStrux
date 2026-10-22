@@ -124,6 +124,9 @@ export const en = {
   'shell.organisation': 'Organisation',
   'shell.current': 'Current',
   'shell.profile': 'Your profile',
+  'shell.collapse': 'Collapse sidebar',
+  'shell.expand': 'Expand sidebar',
+  'shell.switchOrg': '{org}: switch organisation',
 
   'nav.home': 'Home',
   'nav.team': 'Team',
