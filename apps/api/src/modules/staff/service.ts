@@ -286,6 +286,28 @@ export async function inviteGuardian(
 }
 
 /**
+ * What an invite link shows before sign-in: the org, the role and the address it was sent to.
+ * Anyone holding the token may read it, as they may accept it. Unknown or withdrawn is 404.
+ */
+export async function previewInvitation(db: Db, token: string) {
+  const invitation = await repo.findInvitationByHash(db, await hashToken(token));
+  if (!invitation) throw notFound('Invitation');
+  const org = await orgs.getOrg({ db, orgId: invitation.orgId, actorUserId: null });
+  const status = invitation.acceptedAt
+    ? 'accepted'
+    : invitation.expiresAt <= new Date().toISOString()
+      ? 'expired'
+      : 'pending';
+  return {
+    org: { name: org.name, slug: org.slug },
+    role: invitation.role,
+    email: invitation.email,
+    status,
+    expiresAt: invitation.expiresAt,
+  } as const;
+}
+
+/**
  * Accepts an invite as the signed-in user: the token alone says who may (D-131). It gives them
  * the membership the invite names. A parent who already has one in the org keeps it, and the
  * guardian is linked to it. A removed member's membership is brought back.

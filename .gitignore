@@ -11,3 +11,7 @@ dist/
 
 # Claude Code personal settings (holds the bot token)
 .claude/settings.local.json
+
+# Local env for the web app (Clerk publishable key)
+.env.local
+.env.*.local

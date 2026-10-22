@@ -321,6 +321,58 @@ describe('POST /staff/invitations', () => {
   });
 });
 
+describe('GET /api/v1/invitations/{token}', () => {
+  it('shows the org, role and address without sign-in, and the invite’s status', async () => {
+    const t = await setup();
+    const { invitation, token } = await t.make<Created>('/staff/invitations', {
+      email: 'Desk@Example.com',
+      role: 'front_desk',
+      branchIds: [t.main.id],
+    });
+    const res = await call('GET', `/api/v1/invitations/${token}`);
+    expect(res.status).toBe(200);
+    expect(res.db.stages).toBeLessThanOrEqual(2);
+    expect(res.body).toEqual({
+      org: { name: 'Bright Minds Tuition', slug: t.org.slug },
+      role: 'front_desk',
+      email: 'desk@example.com',
+      status: 'pending',
+      expiresAt: invitation.expiresAt,
+    });
+
+    expect((await t.accept((await newUser('desk')).token, token)).status).toBe(200);
+    const used = await call('GET', `/api/v1/invitations/${token}`);
+    expect(used.body.status).toBe('accepted');
+  });
+
+  it('says a parent invite is for a parent, and an expired invite is expired', async () => {
+    const t = await setup();
+    const { invitation, token } = (await t.api('POST', `/guardians/${t.mere.id}/invitation`, {}))
+      .body as Created;
+    expect((await call('GET', `/api/v1/invitations/${token}`)).body).toMatchObject({
+      role: 'parent',
+      email: 'mere@example.com',
+      status: 'pending',
+    });
+    await db()
+      .update(invitations)
+      .set({ expiresAt: new Date(Date.now() - 1000).toISOString() })
+      .where(eq(invitations.id, invitation.id));
+    expect((await call('GET', `/api/v1/invitations/${token}`)).body.status).toBe('expired');
+  });
+
+  it('is 404 for an unknown token and for one a newer invite withdrew', async () => {
+    const t = await setup();
+    expect((await call('GET', '/api/v1/invitations/nope')).status).toBe(404);
+    const first = await t.make<Created>('/staff/invitations', {
+      email: 'x@example.com',
+      role: 'teacher',
+    });
+    await t.make<Created>('/staff/invitations', { email: 'x@example.com', role: 'teacher' });
+    expect((await call('GET', `/api/v1/invitations/${first.token}`)).status).toBe(404);
+  });
+});
+
 describe('POST /api/v1/invitations/{token}/accept', () => {
   it('joins the org with the invite’s role and branches', async () => {
     const t = await setup();

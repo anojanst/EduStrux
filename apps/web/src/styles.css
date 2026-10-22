@@ -1,0 +1,109 @@
+/* Clerk's components sit in their own layer below Tailwind's utilities (clerkAppearance.ts). */
+@layer theme, base, clerk, components, utilities;
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* Design tokens: docs/design/ui-design.md §2. Components use these through the Tailwind theme
+   below (bg-brand, text-muted, border-border), never raw hex values. */
+:root {
+  --brand: #155d63;
+  --brand-hover: #104c51;
+  --brand-soft: #e7f2f1;
+  --sidebar: #123f43;
+  --sidebar-raised: #1a4d52;
+  --sidebar-text: #c9d9da;
+  --text: #192229;
+  --muted: #66747d;
+  --subtle: #8b979e;
+  --border: #e2e7e9;
+  --border-strong: #d7dfe1;
+  --surface: #ffffff;
+  --canvas: #f6f8f9;
+  --success: #277a5b;
+  --success-soft: #eaf6f0;
+  --warning: #9a6015;
+  --warning-soft: #fff4df;
+  --danger: #b34444;
+  --danger-soft: #fceded;
+  --info: #325ea8;
+  --info-soft: #edf3fc;
+  --secondary-text: #34444a;
+  --org-avatar: #f0c782;
+  --org-avatar-text: #594017;
+  --shadow-pop: 0 8px 24px rgba(25, 34, 41, 0.12);
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-raised: var(--sidebar-raised);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-secondary-text: var(--secondary-text);
+  --color-org-avatar: var(--org-avatar);
+  --color-org-avatar-text: var(--org-avatar-text);
+  --shadow-pop: var(--shadow-pop);
+
+  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+
+  /* Type scale: ui-design.md §3. Nothing below 12px. */
+  --text-title: 28px;
+  --text-title--line-height: 34px;
+  --text-title--letter-spacing: -0.02em;
+  --text-stat: 26px;
+  --text-stat--line-height: 32px;
+  --text-section: 17px;
+  --text-section--line-height: 24px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

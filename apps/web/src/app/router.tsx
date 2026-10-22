@@ -1,0 +1,91 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createBrowserRouter, Outlet } from 'react-router';
+import { ApiError } from '../lib/api';
+import { HomePage } from '../pages/HomePage';
+import { ChooseOrgPage } from '../pages/ChooseOrgPage';
+import { InvitationPage } from '../pages/InvitationPage';
+import { NotFoundPage } from '../pages/NotFoundPage';
+import { OnboardingPage } from '../pages/OnboardingPage';
+import { SetupNeededPage } from '../pages/SetupNeededPage';
+import { SignInPage } from '../pages/SignInPage';
+import { SignUpPage } from '../pages/SignUpPage';
+import { TeamPage } from '../pages/TeamPage';
+import { WelcomePage } from '../pages/WelcomePage';
+import { AuthProvider } from './AuthProvider';
+import { HomeRedirect, RedirectIfSignedIn, RequireSignedIn } from './guards';
+import { OrgLayout } from './OrgLayout';
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // A 4xx won't change by asking again; a network blip or 5xx might.
+      retry: (count, error) =>
+        !(error instanceof ApiError && error.status < 500 && error.status > 0) && count < 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const publishableKey: string | undefined = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+function Root() {
+  if (!publishableKey) return <SetupNeededPage />;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider publishableKey={publishableKey}>
+        <Outlet />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * Routes. Signed out: sign-in, sign-up and invitation links. Signed in: the landing redirect,
+ * welcome, onboarding, the org picker, and each org under `/o/:orgSlug` (its slug, from
+ * `GET /me`).
+ */
+export const routes = [
+  {
+    element: <Root />,
+    children: [
+      {
+        path: 'sign-in/*',
+        element: (
+          <RedirectIfSignedIn>
+            <SignInPage />
+          </RedirectIfSignedIn>
+        ),
+      },
+      {
+        path: 'sign-up/*',
+        element: (
+          <RedirectIfSignedIn>
+            <SignUpPage />
+          </RedirectIfSignedIn>
+        ),
+      },
+      { path: 'invitations/:token', element: <InvitationPage /> },
+      {
+        element: <RequireSignedIn />,
+        children: [
+          { index: true, element: <HomeRedirect /> },
+          { path: 'welcome', element: <WelcomePage /> },
+          { path: 'onboarding', element: <OnboardingPage /> },
+          { path: 'orgs', element: <ChooseOrgPage /> },
+          {
+            path: 'o/:orgSlug',
+            element: <OrgLayout />,
+            children: [
+              { index: true, element: <HomePage /> },
+              { path: 'settings/team', element: <TeamPage /> },
+              { path: '*', element: <NotFoundPage /> },
+            ],
+          },
+        ],
+      },
+      { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+];
+
+export const createRouter = () => createBrowserRouter(routes);

@@ -124,3 +124,18 @@ export type UpdateStaffMember = z.infer<typeof UpdateStaffMember>;
 
 /** What accepting an invite joins: the membership, as `GET /me` lists it. */
 export const AcceptedInvitation = MembershipSummary;
+
+export const InvitationStatus = z.enum(['pending', 'accepted', 'expired']);
+export type InvitationStatus = z.infer<typeof InvitationStatus>;
+
+/** What an invite link shows before the person signs in: who invited them, and as what. */
+export const InvitationPreview = z
+  .object({
+    org: z.object({ name: z.string(), slug: z.string() }),
+    role: z.enum(ROLES),
+    email: z.string().openapi({ description: 'The address the invite was sent to.' }),
+    status: InvitationStatus,
+    expiresAt: Timestamp,
+  })
+  .openapi('InvitationPreview');
+export type InvitationPreview = z.infer<typeof InvitationPreview>;

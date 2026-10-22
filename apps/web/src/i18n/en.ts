@@ -1,0 +1,199 @@
+/**
+ * The web app's one catalog (D-015): English only, every user-facing string. Keys are grouped by
+ * screen. `{name}` placeholders are filled by `t()`.
+ */
+export const en = {
+  'app.name': 'EduStrux',
+
+  'common.cancel': 'Cancel',
+  'common.close': 'Close',
+  'common.continue': 'Continue',
+  'common.dismiss': 'Dismiss',
+  'common.done': 'Done',
+  'common.loadMore': 'Load more',
+  'common.loading': 'Loading',
+  'common.retry': 'Try again',
+  'common.signOut': 'Sign out',
+
+  'form.required': '(required)',
+
+  'error.generic': 'Something went wrong. Try again in a moment.',
+  'error.network': 'Can’t reach the server. Check your connection and try again.',
+  'error.forbidden': 'You don’t have permission to see this.',
+  'error.notFound': 'This doesn’t exist, or you don’t have access to it.',
+  'error.subscriptionRequired':
+    'Your organisation is read-only until it has a subscription. Changes can’t be saved.',
+  'error.staleData': 'Someone else changed this. Reload to see their change.',
+  'error.rateLimited': 'Too many attempts. Wait a minute and try again.',
+
+  'role.owner': 'Owner',
+  'role.branch_manager': 'Branch manager',
+  'role.front_desk': 'Front desk',
+  'role.teacher': 'Teacher',
+  'role.parent': 'Parent',
+  'role.accountant': 'Accountant',
+
+  'auth.aside.title': 'Run your tuition centre in one place.',
+  'auth.aside.timetable': 'Timetables, attendance and make-up lessons',
+  'auth.aside.billing': 'Invoices, payments and reminders',
+  'auth.aside.families': 'A portal for parents to see it all',
+  'auth.aside.footer': 'For tutors, centres and every branch in between.',
+  'auth.signIn.invitedHint':
+    'Invited by a centre? Open the link in your invitation email to create your account and join.',
+  'auth.signUp.overline': 'Start your centre',
+  'auth.signUp.asideTitle': 'Free for 14 days. No card needed.',
+  'auth.signUp.asideBody':
+    'Create your account, then name your centre. You can invite your team and families after.',
+  'auth.signUp.invitedHint':
+    'Joining a centre as staff or a parent? Use the link in your invitation email instead.',
+
+  'invite.overline': 'Invitation',
+  'invite.title': 'Join {org}',
+  'invite.sentTo': 'Sent to {email}',
+  'invite.auth.staffIntro':
+    'Create your account to accept. Already have one? Sign in with it instead.',
+  'invite.auth.parentIntro':
+    'Create your account to see your family’s timetable, invoices and messages. Already have one? Sign in.',
+  'invite.auth.tabs': 'Create an account or sign in',
+  'invite.auth.newAccount': 'Create account',
+  'invite.auth.haveAccount': 'I have an account',
+  'invite.accept.signedIn': 'You’re signed in.',
+  'invite.accept.signedInAs': 'You’re signed in as {email}.',
+  'invite.accept.otherAddressTitle': 'This invitation was sent to another address',
+  'invite.accept.otherAddressBody':
+    'It was sent to {invited}, and you’re signed in as {email}. Join with this account, or switch to the right one.',
+  'invite.accept.join': 'Join {org}',
+  'invite.accept.open': 'Open {org}',
+  'invite.accept.switchAccount': 'Use a different account',
+  'invite.accept.alreadyMember': 'You’re already a member of {org}.',
+  'invite.accept.guardianRemoved':
+    'The family contact this invitation was for has been removed. Ask {org} for a new invitation.',
+  'invite.invalid.title': 'This invitation link doesn’t work',
+  'invite.invalid.body':
+    'It may have been replaced by a newer invitation, or mistyped. Ask the person who invited you to send a new one.',
+  'invite.used.title': 'This invitation has been used',
+  'invite.used.body':
+    'This invitation to {org} has already been accepted. Sign in to continue, or ask for a new invitation.',
+  'invite.expired.title': 'This invitation has expired',
+  'invite.expired.body': 'Invitations last 7 days. Ask {org} to send you a new one.',
+  'invite.goToSignIn': 'Go to sign in',
+
+  'welcome.title': 'Welcome',
+  'welcome.subtitle': 'You’re signed in, but not part of a centre yet.',
+  'welcome.subtitleEmail': 'You’re signed in as {email}, but not part of a centre yet.',
+  'welcome.startTitle': 'Set up your centre',
+  'welcome.startBody': 'Start a 14-day free trial as the owner.',
+  'welcome.joinTitle': 'Joining a centre?',
+  'welcome.joinBody':
+    'Open the invitation link from your email. No email? Ask the centre to send it again.',
+
+  'onboarding.overline': 'Step 1 of 3',
+  'onboarding.title': 'Set up your centre',
+  'onboarding.subtitle': 'A few details so dates, times and money show the way you expect.',
+  'onboarding.name': 'Centre name',
+  'onboarding.namePlaceholder': 'Bright Minds Tuition',
+  'onboarding.mode': 'Who teaches?',
+  'onboarding.modeSolo': 'Just me',
+  'onboarding.modeSoloBody': 'A solo tutor, one location',
+  'onboarding.modeTeam': 'A team',
+  'onboarding.modeTeamBody': 'Staff, teachers or more than one branch',
+  'onboarding.country': 'Country',
+  'onboarding.countryOther': 'Somewhere else',
+  'onboarding.currency': 'Currency',
+  'onboarding.dateFormat': 'Date format',
+  'onboarding.timezone': 'Time zone',
+  'onboarding.timezoneHelper': 'Lesson times and due dates use this time zone.',
+  'onboarding.submit': 'Create centre',
+  'onboarding.trialNote': 'Your 14-day free trial starts now. You can change these later.',
+  'onboarding.asideOverline': 'Getting started',
+  'onboarding.step1': 'Name your centre',
+  'onboarding.step2': 'Add terms, subjects and classes',
+  'onboarding.step3': 'Invite your team and families',
+
+  'orgs.title': 'Choose an organisation',
+  'orgs.subtitle': 'You belong to more than one. You can switch at any time from the sidebar.',
+  'orgs.startAnother': 'Start another centre',
+
+  'org.noAccess.title': 'You don’t have access to this organisation',
+  'org.noAccess.body':
+    'You’re not a member of it, or your access was removed. Ask its owner if you think this is wrong.',
+
+  'shell.nav': 'Main',
+  'shell.openMenu': 'Open menu',
+  'shell.closeMenu': 'Close menu',
+  'shell.organisation': 'Organisation',
+  'shell.current': 'Current',
+
+  'nav.home': 'Home',
+  'nav.team': 'Team',
+
+  'banner.trial': 'Your free trial ends in {days} days.',
+  'banner.trialOne': 'Your free trial has 1 day left.',
+  'banner.readOnly':
+    'This organisation is read-only: changes can’t be saved. Ask the owner to choose a plan.',
+  'banner.readOnlyOwner':
+    'Your organisation is read-only: changes can’t be saved until you choose a plan.',
+  'banner.pastDue':
+    'There’s a problem with this organisation’s payment. Ask the owner to check it.',
+  'banner.pastDueOwner': 'Your last payment didn’t go through. Update your card to keep going.',
+
+  'home.morning': 'Good morning',
+  'home.afternoon': 'Good afternoon',
+  'home.evening': 'Good evening',
+  'home.morningName': 'Good morning, {name}',
+  'home.afternoonName': 'Good afternoon, {name}',
+  'home.eveningName': 'Good evening, {name}',
+  'home.subtitle': '{org} · {role}',
+  'home.setup.title': 'Getting started',
+  'home.setup.signedIn': 'You’re in {org}',
+  'home.setup.inviteTitle': 'Invite your team',
+  'home.setup.inviteBody': 'Teachers, front desk, branch managers and accountants',
+  'home.setup.more': 'Timetables, classes, families and invoices arrive here next.',
+
+  'portal.hello': 'Hello',
+  'portal.helloName': 'Hello, {name}',
+  'portal.subtitle': 'Your family’s lessons, invoices and messages.',
+  'portal.children': 'Your children',
+  'portal.childMeta': '{family} family · Classes: {count}',
+  'portal.noChildren':
+    'No children are linked to your account yet. Ask the centre to check your invitation.',
+
+  'team.overline': 'Settings',
+  'team.title': 'Team',
+  'team.subtitle': 'Everyone who works in your organisation, and what they can do.',
+  'team.invite': 'Invite someone',
+  'team.you': '(you)',
+  'team.unnamed': 'No name yet',
+  'team.allBranches': 'All branches',
+  'team.suspended': 'Suspended',
+  'team.form.title': 'Invite someone to your team',
+  'team.form.subtitle':
+    'They get an email with a link to create their account. Parents are invited from their family instead.',
+  'team.form.email': 'Email',
+  'team.form.role': 'Role',
+  'team.form.branches': 'Branches',
+  'team.form.branchesHelper': 'Leave all unticked for every branch.',
+  'team.form.branchesLimited': 'Pick at least one of your branches.',
+  'team.form.send': 'Send invitation',
+  'team.form.forbidden': 'You can’t give this role or these branches.',
+  'team.roleHelp.owner': 'Everything, including billing and settings.',
+  'team.roleHelp.branch_manager': 'Runs their branches: staff, classes, families and invoices.',
+  'team.roleHelp.front_desk': 'Families, enrolments, attendance and payments in their branches.',
+  'team.roleHelp.teacher': 'Their own classes: timetable, attendance and lesson notes.',
+  'team.roleHelp.accountant': 'Invoices, payments and money reports across the organisation.',
+  'team.roleHelp.parent': 'Their own family in the parent portal.',
+  'team.sent.title': 'Invitation sent to {email}',
+  'team.sent.body': 'If the email doesn’t arrive, send them this link yourself.',
+  'team.sent.link': 'Invitation link',
+  'team.sent.copy': 'Copy link',
+  'team.sent.copied': 'Copied',
+  'team.sent.expires': 'The link works for 7 days, once. A new invitation replaces it.',
+  'team.sent.another': 'Invite another',
+
+  'notFound.title': 'Page not found',
+  'notFound.body': 'The link may be old, or the page may have moved.',
+
+  'setup.title': 'Sign-in isn’t set up yet',
+  'setup.body':
+    'Add the Clerk publishable key of your development instance to apps/web/.env.local, then restart the dev server.',
+} as const;

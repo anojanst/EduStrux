@@ -6,6 +6,7 @@ built and tested through Swagger (phases P1–P6) before the web app (P7 UI).
 - Layout, commands and code conventions: [README.md](README.md)
 - Product and technical design (living spec): [docs/design/handoff.md](docs/design/handoff.md)
 - Decisions made during the build: [docs/design/decisions.md](docs/design/decisions.md)
+- UI design system (look, layout, components, every screen follows it): [docs/design/ui-design.md](docs/design/ui-design.md)
 
 ## Project tracking (in git)
 
