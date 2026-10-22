@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-108-profile-page-sidebar
-pr:
+pr: 53
 ---
 
 # TUI-108 Profile page in our own design, collapsible sidebar and full-width pages
