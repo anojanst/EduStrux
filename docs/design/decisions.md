@@ -4539,7 +4539,7 @@ under "Not changed here" for a reach that is a subquery.
 - **Decision:**
   - **Routes:** `/sign-in`, `/sign-up`, `/invitations/:token` (the link the invite email already
     uses), `/welcome` (signed in, no org), `/onboarding`, `/orgs` (picker), `/o/:orgSlug` (the
-    org by slug, found in `GET /me`) and `/o/:orgSlug/settings/team`. A slug the user isn't a
+    org by slug, found in `GET /me`), `/o/:orgSlug/settings/team` and `/o/:orgSlug/profile`. A slug the user isn't a
     member of shows "no access".
   - **Landing:** no memberships → `/welcome`; one → that org; several → the last one opened on
     this browser, else `/orgs`. A signed-out visit to a signed-in page goes to
@@ -4563,8 +4563,35 @@ under "Not changed here" for a reach that is a subquery.
     drawer. The trial, read-only and past-due banner reads the org's status and trial end; the
     trial banner can be dismissed for the day. A parent's home lists `GET /portal/children`, so
     they can see the invite linked the right family.
+  - **Profile (`/o/:orgSlug/profile`, from the user footer):** the app's own design, not Clerk's
+    profile component, as the owner asked on 2026-10-22, built to the Figma Make profile page.
+    Three sections: Profile, Sign-in and security, Organisations. On wide screens a menu on the
+    left shows one at a time (`?section=`); on phones all are stacked and the menu is a row of
+    chips. Everything is Clerk's own browser API, so the API changes nothing:
+    - Profile: photo (JPG or PNG up to 10 MB) and first and last name (first required). After a
+      name or primary-email change the session token is fetched afresh, so the next API call
+      stores it (the custom session token in handoff §4).
+    - Email addresses: add one with a 6-digit code sent to it, verify one added before, make a
+      verified one primary, remove one (confirmed).
+    - Password: set one (parents usually have none) or change it, with the current password, and
+      optionally sign out other devices. A plain strength hint; Clerk applies its own rules.
+    - Signed-in devices: browser, device, place and last activity, this device first; sign out
+      of one, or of all others (confirmed).
+    - Delete account, where Clerk allows it, with the email typed to confirm. Not for an owner of
+      any org: the centre would be left with nobody to run it, and ownership can't be handed over
+      yet.
+    - Organisations: each membership with its role, branches (read from that org) and "Current",
+      or "Open" for the others.
+    - Sensitive changes go through Clerk's `useReverification` with our own "Confirm it's you"
+      dialog: a code to the primary email, or the password where there's no email factor.
+    - Two-step verification (in the design) is left out until Clerk Pro's MFA is on (TUI-80): a
+      "Set up" that does nothing would mislead.
+    - New shared pieces: `Dialog` (the browser's `<dialog>`, a bottom sheet on phones),
+      `CodeInput`, `Toast`, `OverflowMenu`, `Card flush`, and a photo on `Avatar`.
 - **Consequences:** The preview tells anyone holding the token the invited email and the org;
-  the token is already enough to accept it. Not built from ui-design §5 yet: top-bar search,
+  the token is already enough to accept it. Deleting an account doesn't reach the API while the
+  Clerk webhook is blocked by Access, so the person's memberships stay active until the owner
+  removes them. Not built from ui-design §5 yet: top-bar search,
   "+ New", the bell, the tablet icon rail and the phone tab bar (TUI-40, TUI-84). Only Home and
   Team exist. Locally, the seeded org's trial has ended, so it is read-only and refuses invites
   with 402 (D-153).

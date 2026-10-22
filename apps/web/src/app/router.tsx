@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, Outlet } from 'react-router';
+import { ToastProvider } from '../components/ui/Toast';
 import { ApiError } from '../lib/api';
 import { HomePage } from '../pages/HomePage';
 import { ChooseOrgPage } from '../pages/ChooseOrgPage';
 import { InvitationPage } from '../pages/InvitationPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
+import { ProfilePage } from '../pages/profile/ProfilePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
 import { SignUpPage } from '../pages/SignUpPage';
@@ -33,7 +35,9 @@ function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider publishableKey={publishableKey}>
-        <Outlet />
+        <ToastProvider>
+          <Outlet />
+        </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
@@ -78,6 +82,7 @@ export const routes = [
             children: [
               { index: true, element: <HomePage /> },
               { path: 'settings/team', element: <TeamPage /> },
+              { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },
             ],
           },

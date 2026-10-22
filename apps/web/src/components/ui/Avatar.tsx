@@ -13,13 +13,25 @@ export function Avatar({
   name,
   fallback,
   tone = 'brand',
+  src,
   className,
 }: {
   name: string | null | undefined;
   fallback?: string;
   tone?: 'brand' | 'org';
+  /** A photo, shown in place of the initials. */
+  src?: string | null;
   className?: string;
 }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className={cn('size-9 shrink-0 rounded-full bg-brand-soft object-cover', className)}
+      />
+    );
+  }
   return (
     <span
       aria-hidden

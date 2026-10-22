@@ -8,6 +8,8 @@ const variants = {
     'bg-surface text-secondary-text border border-border-strong hover:bg-canvas active:bg-canvas',
   ghost: 'text-brand hover:bg-brand-soft',
   danger: 'bg-danger text-white font-semibold hover:opacity-90',
+  dangerOutline:
+    'bg-surface text-danger font-semibold border border-[#d88d8d] hover:bg-danger-soft',
 } as const;
 
 const sizes = {

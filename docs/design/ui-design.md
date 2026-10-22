@@ -129,7 +129,12 @@ widths; the app doesn't).
     showing only what the role may create.
   - Notifications bell with a dot when there's something new.
 - **Banner slot** under the top bar, full width (see §6, Banners).
-- **Content**: max width 1200px, 32px padding.
+- **Content**: the full width beside the sidebar, edge to edge, with 32px padding (16px on
+  phones). The profile page too, beside its section menu (tried on 2026-10-22; revert to a
+  720px column if wide forms read badly).
+- **Collapsing:** a button at the top of the sidebar turns it into a 72px icon rail (logo mark,
+  org avatar, nav icons, profile avatar and sign out), with each label shown beside its icon on
+  hover and keyboard focus. The choice is remembered on that browser.
 
 ### Tablet (640–1023px)
 
@@ -323,9 +328,10 @@ Settled when TUI-23 was built (D-158):
 
 - **Tailwind CSS** with the tokens in §2 as CSS variables mapped into the Tailwind theme, so
   class names read `bg-brand`, `text-muted`, `border-border`.
-- **shadcn/ui** (Radix underneath) for accessible primitives (dialog, sheet, dropdown, popover,
-  tabs, toast, command for the `⌘K` search) isn't added yet. A few own primitives cover the
-  screens so far; Radix comes in with the first dialog, menu or popover.
+- **shadcn/ui** (Radix underneath) isn't added. Own primitives cover the screens so far: the
+  dialog is the browser's `<dialog>` (focus trap and Escape built in; a bottom sheet on phones),
+  plus a 6-digit code input, toasts and a row "…" menu. Radix comes in when a popover, combobox
+  or the `⌘K` search needs it.
 - **Lucide** icons; **Inter** self-hosted with the app (no Google Fonts call).
 - Components live in `apps/web/src/components/ui/` (primitives) and
   `apps/web/src/components/` (app components such as `StatCard`, `LessonRow`, `StatusBadge`).
@@ -335,6 +341,9 @@ Settled when TUI-23 was built (D-158):
   footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
   past due. Not yet: top-bar search, "+ New", the bell, the tablet icon rail and the phone tab
   bar (TUI-40, TUI-84).
+- **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
+  wide screens, chips and stacked sections on phones. Changes from the source: badges and small
+  text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).
 - Further screens are designed in the same Figma Make file, starting each prompt with: "Keep the
   exact design system, colours, typography, spacing, sidebar and components from the Home
   dashboard. Reuse existing components before creating new ones."
