@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-23-web-shell-auth
-pr:
+pr: 52
 ---
 
 # TUI-23 Web app shell: routing, Clerk sign-in, TanStack Query, mobile-first layout
