@@ -117,6 +117,7 @@ export const Student = z
   .object({
     id: z.string().openapi({ example: 'stu_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
     familyId: z.string(),
+    familyName: z.string().openapi({ description: 'The family’s name.', example: 'Perera' }),
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     firstName: z.string(),
     lastName: z.string(),

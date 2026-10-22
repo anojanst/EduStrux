@@ -9,20 +9,23 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Search,
   TriangleAlert,
+  Users,
   UsersRound,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { Logo } from '../components/Logo';
+import { SearchPalette } from '../components/SearchPalette';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { t, type MessageKey } from '../i18n';
 import { cn } from '../lib/cn';
 import { useOrg } from '../lib/org';
-import { orgBanner } from '../lib/orgStatus';
+import { orgBanner, seesTrialBanner } from '../lib/orgStatus';
 import { can, roleLabel, type Role } from '../lib/roles';
 import { orgPath, rememberOrg } from '../lib/session';
 
@@ -34,11 +37,39 @@ type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean 
  */
 function navFor(role: Role): NavItem[] {
   const items: NavItem[] = [{ to: '', label: 'nav.home', Icon: House, end: true }];
+  if (canSearchPeople(role)) {
+    items.push({ to: 'families', label: 'nav.people', Icon: Users });
+  }
   if (can(role, 'staff:read')) {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });
   }
   return items;
 }
+
+/** Staff who read families get the people area and the search; parents use the portal. */
+function canSearchPeople(role: Role) {
+  return can(role, 'people:read') && role !== 'parent';
+}
+
+/** Ctrl/⌘ K opens the search from anywhere in the app. */
+function useSearchShortcut(enabled: boolean, open: () => void) {
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        open();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [enabled, open]);
+}
+
+const SHORTCUT =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
+    ? '⌘ K'
+    : 'Ctrl K';
 
 const COLLAPSED = 'edustrux.sidebarCollapsed';
 
@@ -71,8 +102,15 @@ function useCollapsed() {
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, toggleCollapsed] = useCollapsed();
+  const [searching, setSearching] = useState(false);
   const location = useLocation();
+  const { membership } = useOrg();
+  const canSearch = canSearchPeople(membership.role);
   useEffect(() => setDrawerOpen(false), [location.pathname]);
+  useSearchShortcut(
+    canSearch,
+    useCallback(() => setSearching(true), []),
+  );
 
   return (
     <div className="min-h-dvh bg-canvas lg:flex">
@@ -100,16 +138,48 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-surface px-2 lg:hidden">
+        <header
+          className={cn(
+            'sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-surface px-2 lg:px-8',
+            canSearch ? null : 'lg:hidden',
+          )}
+        >
           <Button
             variant="ghost"
             size="icon"
+            className="lg:hidden"
             aria-label={t('shell.openMenu')}
             onClick={() => setDrawerOpen(true)}
             icon={<Menu className="size-5 text-text" />}
           />
-          <Logo />
+          <span className="lg:hidden">
+            <Logo />
+          </span>
+          {canSearch ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setSearching(true)}
+                className="hidden h-10 w-full max-w-[520px] items-center gap-2.5 rounded-lg border border-border bg-canvas px-3 text-left text-body text-subtle hover:border-border-strong lg:flex"
+              >
+                <Search className="size-4" aria-hidden />
+                <span className="flex-1">{t('search.placeholder')}</span>
+                <kbd className="rounded border border-border bg-surface px-1.5 text-meta text-muted">
+                  {SHORTCUT}
+                </kbd>
+              </button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto lg:hidden"
+                aria-label={t('search.title')}
+                onClick={() => setSearching(true)}
+                icon={<Search className="size-5 text-text" />}
+              />
+            </>
+          ) : null}
         </header>
+        {searching ? <SearchPalette onClose={() => setSearching(false)} /> : null}
         <OrgBanner />
         <main className="w-full flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
@@ -386,7 +456,7 @@ function OrgBanner() {
 
   const owner = membership.role === 'owner';
   if (banner.kind === 'trial') {
-    if (dismissed) return null;
+    if (dismissed || !seesTrialBanner(membership.role)) return null;
     return (
       <div className="flex items-center gap-3 border-b border-border bg-warning-soft px-4 py-2.5 text-body text-text sm:px-8">
         <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden />

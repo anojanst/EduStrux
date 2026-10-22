@@ -4608,3 +4608,46 @@ under "Not changed here" for a reach that is a subquery.
 - **Consequences:** Terms, grade levels and subjects stay for the full onboarding wizard (TUI-64).
   - Assumption: taken during the build without asking; the owner hasn't stated it.
 - **Tasks:** TUI-23, TUI-64.
+
+## D-163 · 2026-10-23 · A student carries their family's name
+
+- **Context:** The students tab of Families & students lists each student's family, and the
+  student page links back to it. `Student` had only `familyId`, so each row would have needed its
+  family read separately.
+- **Decision:** Every student in an answer (`GET /students`, `GET /students/{id}`, the students
+  inside a family, and what `POST` and `PATCH` return) has `familyName`, read in the same query
+  as the family's home branch.
+- **Consequences:** Additive: no migration, and existing clients ignore the field.
+- **Tasks:** TUI-109.
+
+## D-164 · 2026-10-23 · What the Families & students screens show, and what waits
+
+- **Context:** The owner's Figma Make design for the people area shows a few things the API
+  doesn't give yet, and actions whose screens aren't built.
+- **Decision:**
+  - **List:** no totals in the header or on the tabs, since lists are cursor-paged without
+    counts. The parent portal column says "Signed in" (a guardian has a membership) or "Not
+    signed in": pending parent invites aren't returned by the API. Typing in the list's search
+    uses `GET /search` (up to 50 of each kind, no paging); the branch filter shows only when
+    there's more than one branch to choose from, and the grade filter only on the students tab.
+  - **Add family:** one form for the family, its first guardian and its students, saved as
+    separate calls in that order. The family stays if a guardian or student fails, and the
+    family page lists what didn't save. A student block left empty is skipped. It warns of a
+    family with the same name and of a guardian with the same email or phone
+    (`GET /search/duplicates`, D-132), and the warning can be dismissed. A single choosable
+    branch is used without asking; the grade is asked only when the org has grade levels and an
+    academic year.
+  - **Family page:** the balance is worked out in the browser from the family's invoices (issued
+    and part paid; overdue is past its due date) and is shown only to roles with
+    `billing:read`. Invoices have no number in the API, so each shows its period and due date.
+    "Send message", "All invoices" and "Record payment" are left out until those screens exist.
+    "Invited · Resend" shows only for an invite sent from that page in that visit.
+  - **Student page:** the attendance card is left out: the API reads attendance by lesson, not
+    by student. Classes show their weekly times but not room or teacher. "Enrol in a class",
+    transfer, withdraw and "Book make-up" come with the classes screens (TUI-40).
+  - **Who sees what:** staff with `people:read` (not parents, who use the portal); writes for
+    `people:write`; erasing a family for the owner (`org:write`).
+- **Consequences:** Follow-ups when the API grows: totals, pending-invite state on guardians, an
+  attendance summary per student and invoice numbers would each fill in a part of the design.
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-109, TUI-40.

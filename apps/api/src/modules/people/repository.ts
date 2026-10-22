@@ -398,8 +398,12 @@ export function unlinkMembershipStatement(ctx: OrgCtx, membershipId: string) {
 
 // ── Students ────────────────────────────────────────────────────────────────
 
-// A student is read with their family's home branch.
-const studentWithBranch = { student: students, branchId: families.branchId };
+// A student is read with their family's home branch and name.
+const studentWithBranch = {
+  student: students,
+  branchId: families.branchId,
+  familyName: families.name,
+};
 
 /**
  * What a student's family must meet, as a condition on the student. A read that joins students
