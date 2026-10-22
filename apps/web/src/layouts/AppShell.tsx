@@ -1,4 +1,4 @@
-import { useClerk } from '@clerk/react';
+import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -234,6 +234,7 @@ function OrgSwitcher() {
 function UserFooter() {
   const { me, membership } = useOrg();
   const { signOut } = useClerk();
+  const { user } = useUser();
   const queryClient = useQueryClient();
   const name = me.name ?? me.email;
   return (
@@ -248,7 +249,11 @@ function UserFooter() {
           )
         }
       >
-        <Avatar name={me.name} fallback={me.email ?? '?'} />
+        <Avatar
+          name={me.name}
+          fallback={me.email ?? '?'}
+          src={user?.hasImage ? user.imageUrl : null}
+        />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-label font-semibold text-white">{name}</span>
           <span className="block text-meta">{roleLabel(membership.role)}</span>

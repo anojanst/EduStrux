@@ -73,7 +73,7 @@ function Team() {
         <InviteForm branches={branches.data?.data ?? []} onClose={() => setInviting(false)} />
       ) : null}
 
-      <Card className="p-0 sm:p-0">
+      <Card flush>
         {staff.isPending ? (
           <ul aria-hidden className="divide-y divide-border">
             {[0, 1, 2].map((i) => (
