@@ -1,7 +1,7 @@
 import { themeColours, type ThemeColours } from '@edustrux/shared/themes';
 import { useEffect, type CSSProperties } from 'react';
 
-/** The ui-design §2 tokens a theme sets (D-165); every other colour stays the same. */
+/** The ui-design §2 tokens a theme sets (D-165, D-166); every other colour stays the same. */
 const VARS: Record<keyof ThemeColours, string> = {
   brand: '--brand',
   brandHover: '--brand-hover',
@@ -9,6 +9,8 @@ const VARS: Record<keyof ThemeColours, string> = {
   sidebar: '--sidebar',
   sidebarRaised: '--sidebar-raised',
   sidebarText: '--sidebar-text',
+  sidebarStrong: '--sidebar-strong',
+  sidebarActive: '--sidebar-active',
 };
 
 /** The theme's tokens as inline styles, so `bg-brand` and friends inside take its colours. */

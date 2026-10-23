@@ -173,9 +173,9 @@ function ThemeGrid({ value, onChange }: { value: ThemeKey; onChange: (key: Theme
               aria-hidden
               className="grid h-[68px] grid-cols-[30%_70%] overflow-hidden rounded-lg border border-border bg-surface sm:h-[78px]"
             >
-              <span className="flex flex-col gap-1.5 bg-sidebar px-[5px] py-2.5">
+              <span className="flex flex-col gap-1.5 border-r border-black/5 bg-sidebar px-[5px] py-2.5">
                 <i className="h-[5px] rounded-[3px] bg-sidebar-text opacity-55" />
-                <i className="h-2.5 rounded-[3px] bg-white" />
+                <i className="h-2.5 rounded-[3px] bg-sidebar-active" />
                 <i className="h-[5px] rounded-[3px] bg-sidebar-text opacity-55" />
               </span>
               <span className="flex flex-col items-start gap-2 px-2 py-3">
@@ -220,9 +220,9 @@ function Preview({
       <div aria-hidden>
         <PreviewBlock label={t('theme.preview.staff')} style={style}>
           <div className="grid grid-cols-[30%_70%] overflow-hidden rounded-lg border border-border bg-canvas">
-            <div className="flex flex-col gap-2 bg-sidebar px-2 py-3.5">
+            <div className="flex flex-col gap-2 border-r border-black/5 bg-sidebar px-2 py-3.5">
               <i className="h-[7px] rounded bg-sidebar-text opacity-50" />
-              <i className="h-3.5 rounded bg-white" />
+              <i className="h-3.5 rounded bg-sidebar-active" />
               <i className="h-[7px] rounded bg-sidebar-text opacity-50" />
             </div>
             <div className="min-w-0">
