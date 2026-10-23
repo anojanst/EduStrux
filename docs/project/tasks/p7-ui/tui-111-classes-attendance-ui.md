@@ -1,7 +1,7 @@
 ---
 id: TUI-111
 title: 'Classes & attendance UI: classes list, add class, class page, enrol, attendance sheet'
-status: todo
+status: done
 phase: P7
 module: web
 priority: P0
@@ -31,3 +31,6 @@ API additions (owner decision 2026-10-23): classes and lessons carry `teacherNam
 `GET /teachers` lists who can teach (id and name) for anyone who can write classes.
 
 The teacher's phone "Today" view stays in TUI-57.
+
+Decisions: D-166 (teacher and room names, GET /teachers), D-167 (places taken, lesson marks),
+D-168 (what the classes and attendance screens show, and what waits).

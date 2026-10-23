@@ -318,7 +318,7 @@ The first screen, as designed. What each part reads:
 | Trial or read-only banner                                              | `GET /billing/subscription` (owner); `org.status`, `trialEndsAt` for others                                                                                                             |
 | Total owing, overdue (with count), received this month, draft invoices | `GET /reports/dashboard` → `money` (left out for teachers and front desk: hide the cards)                                                                                               |
 | Today's lessons                                                        | `GET /sessions?from=<today>&to=<today>` (class, room, teacher, times, cancelled, moved)                                                                                                 |
-| Whether each lesson is marked                                          | **Not in the API yet.** The dashboard gives only a count (`today.marked`). Per-lesson state needs a field on sessions, or one `GET /sessions/{id}/attendance` per lesson                |
+| Whether each lesson is marked                                          | `GET /sessions` → each session's `attendance` (marks by status, all 0 until marked; staff only, D-167)                                                                                  |
 | Needs attention                                                        | `GET /reports/dashboard` → `today.absenceNotices`, `makeupCreditsAvailable`, `money.overdueInvoices`; also `unmarkedLessons` (last 14 days). "Oldest is 18 days overdue" isn't returned |
 | Quick actions                                                          | Static, filtered by the role's permissions                                                                                                                                              |
 | Recent activity                                                        | **No endpoint yet.** `GET /audit-log` is owner only; other roles need a new feed, or leave the panel out for them                                                                       |
@@ -362,6 +362,12 @@ Settled when TUI-23 was built (D-158):
   staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with
   an unsaved-changes note. On phones: 2 columns of tiles, only the staff-app preview, and a
   sticky full-width Save bar.
+- **Classes and attendance** (D-168), from the owner's Figma Make design: the classes list, the
+  Add/edit class dialog, the class page (Lessons, Schedule and Students tabs, with Enrolled,
+  Lessons and Next lesson cards: 2 + 1 on phones), the enrol, withdraw and move dialogs, and
+  the attendance sheet, a page of its own per lesson with a sticky Save. Changes from the
+  source are in D-168. The list filters are a shared `FilterSelect`, used by Families & students
+  too.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).
