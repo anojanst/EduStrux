@@ -10,7 +10,7 @@ endpoints:
   - PATCH /api/v1/orgs/{orgId}
   - GET /api/v1/orgs/{orgId}
 branch: task/tui-110-org-themes
-pr:
+pr: 55
 ---
 
 # TUI-110 Org colour themes: preset theme picker for owners, applied across app, portal, PDFs and emails
