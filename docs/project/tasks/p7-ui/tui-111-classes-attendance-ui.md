@@ -9,7 +9,7 @@ size: L
 endpoints:
   - GET /api/v1/orgs/{orgId}/teachers
 branch: task/tui-111-classes-attendance-ui
-pr:
+pr: 57
 ---
 
 # TUI-111 Classes & attendance UI: classes list, add class, class page, enrol, attendance sheet
