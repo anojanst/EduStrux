@@ -41,6 +41,8 @@ Defined as CSS variables on `:root`, with these exact names (they match the Figm
 | `--sidebar`        | `#123f43` | Sidebar background                                      |
 | `--sidebar-raised` | `#1a4d52` | Org switcher card and hovered items on the sidebar      |
 | `--sidebar-text`   | `#c9d9da` | Sidebar nav items (active item: white pill, brand text) |
+| `--sidebar-strong` | `#ffffff` | Names and hovered items on the sidebar                  |
+| `--sidebar-active` | `#ffffff` | The active nav item's pill and the sidebar logo tile    |
 | `--text`           | `#192229` | Body text and headings                                  |
 | `--muted`          | `#66747d` | Secondary text, labels, metadata                        |
 | `--subtle`         | `#8b979e` | Placeholders, timestamps, disabled text                 |
@@ -57,11 +59,13 @@ Defined as CSS variables on `:root`, with these exact names (they match the Figm
 | `--info`           | `#325ea8` | Neutral information, issued, links in notices           |
 | `--info-soft`      | `#edf3fc` | Its badge and tile background                           |
 
-- **Org themes (D-165).** The six brand and sidebar tokens above (`--brand`, `--brand-hover`,
-  `--brand-soft`, `--sidebar`, `--sidebar-raised`, `--sidebar-text`) follow the org's colour
-  theme; the values in the table are the default, **teal**. The others are ocean, indigo,
-  violet, berry, forest, amber and graphite, defined once in the shared theme catalog and used by
-  the web, PDFs and emails. Every other token stays the same in every theme. Inside an org the
+- **Org themes (D-165, D-166).** The eight brand and sidebar tokens above (`--brand`,
+  `--brand-hover`, `--brand-soft`, `--sidebar`, `--sidebar-raised`, `--sidebar-text`,
+  `--sidebar-strong`, `--sidebar-active`) follow the org's colour theme; the values in the table
+  are the default, **teal**. The other dark-sidebar themes are ocean, indigo, violet, berry,
+  forest, amber and graphite; the light-sidebar ones (pale sidebar, dark text) are Light Teal,
+  Sky, Lavender and Rose. All are defined once in the shared theme catalog and used by the web,
+  PDFs and emails. Every other token stays the same in every theme. Inside an org the
   app sets the six variables on `:root`; outside one (sign-in, sign-up) it's teal.
 - **Class colours.** Each class gets a colour for its left bar and dot in lists and the calendar,
   from a fixed palette of 8 that read on white: indigo `#5b6ac4`, amber `#d4843b`, green
@@ -125,8 +129,8 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a white
-    pill with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
+    Messages, Reports, Settings, and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a pill
+    in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
 - **Top bar**, 64px, white with a bottom border:
@@ -358,7 +362,7 @@ Settled when TUI-23 was built (D-158):
   students tabs, the family page, the student page and the Add family dialog. Dialogs take a
   `wide` size (640px) for forms with sections, and focus their first field when they open.
 - **Settings › Theme** (D-165), from the owner's Figma Make design, owner only: a radio grid of
-  the 8 themes (a mini app mock-up on each, a check on the chosen one), a live preview of the
+  the 12 themes (D-166: the 4 light ones last) (a mini app mock-up on each, a check on the chosen one), a live preview of the
   staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with
   an unsaved-changes note. On phones: 2 columns of tiles, only the staff-app preview, and a
   sticky full-width Save bar.

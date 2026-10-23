@@ -218,7 +218,8 @@ function Sidebar({
     <nav
       aria-label={t('shell.nav')}
       className={cn(
-        'flex h-full flex-col gap-6 bg-sidebar py-5 text-sidebar-text',
+        // A light theme's sidebar needs an edge against the canvas; on a dark one it doesn't show.
+        'flex h-full flex-col gap-6 border-r border-black/5 bg-sidebar py-5 text-sidebar-text',
         // The rail's labels sit outside it, so only the full sidebar scrolls.
         collapsed ? 'items-center px-3' : 'overflow-y-auto px-4',
       )}
@@ -240,7 +241,7 @@ function Sidebar({
             onClick={onToggle}
             aria-label={collapsed ? t('shell.expand') : t('shell.collapse')}
             aria-expanded={!collapsed}
-            className="group relative inline-flex size-9 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-white"
+            className="group relative inline-flex size-9 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-sidebar-strong"
           >
             {collapsed ? (
               <PanelLeftOpen className="size-5" aria-hidden />
@@ -263,7 +264,9 @@ function Sidebar({
                 cn(
                   'group relative flex h-10 items-center gap-3 rounded-lg text-label font-medium transition-colors duration-150',
                   collapsed ? 'justify-center' : 'px-3',
-                  isActive ? 'bg-white text-brand' : 'hover:bg-sidebar-raised hover:text-white',
+                  isActive
+                    ? 'bg-sidebar-active text-brand'
+                    : 'hover:bg-sidebar-raised hover:text-sidebar-strong',
                 )
               }
             >
@@ -318,7 +321,7 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
         <span className="block text-meta font-semibold tracking-[0.05em] text-sidebar-text uppercase">
           {t('shell.organisation')}
         </span>
-        <span className="block truncate text-body font-semibold text-white">
+        <span className="block truncate text-body font-semibold text-sidebar-strong">
           {membership.org.name}
         </span>
       </span>
@@ -419,7 +422,9 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
           <RailTip label={t('shell.profile')} />
         ) : (
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-label font-semibold text-white">{name}</span>
+            <span className="block truncate text-label font-semibold text-sidebar-strong">
+              {name}
+            </span>
             <span className="block text-meta">{roleLabel(membership.role)}</span>
           </span>
         )}
@@ -432,7 +437,7 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
           queryClient.clear();
           void signOut();
         }}
-        className="group relative inline-flex size-11 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-white lg:size-9"
+        className="group relative inline-flex size-11 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-sidebar-strong lg:size-9"
       >
         <LogOut className="size-5" aria-hidden />
         {collapsed ? <RailTip label={t('common.signOut')} /> : null}

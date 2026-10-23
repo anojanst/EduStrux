@@ -12,6 +12,8 @@
   --sidebar: #123f43;
   --sidebar-raised: #1a4d52;
   --sidebar-text: #c9d9da;
+  --sidebar-strong: #ffffff;
+  --sidebar-active: #ffffff;
   --text: #192229;
   --muted: #66747d;
   --subtle: #8b979e;
@@ -40,6 +42,8 @@
   --color-sidebar: var(--sidebar);
   --color-sidebar-raised: var(--sidebar-raised);
   --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-strong: var(--sidebar-strong);
+  --color-sidebar-active: var(--sidebar-active);
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-subtle: var(--subtle);

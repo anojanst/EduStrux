@@ -4679,3 +4679,22 @@ under "Not changed here" for a reach that is a subquery.
   needs the migration run after merge. The org profile screen (TUI-64) no longer needs a colour
   picker. Parent portal screens pick up the theme when they're built.
 - **Tasks:** TUI-110, TUI-64.
+
+## D-166 · 2026-10-23 · Four light-sidebar themes
+
+- **Context:** TUI-111. After D-165 shipped with 8 dark-sidebar themes, the owner asked for light
+  ones.
+- **Decision:** (stated by the owner)
+  - Add **4 light themes**, Light Teal, Sky, Lavender and Rose (keys `light-teal`, `sky`,
+    `lavender`, `rose`): a pale sidebar with dark text, the brand colour still on buttons, links
+    and the active nav item. 12 themes in all; the light ones sit after the dark ones in the
+    picker. Teal stays the default.
+  - Two tokens join a theme: `--sidebar-strong` (names and hovered items in the sidebar) and
+    `--sidebar-active` (the active nav item's pill, also behind the sidebar logo mark). Both are
+    white on the dark themes, so they look as before. The sidebar gets a faint right edge
+    (`black/5`), which only shows on a light one.
+  - Every text pair still passes WCAG AA, checked by a test over the whole catalog
+    (`apps/web/test/themes.test.ts`); the lowest is brand on Rose's active pill, 4.68:1.
+- **Consequences:** No migration: the theme list is enforced in code (`orgs.theme` is plain
+  text). A theme added later must pass the contrast test.
+- **Tasks:** TUI-111.
