@@ -3,9 +3,25 @@
 // sessions, so the timetable costs no trip before that read (D-104).
 
 import { enrolments } from '@edustrux/db';
-import { eq, gte, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { idsFrom, inIds, type IdQuery, type Ids, type OrgCtx } from '../../db/scope';
+
+/**
+ * The places taken in the class in `classId`, the class id column of the row being read, counted
+ * inside that statement: active enrolments that haven't ended by `today`. One that starts later
+ * still holds its place, as when a student is enrolled (`placesIn`).
+ */
+export function placesTakenIn(ctx: OrgCtx, classId: SQLiteColumn, today: string): SQL<number> {
+  const taken = and(
+    eq(enrolments.orgId, ctx.orgId),
+    eq(enrolments.classId, classId),
+    isNull(enrolments.deletedAt),
+    eq(enrolments.status, 'active'),
+    or(isNull(enrolments.endDate), gte(enrolments.endDate, today)),
+  );
+  return sql<number>`(select count(*) from ${enrolments} where ${taken})`;
+}
 
 export type Timetable = {
   /** The classes the students hold an active enrolment in. */

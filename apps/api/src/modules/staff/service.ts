@@ -9,6 +9,8 @@ import {
   type Role,
   type StaffMember,
   type StaffRole,
+  type Teacher,
+  type TeacherList,
   type UpdateStaffMember,
 } from '@edustrux/shared';
 import type { EmailMessage } from '../../background/messages';
@@ -93,6 +95,24 @@ export async function listStaff(
     limit,
   );
   return { data: data.map(toStaffMember), nextCursor };
+}
+
+/**
+ * Who a class or lesson can be given to (TUI-111): every active member of staff, with only what
+ * a picker needs. Staff limited to some branches get those who work in one of them.
+ */
+export async function listTeachers(ctx: OrgCtx, access: Access): Promise<TeacherList> {
+  const limited = access.scope === 'branch' ? (access.branchIds ?? undefined) : undefined;
+  const rows = await repo.listTeachers(ctx, limited);
+  return {
+    data: rows.map(({ membership, name, email }) => ({
+      id: membership.id,
+      name: name ?? email ?? '',
+      role: membership.role as Teacher['role'],
+      branchIds: membership.branchIds ?? null,
+    })),
+    nextCursor: null,
+  };
 }
 
 /**

@@ -63,6 +63,33 @@ export const StaffMember = z
   .openapi('StaffMember');
 export type StaffMember = z.infer<typeof StaffMember>;
 
+/**
+ * Someone a class or lesson can be given to: an active member of staff. Only what a picker needs,
+ * so staff who can't read the staff list can still choose a teacher (TUI-111).
+ */
+export const Teacher = z
+  .object({
+    id: z
+      .string()
+      .openapi({ example: 'mem_01j9z3k6m2q8w4e5r6t7y8u9i0', description: 'The membership id' }),
+    name: z.string().openapi({
+      description: 'Their name, or their email when no name is set.',
+      example: 'Nimali Perera',
+    }),
+    role: StaffRole,
+    branchIds: BranchIds,
+  })
+  .openapi('Teacher');
+export type Teacher = z.infer<typeof Teacher>;
+
+export const TeacherList = z
+  .object({
+    data: z.array(Teacher),
+    nextCursor: z.null().openapi({ description: 'Always null: the whole list is returned.' }),
+  })
+  .openapi('TeacherList');
+export type TeacherList = z.infer<typeof TeacherList>;
+
 export const CreateInvitation = z
   .object({
     email: Email,

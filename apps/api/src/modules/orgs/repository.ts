@@ -1,4 +1,4 @@
-import { memberships, orgs, type Db } from '@edustrux/db';
+import { memberships, orgs, users, type Db } from '@edustrux/db';
 import { newId } from '@edustrux/shared';
 import { and, count, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
@@ -59,7 +59,15 @@ export async function insertOrgWithOwner(
 /** A membership in the org, whatever its role or status. */
 export function findMembership(ctx: OrgCtx, id: string) {
   return ctx.db
-    .select({ id: memberships.id, role: memberships.role, status: memberships.status })
+    .select({
+      id: memberships.id,
+      role: memberships.role,
+      status: memberships.status,
+      // Their name, or their email when none is set: what a class shows of its teacher.
+      name: sql<
+        string | null
+      >`(select ${sql`coalesce(${users.name}, ${users.email})`} from ${users} where ${eq(users.id, memberships.userId)})`,
+    })
     .from(memberships)
     .where(inOrg(ctx, memberships, eq(memberships.id, id)))
     .get();

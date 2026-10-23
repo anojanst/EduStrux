@@ -49,6 +49,15 @@ const endNotBeforeStart = (v: Dates) =>
   v.endDate! >= v.startDate!;
 const END_BEFORE_START = { message: 'Must be on or after startDate', path: ['endDate'] };
 
+const TeacherName = z.string().nullable().openapi({
+  description: 'The teacher’s name, or their email when no name is set. null = no teacher.',
+  example: 'Nimali Perera',
+});
+const RoomName = z.string().nullable().openapi({
+  description: 'The room’s name. null = no room.',
+  example: 'Room 3',
+});
+
 export const ScheduleSlot = z
   .object({ weekday: Weekday, startTime: LocalTime, endTime: LocalTime })
   .openapi('ScheduleSlot');
@@ -67,8 +76,16 @@ export const Class = z
     teacherId: z.string().nullable().openapi({
       description: 'The membership id of the staff member who teaches the class.',
     }),
+    teacherName: TeacherName,
+    roomName: RoomName,
     name: z.string(),
     capacity: z.number().int().nullable(),
+    enrolledCount: z.number().int().openapi({
+      description:
+        'Places taken: active enrolments that haven’t ended by today, including ones that start ' +
+        'later. What `capacity` is checked against when a student is enrolled.',
+      example: 9,
+    }),
     startDate: LocalDate.nullable(),
     endDate: LocalDate.nullable(),
     schedule: z.array(ScheduleSlot).openapi({
@@ -175,6 +192,18 @@ export const ScheduleResult = z
   .openapi('ScheduleResult');
 export type ScheduleResult = z.infer<typeof ScheduleResult>;
 
+export const SessionMarks = z
+  .object({
+    present: z.number().int(),
+    late: z.number().int(),
+    absent: z.number().int(),
+    excused: z.number().int(),
+  })
+  .openapi('SessionMarks', {
+    description: 'Students marked at a lesson, by status. All 0 = not marked yet.',
+  });
+export type SessionMarks = z.infer<typeof SessionMarks>;
+
 export const Session = z
   .object({
     id: z.string().openapi({ example: 'ses_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
@@ -183,7 +212,9 @@ export const Session = z
     courseId: z.string(),
     branchId: z.string(),
     roomId: z.string().nullable(),
+    roomName: RoomName,
     teacherId: z.string().nullable(),
+    teacherName: TeacherName,
     date: LocalDate,
     startTime: LocalTime,
     endTime: LocalTime,
@@ -201,6 +232,9 @@ export const Session = z
           'Where the lesson was first scheduled, if it was moved by hand. A moved lesson is ' +
           'left alone when the weekly schedule is saved again.',
       }),
+    attendance: SessionMarks.optional().openapi({
+      description: 'How many students are marked each way. Left out for parents.',
+    }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
