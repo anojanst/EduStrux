@@ -1,9 +1,15 @@
 import { ROLES } from '../permissions';
+import { THEME_KEYS } from '../themes';
 import { z } from '../zod';
 import { CurrencyCode, Locale, Timestamp, TimeZone } from './common';
 
 export const OrgPlan = z.enum(['trial', 'solo', 'small', 'custom']);
 export const OrgStatus = z.enum(['trialing', 'active', 'past_due', 'suspended', 'cancelled']);
+export const OrgTheme = z.enum(THEME_KEYS).openapi({
+  description: 'The colour theme for the staff app, parent portal, PDFs and emails (D-165).',
+  example: 'teal',
+});
+export type OrgTheme = z.infer<typeof OrgTheme>;
 export const DateFormat = z.enum(['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']);
 export type DateFormat = z.infer<typeof DateFormat>;
 
@@ -25,7 +31,7 @@ export const Org = z
     locale: Locale,
     dateFormat: DateFormat,
     singleTutorMode: z.boolean(),
-    brandColor: z.string().nullable(),
+    theme: OrgTheme,
     taxNumber: z.string().nullable(),
     plan: OrgPlan,
     status: OrgStatus,
@@ -68,10 +74,7 @@ export const UpdateOrg = z
     locale: Locale,
     dateFormat: DateFormat,
     singleTutorMode: z.boolean(),
-    brandColor: z
-      .string()
-      .regex(/^#[0-9a-fA-F]{6}$/)
-      .nullable(),
+    theme: OrgTheme,
     taxNumber: z.string().trim().max(40).nullable(),
   })
   .partial()

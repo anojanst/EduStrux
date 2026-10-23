@@ -1,6 +1,7 @@
 import {
   formatDate,
   formatMoney,
+  themeColours,
   utcToLocal,
   type Invoice,
   type Org,
@@ -42,8 +43,7 @@ const STYLE = `
 `;
 
 function page(org: Org, title: string, body: string) {
-  const brand =
-    org.brandColor && /^#[0-9a-fA-F]{6}$/.test(org.brandColor) ? org.brandColor : '#1f2933';
+  const { brand } = themeColours(org.theme);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>${escape(title)}</title>
 <style>:root { --brand: ${brand}; }${STYLE}</style></head>

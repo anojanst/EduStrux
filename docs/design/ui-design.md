@@ -33,36 +33,43 @@ follows this file; when a screen needs something it doesn't cover, add it here f
 
 Defined as CSS variables on `:root`, with these exact names (they match the Figma source).
 
-| Token             | Value     | Use                                                     |
-| ----------------- | --------- | ------------------------------------------------------- |
-| `--brand`         | `#155d63` | Primary buttons, links, active nav text, focus ring     |
-| `--brand-hover`   | `#104c51` | Primary button hover and pressed                        |
-| `--brand-soft`    | `#e7f2f1` | Selected rows, icon tiles, avatar backgrounds           |
-| `--sidebar`       | `#123f43` | Sidebar background                                      |
-| `--sidebar-text`  | `#c9d9da` | Sidebar nav items (active item: white pill, brand text) |
-| `--text`          | `#192229` | Body text and headings                                  |
-| `--muted`         | `#66747d` | Secondary text, labels, metadata                        |
-| `--subtle`        | `#8b979e` | Placeholders, timestamps, disabled text                 |
-| `--border`        | `#e2e7e9` | Card and divider borders                                |
-| `--border-strong` | `#d7dfe1` | Input and secondary-button borders                      |
-| `--surface`       | `#ffffff` | Cards, inputs, menus                                    |
-| `--canvas`        | `#f6f8f9` | Page background                                         |
-| `--success`       | `#277a5b` | Paid, present, delivered, active                        |
-| `--success-soft`  | `#eaf6f0` | Its badge and tile background                           |
-| `--warning`       | `#9a6015` | Overdue soon, late, trial ending, part paid             |
-| `--warning-soft`  | `#fff4df` | Its badge, tile and banner background                   |
-| `--danger`        | `#b34444` | Overdue, absent, void, bounced, destructive actions     |
-| `--danger-soft`   | `#fceded` | Its badge and tile background                           |
-| `--info`          | `#325ea8` | Neutral information, issued, links in notices           |
-| `--info-soft`     | `#edf3fc` | Its badge and tile background                           |
+| Token              | Value     | Use                                                     |
+| ------------------ | --------- | ------------------------------------------------------- |
+| `--brand`          | `#155d63` | Primary buttons, links, active nav text, focus ring     |
+| `--brand-hover`    | `#104c51` | Primary button hover and pressed                        |
+| `--brand-soft`     | `#e7f2f1` | Selected rows, icon tiles, avatar backgrounds           |
+| `--sidebar`        | `#123f43` | Sidebar background                                      |
+| `--sidebar-raised` | `#1a4d52` | Org switcher card and hovered items on the sidebar      |
+| `--sidebar-text`   | `#c9d9da` | Sidebar nav items (active item: white pill, brand text) |
+| `--text`           | `#192229` | Body text and headings                                  |
+| `--muted`          | `#66747d` | Secondary text, labels, metadata                        |
+| `--subtle`         | `#8b979e` | Placeholders, timestamps, disabled text                 |
+| `--border`         | `#e2e7e9` | Card and divider borders                                |
+| `--border-strong`  | `#d7dfe1` | Input and secondary-button borders                      |
+| `--surface`        | `#ffffff` | Cards, inputs, menus                                    |
+| `--canvas`         | `#f6f8f9` | Page background                                         |
+| `--success`        | `#277a5b` | Paid, present, delivered, active                        |
+| `--success-soft`   | `#eaf6f0` | Its badge and tile background                           |
+| `--warning`        | `#9a6015` | Overdue soon, late, trial ending, part paid             |
+| `--warning-soft`   | `#fff4df` | Its badge, tile and banner background                   |
+| `--danger`         | `#b34444` | Overdue, absent, void, bounced, destructive actions     |
+| `--danger-soft`    | `#fceded` | Its badge and tile background                           |
+| `--info`           | `#325ea8` | Neutral information, issued, links in notices           |
+| `--info-soft`      | `#edf3fc` | Its badge and tile background                           |
 
+- **Org themes (D-165).** The six brand and sidebar tokens above (`--brand`, `--brand-hover`,
+  `--brand-soft`, `--sidebar`, `--sidebar-raised`, `--sidebar-text`) follow the org's colour
+  theme; the values in the table are the default, **teal**. The others are ocean, indigo,
+  violet, berry, forest, amber and graphite, defined once in the shared theme catalog and used by
+  the web, PDFs and emails. Every other token stays the same in every theme. Inside an org the
+  app sets the six variables on `:root`; outside one (sign-in, sign-up) it's teal.
 - **Class colours.** Each class gets a colour for its left bar and dot in lists and the calendar,
   from a fixed palette of 8 that read on white: indigo `#5b6ac4`, amber `#d4843b`, green
   `#3f9b6e`, rose `#c4566e`, sky `#3a8bc4`, violet `#8a5bc4`, teal `#2f9a94`, slate `#6b7a86`.
   Chosen by class id, so a class keeps its colour everywhere.
 - **Avatars.** Initials on a soft tint (brand soft by default; the org avatar uses a warm sand,
   `#f0c782` with `#594017` text).
-- **Contrast.** All text pairs above meet WCAG AA at the sizes used. Don't put `--subtle` text on
+- **Contrast.** All text pairs above meet WCAG AA at the sizes used, in every theme. Don't put `--subtle` text on
   `--canvas` below 14px.
 - **Dark mode.** Not in the MVP. Tokens are variables so it can be added without touching
   components.
@@ -118,7 +125,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings. Items are 40px high, icon + label; the active item is a white
+    Messages, Reports, Settings, and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a white
     pill with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -350,6 +357,11 @@ Settled when TUI-23 was built (D-158):
 - **Families & students** (D-164), from the Figma Make people design: the list with families and
   students tabs, the family page, the student page and the Add family dialog. Dialogs take a
   `wide` size (640px) for forms with sections, and focus their first field when they open.
+- **Settings › Theme** (D-165), from the owner's Figma Make design, owner only: a radio grid of
+  the 8 themes (a mini app mock-up on each, a check on the chosen one), a live preview of the
+  staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with
+  an unsaved-changes note. On phones: 2 columns of tiles, only the staff-app preview, and a
+  sticky full-width Save bar.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

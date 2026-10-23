@@ -32,3 +32,4 @@ export * from './schemas/search';
 export * from './schemas/staff';
 export * from './schemas/subscriptions';
 export * from './schemas/tax';
+export * from './themes';
