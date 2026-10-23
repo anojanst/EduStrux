@@ -80,12 +80,15 @@ export const Class = z
     roomName: RoomName,
     name: z.string(),
     capacity: z.number().int().nullable(),
-    enrolledCount: z.number().int().openapi({
-      description:
-        'Places taken: active enrolments that haven’t ended by today, including ones that start ' +
-        'later. What `capacity` is checked against when a student is enrolled.',
-      example: 9,
-    }),
+    enrolledCount: z
+      .number()
+      .int()
+      .openapi({
+        description:
+          'Places taken: active enrolments that haven’t ended by today, including ones that start ' +
+          'later. What `capacity` is checked against when a student is enrolled.',
+        example: 9,
+      }),
     startDate: LocalDate.nullable(),
     endDate: LocalDate.nullable(),
     schedule: z.array(ScheduleSlot).openapi({

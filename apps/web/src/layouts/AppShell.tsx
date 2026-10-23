@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  School,
   Search,
   TriangleAlert,
   Users,
@@ -37,6 +38,9 @@ type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean 
  */
 function navFor(role: Role): NavItem[] {
   const items: NavItem[] = [{ to: '', label: 'nav.home', Icon: House, end: true }];
+  if (can(role, 'classes:read') && role !== 'parent') {
+    items.push({ to: 'classes', label: 'nav.classes', Icon: School });
+  }
   if (canSearchPeople(role)) {
     items.push({ to: 'families', label: 'nav.people', Icon: Users });
   }
