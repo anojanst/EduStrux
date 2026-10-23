@@ -655,7 +655,10 @@ describe('weekly schedule and session generation', () => {
       courseId: klass.courseId,
       branchId: main.id,
       roomId: room.id,
+      roomName: 'Room 1',
       teacherId: teacher.id,
+      // The teacher has no name set, so their email stands in.
+      teacherName: 'teacher@example.com',
       date: tuesdays[0],
       startTime: '16:00',
       endTime: '17:00',
@@ -663,6 +666,7 @@ describe('weekly schedule and session generation', () => {
       endsAt: localToUtc(tuesdays[0]!, '17:00', TZ),
       status: 'scheduled',
       movedFrom: null,
+      attendance: { present: 0, late: 0, absent: 0, excused: 0 },
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });

@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { BookOpen, ChevronRight, MapPin, Search, UserPlus, UsersRound } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { FilterSelect } from '../../components/FilterSelect';
 import { PageError, PageHeader } from '../../components/PageState';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
@@ -169,42 +170,6 @@ function People() {
 
       <AddFamilyDialog open={adding} onClose={() => setAdding(false)} />
     </>
-  );
-}
-
-function FilterSelect({
-  Icon,
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  Icon: typeof MapPin;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="relative inline-flex h-11 items-center gap-2 rounded-lg border border-border-strong bg-surface pr-3 pl-3 text-label text-muted focus-within:outline-2 focus-within:outline-brand sm:h-10">
-      <Icon className="size-4 shrink-0" aria-hidden />
-      <span>{label}:</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className="cursor-pointer appearance-none bg-transparent pr-4 font-semibold text-text outline-none"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <span aria-hidden className="pointer-events-none absolute right-3 text-meta">
-        ⌄
-      </span>
-    </label>
   );
 }
 

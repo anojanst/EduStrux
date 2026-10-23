@@ -4,6 +4,9 @@ import { ToastProvider } from '../components/ui/Toast';
 import { ApiError } from '../lib/api';
 import { HomePage } from '../pages/HomePage';
 import { ChooseOrgPage } from '../pages/ChooseOrgPage';
+import { ClassesPage } from '../pages/classes/ClassesPage';
+import { ClassPage } from '../pages/classes/ClassPage';
+import { LessonPage } from '../pages/classes/LessonPage';
 import { InvitationPage } from '../pages/InvitationPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
@@ -85,6 +88,9 @@ export const routes = [
             element: <OrgLayout />,
             children: [
               { index: true, element: <HomePage /> },
+              { path: 'classes', element: <ClassesPage /> },
+              { path: 'classes/:classId', element: <ClassPage /> },
+              { path: 'lessons/:sessionId', element: <LessonPage /> },
               { path: 'families', element: <PeoplePage /> },
               { path: 'families/:familyId', element: <FamilyPage /> },
               { path: 'students/:studentId', element: <StudentPage /> },

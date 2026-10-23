@@ -23,6 +23,17 @@ export function useFormat() {
     month: 'short',
     timeZone: 'UTC',
   });
+  const dayMonth = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  });
+  const long = new Intl.DateTimeFormat(locale, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  });
 
   return {
     today,
@@ -37,6 +48,12 @@ export function useFormat() {
     age: (dateOfBirth: string) => ageOn(dateOfBirth, today),
     daysUntil: (date: string) => diffDays(today, date),
     weekday: (weekday: number) => weekdayName(weekday, locale),
+    /** "Monday" for ISO weekday 1. */
+    weekdayLong: (weekday: number) => weekdayName(weekday, locale, 'long'),
+    /** "Tuesday, 28 October": a lesson's day in full. */
+    dayLong: (date: string) => long.format(new Date(`${date}T00:00:00Z`)),
+    /** "28 October": a day without its weekday, as a week's heading names its Monday. */
+    dayMonth: (date: string) => dayMonth.format(new Date(`${date}T00:00:00Z`)),
   };
 }
 
@@ -46,16 +63,15 @@ export function ageOn(dateOfBirth: string, today: string) {
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
 
-const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7].map(
-  (day) =>
-    // 2024-01-01 was a Monday, so day n of that week is ISO weekday n.
-    (locale: string) =>
-      new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
-        Date.UTC(2024, 0, day),
-      ),
-);
-
-/** "Mon" for ISO weekday 1, in the locale. */
-export function weekdayName(weekday: number, locale = FALLBACK.locale) {
-  return WEEKDAYS[weekday - 1]?.(locale) ?? '';
+/** "Mon" (or "Monday") for ISO weekday 1, in the locale. */
+export function weekdayName(
+  weekday: number,
+  locale = FALLBACK.locale,
+  width: 'short' | 'long' = 'short',
+) {
+  if (weekday < 1 || weekday > 7) return '';
+  // 2024-01-01 was a Monday, so day n of that week is ISO weekday n.
+  return new Intl.DateTimeFormat(locale, { weekday: width, timeZone: 'UTC' }).format(
+    Date.UTC(2024, 0, weekday),
+  );
 }

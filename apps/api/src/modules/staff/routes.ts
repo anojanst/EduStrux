@@ -7,6 +7,7 @@ import {
   InviteGuardian,
   PageQuery,
   StaffMember,
+  TeacherList,
   UpdateStaffMember,
   page,
 } from '@edustrux/shared';
@@ -45,6 +46,24 @@ const listStaffRoute = createRoute({
   responses: {
     200: json(page(StaffMember).openapi('StaffMemberPage'), 'A page of staff'),
     ...errors(400, 401, 403, 404),
+  },
+});
+
+const listTeachersRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/orgs/{orgId}/teachers',
+  tags: ['Staff'],
+  summary: 'List who can teach',
+  description:
+    'Every active member of staff, by name, with only their id, name, role and branches: for ' +
+    'choosing a class’s or a lesson’s teacher. Staff limited to some branches get those with ' +
+    'no branch list or one that shares a branch with theirs. For anyone who can change classes, ' +
+    'so front desk can choose a teacher without reading the staff list.',
+  middleware: orgAccess('classes:write'),
+  request: { params: OrgParams },
+  responses: {
+    200: json(TeacherList, 'Everyone who can teach'),
+    ...errors(401, 403, 404),
   },
 });
 
@@ -159,6 +178,9 @@ export const staffRoutes = createRouter()
   .openapi(listStaffRoute, async (c) => {
     const { limit, cursor } = c.req.valid('query');
     return c.json(await service.listStaff(orgCtx(c), access(c), limit, cursor), 200);
+  })
+  .openapi(listTeachersRoute, async (c) => {
+    return c.json(await service.listTeachers(orgCtx(c), access(c)), 200);
   })
   .openapi(inviteStaffRoute, async (c) => {
     return c.json(

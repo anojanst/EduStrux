@@ -4698,3 +4698,92 @@ under "Not changed here" for a reach that is a subquery.
 - **Consequences:** No migration: the theme list is enforced in code (`orgs.theme` is plain
   text). A theme added later must pass the contrast test.
 - **Tasks:** TUI-111.
+
+## D-167 · 2026-10-23 · Classes and lessons carry teacher and room names; a teacher list for classes
+
+- **Context:** TUI-112. The classes list, the class page and the lessons show who teaches and
+  where, but `Class` and `Session` had only `teacherId` and `roomId`. Choosing a teacher needs a
+  list of staff, and `GET /staff` is `staff:read`, which front desk doesn't have.
+- **Decision:** (stated by the owner)
+  - Every class and every session in an answer has `teacherName` and `roomName`, read in the
+    same query, as a student has `familyName` (D-163). The name is the user's name, or their
+    email when they have none; null with no teacher or room. A member who has left keeps their
+    name on what they taught.
+  - `GET /teachers` (added) lists every active member of staff, by name, with only their id,
+    name, role and branches. Not paged. It is for anyone with `classes:write`, so front desk can
+    choose a teacher without reading the staff list; teachers, accountants and parents get 403.
+    Staff limited to some branches get the members with no branch list or one sharing a branch
+    with theirs.
+- **Consequences:** Additive: no migration, and existing clients ignore the new fields. The
+  names come from correlated subqueries in the same statement, so no extra database trip.
+- **Tasks:** TUI-112.
+
+## D-168 · 2026-10-23 · Places taken on a class, marks on a lesson
+
+- **Context:** TUI-112. The classes list shows places taken against capacity, and the class page
+  shows whether each lesson is marked. The Home dashboard had the same gap (ui-design §9).
+- **Decision:** (stated by the owner)
+  - `Class.enrolledCount`: places taken today, the active enrolments not ended by today,
+    including ones that start later. The same rule as the capacity check on a new enrolment.
+  - `Session.attendance`: `{ present, late, absent, excused }`, how many students are marked
+    each way; all 0 means not marked yet. For staff only: it is left out for parents, on
+    `GET /sessions` and `GET /portal/sessions`, since a parent sees only their own child's marks.
+- **Consequences:** Additive: no migration. The Home dashboard can show per-lesson marked state
+  from `GET /sessions` without one attendance read per lesson.
+- **Tasks:** TUI-112.
+
+## D-169 · 2026-10-23 · What the Classes and attendance screens show, and what waits
+
+- **Context:** TUI-112 builds the classes list, Add/edit class, the class page, enrolling and the
+  attendance sheet from the owner's Figma Make design. Some of the design asks for what the API
+  doesn't have, and some of it had small mistakes.
+- **Decision:**
+  - **List:** shows the current term by default (the term today falls in, else the next, else
+    the last), with an "All terms" choice. Filters: term, branch (only with more than one),
+    teacher (roles with `classes:write`) and course (the Figma said subject; the API filters by
+    course). The list loads every page, so the search (by class name, course or teacher, in the
+    browser) and the header totals cover the whole list. A class's title is its own name; the
+    course shows in the line under it, grade then subject.
+  - **Add and edit class:** the course, term and branch can't change after creation, so editing
+    shows them read only. "Ongoing, no term" swaps the term for start and end dates (the Figma's
+    toggle was the wrong way round). The room is optional (the Figma had it required). The
+    Figma's per-slot room and teacher are left out: a schedule slot is weekday, start and end
+    only. A new class saves the class, then its schedule, and opens on its Schedule tab; the
+    schedule is changed later in its own dialog from the class page. The course select ends
+    with "+ New course…" (and starts on it when there's none): a subject and a grade level,
+    chosen or typed in, and a lesson length. Saving makes the subject, grade level and course
+    that don't exist yet (one with the same name is used instead), then the class. Typing a new
+    subject or grade level is for the owner (`org:write`); others choose from the ones there
+    are, and are told to ask the owner when there are none. Added after the owner, testing the
+    PR, couldn't add a class in an org with no courses.
+  - **Class page cards:** Enrolled (n of capacity, places left), Lessons ("x of y" done this
+    term; with no term, up to 13 weeks ahead) and Next lesson. They replace the Figma's
+    "Attendance this term %": the API has no rate per class. On phones: two cards, then one.
+  - **Lessons tab:** grouped by week ("Week of 12 October"), from last week on, with "Show n
+    earlier lessons". A marked lesson shows its result ("8 present · 1 absent"); "Mark
+    attendance" shows from the lesson's day for `attendance:write`; lessons still to come show
+    neither. Holidays show as muted "Holiday: name. No lesson." rows on the schedule's weekdays.
+    Cancel and put back on are in the row's menu, for lessons not started, and tell families as
+    the API does (D-138).
+  - **Schedule tab:** the weekly slots, plus clashes from `GET /timetable/clashes` for the next
+    92 days in the class's branch, grouped by kind and by the other class; student clashes as a
+    count.
+  - **Students tab:** current enrolments by name, then those who left. Enrol searches students
+    with `GET /search` and refuses a full class before sending. Withdraw asks for the last day.
+    "Move to another class" lists the branch's other running classes, same course first. A toast
+    warns when an issued invoice still charges the old dates (D-133).
+  - **Attendance sheet** (its own page in the app, one per lesson): Present, Late, Absent or
+    Excused per student, a second tap clears; "Mark the rest present"; filters All, Not marked,
+    Absent; "n of m marked"; a sticky Save that sends only the marks changed. An absence notice
+    shows as a badge ("Parent said away: dentist") and sets an unmarked student to Excused, for
+    staff to confirm by saving. The per-student note is the lesson note (D-130), labelled "Note
+    for the family" since parents read it. Read only, with a notice, for a cancelled lesson or
+    before the lesson's day. The Figma's "changed by someone else" banner is left out: saving
+    attendance takes no `updatedAt`. The make-up badge is left out: the roster doesn't flag
+    make-up students.
+  - **Nav:** Classes, for roles with `classes:read`, not parents.
+- **Consequences:** Follow-ups: the teacher's phone "Today" view stays in TUI-57; courses can
+  be made only from the Add class dialog, and terms and rooms have no screens yet (TUI-64); leaving the attendance sheet with unsaved
+  marks has no warning yet.
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-112, TUI-57, TUI-64.

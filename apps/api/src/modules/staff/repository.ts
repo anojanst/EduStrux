@@ -56,6 +56,29 @@ export function listStaff(ctx: OrgCtx, limit: number, afterId: string | undefine
     .limit(limit + 1);
 }
 
+/**
+ * Who can teach a class: active members of staff, by name. Given `branchIds`, only those who
+ * work in one of them: with no branch list, or one that shares a branch.
+ */
+export function listTeachers(ctx: OrgCtx, branchIds: string[] | undefined) {
+  return ctx.db
+    .select(memberColumns)
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(
+      inOrg(
+        ctx,
+        memberships,
+        ne(memberships.role, 'parent'),
+        eq(memberships.status, 'active'),
+        branchIds
+          ? sql`(${memberships.branchIds} is null or exists (select 1 from json_each(${memberships.branchIds}) where value in (select value from json_each(${JSON.stringify(branchIds)}))))`
+          : undefined,
+      ),
+    )
+    .orderBy(sql`lower(coalesce(${users.name}, ${users.email}))`, asc(memberships.id));
+}
+
 /** A membership within reach, of any role. */
 export function findMember(ctx: OrgCtx, id: string, reach: Reach): Promise<MemberRow | undefined> {
   return ctx.db
