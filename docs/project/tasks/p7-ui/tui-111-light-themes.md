@@ -9,7 +9,7 @@ size: S
 endpoints:
   - PATCH /api/v1/orgs/{orgId}
 branch: task/tui-111-light-themes
-pr:
+pr: 56
 ---
 
 # TUI-111 Light sidebar themes: Light Teal, Sky, Lavender and Rose
