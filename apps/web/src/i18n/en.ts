@@ -555,8 +555,24 @@ export const en = {
   'classes.empty': 'No classes yet',
   'classes.empty.body': 'Add your first class, with when it runs and who teaches it.',
   'classes.empty.filtered': 'No classes match these filters.',
-  'classes.noCourses':
-    'There are no courses yet. A class is a group of one course, so add the course first.',
+  'classes.noCourses': 'No courses yet. Set up the first one with this class.',
+  'classes.field.newCourse': '+ New course…',
+  'classes.newCourse.title': 'New course',
+  'classes.newCourse.help':
+    'A course is a subject at a grade level, such as Maths for Year 9. Classes are groups of it.',
+  'classes.newCourse.ownerOnly':
+    'Only the owner can add subjects and grade levels. Ask them to add the one you need.',
+  'classes.field.subject': 'Subject',
+  'classes.field.newSubject': '+ New subject…',
+  'classes.field.subjectName': 'New subject',
+  'classes.field.subjectPlaceholder': 'e.g. Maths',
+  'classes.field.grade': 'Grade level',
+  'classes.field.newGrade': '+ New grade level…',
+  'classes.field.gradeName': 'New grade level',
+  'classes.field.gradePlaceholder': 'e.g. Year 9',
+  'classes.field.lessonLength': 'Lesson length (minutes)',
+  'classes.field.lessonLengthHelp': 'New weekly times end this long after they start.',
+  'classes.error.lessonLength': 'Between 5 and 600 minutes',
 
   'classes.add.title': 'Add class',
   'classes.add.subtitle': 'Set up the class and its weekly schedule.',

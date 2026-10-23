@@ -4749,8 +4749,13 @@ under "Not changed here" for a reach that is a subquery.
     toggle was the wrong way round). The room is optional (the Figma had it required). The
     Figma's per-slot room and teacher are left out: a schedule slot is weekday, start and end
     only. A new class saves the class, then its schedule, and opens on its Schedule tab; the
-    schedule is changed later in its own dialog from the class page. With no course yet, the
-    dialog says to add one first.
+    schedule is changed later in its own dialog from the class page. The course select ends
+    with "+ New course…" (and starts on it when there's none): a subject and a grade level,
+    chosen or typed in, and a lesson length. Saving makes the subject, grade level and course
+    that don't exist yet (one with the same name is used instead), then the class. Typing a new
+    subject or grade level is for the owner (`org:write`); others choose from the ones there
+    are, and are told to ask the owner when there are none. Added after the owner, testing the
+    PR, couldn't add a class in an org with no courses.
   - **Class page cards:** Enrolled (n of capacity, places left), Lessons ("x of y" done this
     term; with no term, up to 13 weeks ahead) and Next lesson. They replace the Figma's
     "Attendance this term %": the API has no rate per class. On phones: two cards, then one.
@@ -4777,8 +4782,8 @@ under "Not changed here" for a reach that is a subquery.
     attendance takes no `updatedAt`. The make-up badge is left out: the roster doesn't flag
     make-up students.
   - **Nav:** Classes, for roles with `classes:read`, not parents.
-- **Consequences:** Follow-ups: the teacher's phone "Today" view stays in TUI-57; courses, terms
-  and rooms have no settings screens yet (TUI-64); leaving the attendance sheet with unsaved
+- **Consequences:** Follow-ups: the teacher's phone "Today" view stays in TUI-57; courses can
+  be made only from the Add class dialog, and terms and rooms have no screens yet (TUI-64); leaving the attendance sheet with unsaved
   marks has no warning yet.
   - Assumption: taken during the build without asking; the owner hasn't stated it.
 - **Tasks:** TUI-112, TUI-57, TUI-64.

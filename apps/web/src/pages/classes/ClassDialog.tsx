@@ -1,6 +1,13 @@
-import type { Class, ScheduleResult, ScheduleSlot } from '@edustrux/shared';
+import type {
+  Class,
+  Course,
+  GradeLevel,
+  ScheduleResult,
+  ScheduleSlot,
+  Subject,
+} from '@edustrux/shared';
 import { MAX_SCHEDULE_SLOTS } from '@edustrux/shared';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
@@ -19,12 +26,14 @@ import {
   useCourses,
   useRefreshClasses,
   useRooms,
+  useSubjects,
   useTeachers,
   useTerms,
 } from '../../lib/classes';
 import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
-import { useBranches } from '../../lib/people';
+import { useBranches, useGradeLevels } from '../../lib/people';
+import { can } from '../../lib/roles';
 import { Toggle } from '../people/Toggle';
 
 /** A weekly slot being typed: times as the inputs hold them. */
@@ -215,6 +224,138 @@ export function ClassDialog({
   );
 }
 
+/** The course select's choice that opens the new-course fields, and their subject or grade. */
+const NEW = 'new';
+
+/** A course being made in the dialog: an existing subject and grade by id, or new ones by name. */
+type CourseDraft = {
+  subjectId: string;
+  subjectName: string;
+  gradeId: string;
+  gradeName: string;
+  minutes: string;
+};
+
+/**
+ * A failed step of making a course, with its field errors moved under the step's name
+ * ("subject.name"), so they show on its field and not on the class's own name.
+ */
+async function step<T>(prefix: string, run: Promise<T>): Promise<T> {
+  try {
+    return await run;
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    const fields = Object.fromEntries(
+      Object.entries(err.fields).map(([key, messages]) => [`${prefix}.${key}`, messages]),
+    );
+    throw new ApiError(err.status, err.code, err.message, fields);
+  }
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * A new course's subject, grade level and lesson length (TUI-112). A subject or grade level
+ * can be typed in when it's new, by those who may add them (`org:write`); others choose from
+ * the ones there are.
+ */
+function NewCourseFields({
+  draft,
+  onChange,
+  errors,
+}: {
+  draft: CourseDraft;
+  onChange: (draft: CourseDraft) => void;
+  errors: Record<string, string>;
+}) {
+  const { membership } = useOrg();
+  const subjects = useSubjects().data?.data ?? [];
+  const grades = useGradeLevels().data?.data ?? [];
+  const canAdd = can(membership.role, 'org:write');
+  const set = (patch: Partial<CourseDraft>) => onChange({ ...draft, ...patch });
+  // With nothing to choose from, the owner types the first one in.
+  const subjectId = draft.subjectId || (canAdd && subjects.length === 0 ? NEW : '');
+  const gradeId = draft.gradeId || (canAdd && grades.length === 0 ? NEW : '');
+  const stuck = !canAdd && (subjects.length === 0 || grades.length === 0);
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border bg-canvas/60 p-4">
+      <div>
+        <p className="text-label font-semibold text-text">{t('classes.newCourse.title')}</p>
+        <p className="text-meta text-muted">{t('classes.newCourse.help')}</p>
+      </div>
+      {stuck ? <Notice tone="warning">{t('classes.newCourse.ownerOnly')}</Notice> : null}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          {subjects.length > 0 || !canAdd ? (
+            <SelectField
+              label={t('classes.field.subject')}
+              required
+              value={subjectId}
+              error={errors['course.subjectId']}
+              onChange={(e) => set({ subjectId: e.target.value })}
+              options={[
+                { value: '', label: t('classes.field.choose') },
+                ...subjects.map((s) => ({ value: s.id, label: s.name })),
+                ...(canAdd ? [{ value: NEW, label: t('classes.field.newSubject') }] : []),
+              ]}
+            />
+          ) : null}
+          {subjectId === NEW ? (
+            <TextField
+              label={subjects.length ? t('classes.field.subjectName') : t('classes.field.subject')}
+              required
+              maxLength={120}
+              value={draft.subjectName}
+              placeholder={t('classes.field.subjectPlaceholder')}
+              error={errors['subject.name']}
+              onChange={(e) => set({ subjectId: NEW, subjectName: e.target.value })}
+            />
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-3">
+          {grades.length > 0 || !canAdd ? (
+            <SelectField
+              label={t('classes.field.grade')}
+              required
+              value={gradeId}
+              error={errors['course.gradeLevelId']}
+              onChange={(e) => set({ gradeId: e.target.value })}
+              options={[
+                { value: '', label: t('classes.field.choose') },
+                ...grades.map((g) => ({ value: g.id, label: g.name })),
+                ...(canAdd ? [{ value: NEW, label: t('classes.field.newGrade') }] : []),
+              ]}
+            />
+          ) : null}
+          {gradeId === NEW ? (
+            <TextField
+              label={grades.length ? t('classes.field.gradeName') : t('classes.field.grade')}
+              required
+              maxLength={120}
+              value={draft.gradeName}
+              placeholder={t('classes.field.gradePlaceholder')}
+              error={errors['grade.name']}
+              onChange={(e) => set({ gradeId: NEW, gradeName: e.target.value })}
+            />
+          ) : null}
+        </div>
+        <TextField
+          label={t('classes.field.lessonLength')}
+          type="number"
+          inputMode="numeric"
+          min={5}
+          max={600}
+          value={draft.minutes}
+          error={errors['course.durationMinutes']}
+          helper={t('classes.field.lessonLengthHelp')}
+          onChange={(e) => set({ minutes: e.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
   const { membership } = useOrg();
   const format = useFormat();
@@ -253,10 +394,85 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
     klass ? klass.schedule.map(toDraft) : [{ weekday: '1', startTime: '16:00', endTime: '17:00' }],
   );
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<CourseDraft>({
+    subjectId: '',
+    subjectName: '',
+    gradeId: '',
+    gradeName: '',
+    minutes: '60',
+  });
+  const queryClient = useQueryClient();
+  const subjects = useSubjects();
+  const grades = useGradeLevels();
   const rooms = useRooms(branchId);
-  const course = courses.data?.data.find((c) => c.id === courseId);
+  const noCourses = courses.isSuccess && courses.data.data.length === 0;
+  // With no course yet, the dialog starts on making one.
+  const chosenCourse = courseId || (noCourses && !klass ? NEW : '');
+  const makingCourse = !klass && chosenCourse === NEW;
+  const course = courses.data?.data.find((c) => c.id === chosenCourse);
+  const lessonMinutes = makingCourse
+    ? Number(draft.minutes) || null
+    : (course?.durationMinutes ?? null);
   // Branches load after the form opens: a single one is chosen without asking.
   const branch = branchId || (branchChoices.length === 1 ? branchChoices[0]!.id : '');
+
+  /**
+   * The course a new class is of: the one chosen, or the one the new-course fields describe.
+   * A subject, grade level or course that already exists by that name is used, not made again;
+   * what is made is kept, so a retry after the class fails doesn't make it twice.
+   */
+  async function resolveCourse(): Promise<string> {
+    if (!makingCourse) return chosenCourse;
+    const path = (rest: string) => orgApiPath(membership, rest);
+    const subjectId = draft.subjectId && draft.subjectId !== NEW ? draft.subjectId : '';
+    const gradeId = draft.gradeId && draft.gradeId !== NEW ? draft.gradeId : '';
+    const subject =
+      subjectId ||
+      subjects.data?.data.find((s) => sameName(s.name, draft.subjectName))?.id ||
+      (
+        await step(
+          'subject',
+          api<Subject>('POST', path('/subjects'), { body: { name: draft.subjectName.trim() } }),
+        )
+      ).id;
+    const grade =
+      gradeId ||
+      grades.data?.data.find((g) => sameName(g.name, draft.gradeName))?.id ||
+      (
+        await step(
+          'grade',
+          api<GradeLevel>('POST', path('/grade-levels'), {
+            body: { name: draft.gradeName.trim() },
+          }),
+        )
+      ).id;
+    const existing = courses.data?.data.find(
+      (c) =>
+        c.subjectId === subject &&
+        c.gradeLevelId === grade &&
+        c.curriculum === null &&
+        c.teachingMedium === null,
+    );
+    const made =
+      existing ??
+      (await step(
+        'course',
+        api<Course>('POST', path('/courses'), {
+          body: {
+            subjectId: subject,
+            gradeLevelId: grade,
+            durationMinutes: draft.minutes ? Number(draft.minutes) : null,
+          },
+        }),
+      ));
+    await Promise.all(
+      [['subjects'], ['grade-levels'], ['courses']].map(([name]) =>
+        queryClient.invalidateQueries({ queryKey: [name, membership.org.id] }),
+      ),
+    );
+    setCourseId(made.id);
+    return made.id;
+  }
 
   const save = useMutation({
     mutationFn: async () => {
@@ -275,9 +491,10 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
           },
         });
       }
+      const theCourse = await resolveCourse();
       const created = await api<Class>('POST', orgApiPath(membership, '/classes'), {
         body: {
-          courseId,
+          courseId: theCourse,
           termId: ongoing ? null : termId || null,
           branchId: branch,
           name: name.trim(),
@@ -319,7 +536,23 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
   function submit(event: FormEvent) {
     event.preventDefault();
     const local: Record<string, string> = {};
-    if (!klass && !courseId) local.courseId = t('classes.error.required');
+    if (!klass && !chosenCourse) local.courseId = t('classes.error.required');
+    if (makingCourse) {
+      const canAdd = can(membership.role, 'org:write');
+      const noSubjects = (subjects.data?.data.length ?? 0) === 0;
+      const noGrades = (grades.data?.data.length ?? 0) === 0;
+      const subjectId = draft.subjectId || (canAdd && noSubjects ? NEW : '');
+      const gradeId = draft.gradeId || (canAdd && noGrades ? NEW : '');
+      if (!subjectId) local['course.subjectId'] = t('classes.error.required');
+      else if (subjectId === NEW && !draft.subjectName.trim())
+        local['subject.name'] = t('classes.error.required');
+      if (!gradeId) local['course.gradeLevelId'] = t('classes.error.required');
+      else if (gradeId === NEW && !draft.gradeName.trim())
+        local['grade.name'] = t('classes.error.required');
+      const minutes = Number(draft.minutes);
+      if (draft.minutes && (!Number.isInteger(minutes) || minutes < 5 || minutes > 600))
+        local['course.durationMinutes'] = t('classes.error.lessonLength');
+    }
     if (!name.trim()) local.name = t('classes.error.required');
     if (!klass && !branch) local.branchId = t('classes.error.required');
     if (!klass && !ongoing && !termId) local.termId = t('classes.error.required');
@@ -331,11 +564,9 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
     if (Object.keys(local).length === 0) save.mutate();
   }
 
-  const noCourses = courses.isSuccess && courses.data.data.length === 0;
-
   return (
     <form noValidate onSubmit={submit} className="flex flex-col gap-5">
-      {noCourses && !klass ? <Notice tone="warning">{t('classes.noCourses')}</Notice> : null}
+      {noCourses && !klass ? <Notice tone="info">{t('classes.noCourses')}</Notice> : null}
 
       <Section title={t('classes.section.class')}>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -345,7 +576,7 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
             <SelectField
               label={t('classes.field.course')}
               required
-              value={courseId}
+              value={chosenCourse}
               error={errors.courseId}
               onChange={(e) => setCourseId(e.target.value)}
               options={[
@@ -353,9 +584,15 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
                 ...(courses.data?.data ?? [])
                   .map((c) => ({ value: c.id, label: courseLabel(c.id) }))
                   .sort((a, b) => a.label.localeCompare(b.label)),
+                { value: NEW, label: t('classes.field.newCourse') },
               ]}
             />
           )}
+          {makingCourse ? (
+            <div className="sm:col-span-2 sm:row-start-2">
+              <NewCourseFields draft={draft} onChange={setDraft} errors={errors} />
+            </div>
+          ) : null}
           <TextField
             label={t('classes.field.name')}
             required
@@ -504,7 +741,7 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
             slots={slots}
             onChange={setSlots}
             errors={errors}
-            lessonMinutes={course?.durationMinutes ?? null}
+            lessonMinutes={lessonMinutes}
           />
         </Section>
       )}
@@ -515,7 +752,7 @@ function ClassForm({ klass, onClose }: { klass?: Class; onClose: () => void }) {
         <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" loading={save.isPending} disabled={noCourses && !klass}>
+        <Button type="submit" loading={save.isPending}>
           {klass ? t('classes.save') : t('classes.add')}
         </Button>
       </div>
