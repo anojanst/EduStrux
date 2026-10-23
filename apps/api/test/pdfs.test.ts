@@ -155,6 +155,22 @@ describe('GET /invoices/{id}/pdf', () => {
     ).toBe(400);
   });
 
+  it('colours the page with the org theme', async () => {
+    const { base, pereraInvoice, org } = await setup();
+    const owner = await ownerToken(org.id);
+    const before = await raw('GET', `${base}/invoices/${pereraInvoice.id}/pdf?format=html`, owner);
+    expect(html(before)).toContain('--brand: #155d63;');
+
+    const current = await call('GET', base, { token: owner });
+    const patch = await call('PATCH', base, {
+      token: owner,
+      body: { updatedAt: current.body.updatedAt, theme: 'berry' },
+    });
+    expect(patch.status).toBe(200);
+    const after = await raw('GET', `${base}/invoices/${pereraInvoice.id}/pdf?format=html`, owner);
+    expect(html(after)).toContain('--brand: #b4235a;');
+  });
+
   it('is 403 for a teacher and 404 for another org or a missing invoice', async () => {
     const { base, member, pereraInvoice } = await setup();
     const teacher = await member('teacher');

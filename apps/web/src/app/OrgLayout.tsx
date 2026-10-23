@@ -11,10 +11,11 @@ import { AuthLayout } from '../layouts/AuthLayout';
 import { api } from '../lib/api';
 import { OrgContext, orgApiPath } from '../lib/org';
 import { rememberOrg, useMe } from '../lib/session';
+import { useOrgTheme } from '../lib/theme';
 
 /**
  * `/o/:orgSlug/*`: the org from the user's memberships (`GET /me`), its settings, and the app
- * shell around the page. A slug the user isn't a member of shows a dead end, not the org.
+ * shell around the page, in the org's theme (D-165). A slug the user isn't a member of shows a dead end, not the org.
  */
 export function OrgLayout() {
   const { orgSlug = '' } = useParams();
@@ -31,6 +32,7 @@ export function OrgLayout() {
   useEffect(() => {
     if (membership) rememberOrg(membership.org.slug);
   }, [membership]);
+  useOrgTheme(membership?.org.id, org.data?.theme);
 
   if (me.isPending) return <PageLoading />;
   if (me.isError) return <PageError error={me.error} onRetry={() => void me.refetch()} />;

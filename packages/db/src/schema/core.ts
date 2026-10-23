@@ -1,4 +1,4 @@
-import { ROLES } from '@edustrux/shared';
+import { ROLES, THEME_KEYS } from '@edustrux/shared';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { now, orgColumns, timestamps } from '../columns';
 
@@ -27,7 +27,7 @@ export const orgs = sqliteTable(
     locale: text('locale').notNull(),
     dateFormat: text('date_format', { enum: ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] }).notNull(),
     singleTutorMode: integer('single_tutor_mode', { mode: 'boolean' }).notNull().default(false),
-    brandColor: text('brand_color'),
+    theme: text('theme', { enum: THEME_KEYS }).notNull().default('teal'),
     taxNumber: text('tax_number'),
     plan: text('plan', { enum: ['trial', 'solo', 'small', 'custom'] })
       .notNull()
