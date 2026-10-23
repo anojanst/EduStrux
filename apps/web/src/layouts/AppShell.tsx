@@ -6,6 +6,7 @@ import {
   House,
   LogOut,
   Menu,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -46,6 +47,9 @@ function navFor(role: Role): NavItem[] {
   }
   if (can(role, 'staff:read')) {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });
+  }
+  if (can(role, 'org:write')) {
+    items.push({ to: 'settings/theme', label: 'nav.theme', Icon: Palette });
   }
   return items;
 }
@@ -99,7 +103,7 @@ function useCollapsed() {
 }
 
 /**
- * The app shell (ui-design.md §5): a teal sidebar on desktop that collapses to a 72px icon rail,
+ * The app shell (ui-design.md §5): a sidebar in the org's theme on desktop that collapses to a 72px icon rail,
  * a top bar with a drawer on smaller screens, and the org's banner above the page. The page fills
  * the width beside the sidebar, edge to edge.
  */

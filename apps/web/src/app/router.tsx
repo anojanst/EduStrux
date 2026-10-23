@@ -14,6 +14,7 @@ import { FamilyPage } from '../pages/people/FamilyPage';
 import { PeoplePage } from '../pages/people/PeoplePage';
 import { StudentPage } from '../pages/people/StudentPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { ThemePage } from '../pages/settings/ThemePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
 import { SignUpPage } from '../pages/SignUpPage';
@@ -94,6 +95,7 @@ export const routes = [
               { path: 'families/:familyId', element: <FamilyPage /> },
               { path: 'students/:studentId', element: <StudentPage /> },
               { path: 'settings/team', element: <TeamPage /> },
+              { path: 'settings/theme', element: <ThemePage /> },
               { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },
             ],

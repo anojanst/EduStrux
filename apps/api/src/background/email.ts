@@ -92,6 +92,7 @@ export async function deliverEmail(
     if (!found || found.recipient.emailStatus !== 'queued' || !found.recipient.email) return;
     const email = renderEmail({
       orgName: org.name,
+      theme: org.theme,
       subject: found.message.subject,
       body: found.message.body,
     });
@@ -132,6 +133,7 @@ export async function deliverEmail(
       : '';
     const email = renderEmail({
       orgName: data.orgName,
+      theme: org.theme,
       subject: t('email.invitation.subject', { orgName: data.orgName }),
       body:
         t('email.invitation.body', {

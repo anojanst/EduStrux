@@ -4134,6 +4134,8 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-142 · 2026-10-22 · PDFs through Browser Rendering's REST API, with a printable HTML fallback
 
+**Superseded in part by D-165** (the PDF's colour comes from the org's preset theme, not a free brand colour).
+
 - **Context:** TUI-59 builds invoice PDFs and payment receipts. D-025 chose Cloudflare Browser
   Rendering; its Worker binding is a wrangler change, which the session didn't make. Built in the
   session of 2026-10-21 (Q-33 to Q-35).
@@ -4651,3 +4653,29 @@ under "Not changed here" for a reach that is a subquery.
   attendance summary per student and invoice numbers would each fill in a part of the design.
   - Assumption: taken during the build without asking; the owner hasn't stated it.
 - **Tasks:** TUI-109, TUI-40.
+
+## D-165 · 2026-10-23 · Org colour comes from a preset theme, everywhere
+
+- **Context:** TUI-110. Orgs had a free `brandColor` (`#RRGGBB`) used only by PDFs (D-142). The
+  owner asked for predefined themes rather than a colour picker.
+- **Decision:** (stated by the owner)
+  - An org picks one of **8 preset themes**, not a free colour: teal (the default, the existing
+    look), ocean, indigo, violet, berry, forest, amber, graphite. `brandColor` is dropped and
+    `orgs.theme` replaces it, defaulting to teal.
+  - A theme sets six colours: brand, brand hover, brand soft, sidebar, raised sidebar and
+    sidebar text. Status colours, text and borders never change. Every text pair passes WCAG AA
+    (the lowest is white on amber, 5.0:1).
+  - It applies **everywhere**: the staff app, the parent portal, PDFs and emails. Sign-in and
+    sign-up stay teal, since they're outside any org. The EduStrux logo mark follows the theme.
+  - Only the owner changes it (`PATCH /orgs/{orgId}` with `theme`, `org:write`); every other
+    role gets 403. A value outside the 8 is 400.
+  - The owner changes it on **Settings › Theme**, designed in Figma Make by the owner: a grid of
+    the 8 themes with a live preview of the staff app, parent portal, invoices and emails.
+  - PDF headings use the theme's brand colour (they were `#1f2933` when no brand colour was
+    set). Emails show the org name as a header line in the brand colour; the plain-text part
+    is unchanged.
+  - API and UI built together in one task.
+- **Consequences:** The migration drops `brand_color` (pre-launch, no real data); production
+  needs the migration run after merge. The org profile screen (TUI-64) no longer needs a colour
+  picker. Parent portal screens pick up the theme when they're built.
+- **Tasks:** TUI-110, TUI-64.

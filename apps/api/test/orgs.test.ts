@@ -82,7 +82,7 @@ describe('orgs', () => {
 
     const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
       token,
-      body: { updatedAt: org.updatedAt, taxNumber: 'GST 123-456-789', brandColor: '#336699' },
+      body: { updatedAt: org.updatedAt, taxNumber: 'GST 123-456-789' },
     });
     expect(res.status).toBe(200);
     expect(res.body.taxNumber).toBe('GST 123-456-789');
@@ -218,4 +218,69 @@ describe('permissions', () => {
       expect(res.body.error.code).toBe('forbidden');
     },
   );
+});
+
+describe('theme', () => {
+  it('starts on teal, and the owner can pick another preset', async () => {
+    const { token } = await newUser('owner');
+    const org = await newOrg(token);
+    expect((await call('GET', `/api/v1/orgs/${org.id}`, { token })).body.theme).toBe('teal');
+
+    const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt, theme: 'berry' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.theme).toBe('berry');
+    expect((await call('GET', `/api/v1/orgs/${org.id}`, { token })).body.theme).toBe('berry');
+
+    const audit = await call('GET', `/api/v1/orgs/${org.id}/audit-log`, { token });
+    expect(audit.body.data[0]).toMatchObject({ action: 'org.updated' });
+    expect(JSON.stringify(audit.body.data[0])).toContain('berry');
+  });
+
+  it.each(['pink', '#336699', '', null])(
+    'rejects %j: only the presets are allowed',
+    async (theme) => {
+      const { token } = await newUser('owner');
+      const org = await newOrg(token);
+      const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+        token,
+        body: { updatedAt: org.updatedAt, theme },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error.fields).toHaveProperty('theme');
+    },
+  );
+
+  it.each(['branch_manager', 'front_desk', 'teacher', 'parent', 'accountant'] as const)(
+    'is the owner’s choice: %s gets 403',
+    async (role) => {
+      const owner = await newUser('owner');
+      const org = await newOrg(owner.token);
+      const member = await newUser(role);
+      const token = await addMember(org.id, member.clerkUserId, role);
+
+      const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+        token,
+        body: { updatedAt: org.updatedAt, theme: 'ocean' },
+      });
+      expect(res.status).toBe(403);
+      const after = await call('GET', `/api/v1/orgs/${org.id}`, { token: owner.token });
+      expect(after.body.theme).toBe('teal');
+    },
+  );
+
+  it('is 404 for another org', async () => {
+    const owner = await newUser('owner');
+    const org = await newOrg(owner.token);
+    const stranger = await newUser('owner_b');
+    await newOrg(stranger.token, 'Harmony Music School');
+
+    const res = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token: stranger.token,
+      body: { updatedAt: org.updatedAt, theme: 'ocean' },
+    });
+    expect(res.status).toBe(404);
+  });
 });

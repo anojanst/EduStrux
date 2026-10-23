@@ -545,6 +545,7 @@ describe('sending an email (TUI-65)', () => {
     });
     expect(sent.html).toContain('<p>See you tomorrow &amp; thanks.</p>');
     expect(sent.html).not.toContain('<today>');
+    expect(sent.html).toMatch(/color: #155d63;[^>]*>Bright Minds Tuition<\/p>/);
     expect(sent.text).toContain('Sent by Bright Minds Tuition.');
     expect(await statusOf(recipientId)).toMatchObject({
       emailStatus: 'sent',
