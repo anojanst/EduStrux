@@ -35,7 +35,7 @@ import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './que
 // To cover another statement, add a row to the table it belongs in.
 
 const IDS = ['id_a', 'id_b'];
-/** What a class or lesson shows of other modules, as the classes service builds it (TUI-111). */
+/** What a class or lesson shows of other modules, as the classes service builds it (TUI-112). */
 const labels = (ctx: OrgCtx): classes.Labels => ({
   teacherName: (membershipId) => memberNameOf(ctx, membershipId),
   roomName: (roomId) => roomNameOf(ctx, roomId),
@@ -614,7 +614,7 @@ describe('a session’s roster is read through the session’s id, in the stage 
   });
 });
 
-describe('what a class or lesson shows of other modules is read by its own ids (TUI-111)', () => {
+describe('what a class or lesson shows of other modules is read by its own ids (TUI-112)', () => {
   // The teacher's and room's names, the places taken and the marks, each looked up for its row.
   const extras: Reached = [
     ['memberships', 'id'],

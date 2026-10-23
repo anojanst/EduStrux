@@ -27,7 +27,7 @@ import { can } from '../../lib/roles';
 import { EmptyState } from '../people/parts';
 
 /**
- * A lesson's attendance sheet (TUI-111): present, late, absent or excused for each student
+ * A lesson's attendance sheet (TUI-112): present, late, absent or excused for each student
  * expected, with a note for the family. Built for a teacher's phone first. It can be marked from
  * the lesson's own day on, and not once it is cancelled.
  */

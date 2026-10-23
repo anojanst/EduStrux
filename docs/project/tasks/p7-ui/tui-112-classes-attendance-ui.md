@@ -1,5 +1,5 @@
 ---
-id: TUI-111
+id: TUI-112
 title: 'Classes & attendance UI: classes list, add class, class page, enrol, attendance sheet'
 status: done
 phase: P7
@@ -12,7 +12,7 @@ branch: task/tui-111-classes-attendance-ui
 pr: 57
 ---
 
-# TUI-111 Classes & attendance UI: classes list, add class, class page, enrol, attendance sheet
+# TUI-112 Classes & attendance UI: classes list, add class, class page, enrol, attendance sheet
 
 Split from TUI-40 (staff UI vertical slice): the classes area and marking attendance, built to the
 owner's Figma Make design (https://finch-coal-95289917.figma.site/, Classes screens).
@@ -32,5 +32,8 @@ API additions (owner decision 2026-10-23): classes and lessons carry `teacherNam
 
 The teacher's phone "Today" view stays in TUI-57.
 
-Decisions: D-166 (teacher and room names, GET /teachers), D-167 (places taken, lesson marks),
-D-168 (what the classes and attendance screens show, and what waits).
+Decisions: D-167 (teacher and room names, GET /teachers), D-168 (places taken, lesson marks),
+D-169 (what the classes and attendance screens show, and what waits).
+
+Numbered TUI-112 after the light-themes task merged as TUI-111 (#56) in parallel; the branch
+keeps the name it was pushed with.

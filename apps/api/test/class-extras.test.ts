@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { call, db, newOrg, newUser } from './helpers';
 
-// What classes and lessons show of other modules (TUI-111): the teacher's and room's names, the
+// What classes and lessons show of other modules (TUI-112): the teacher's and room's names, the
 // places taken, the attendance counts on a lesson, and who a class can be given to.
 
 const TZ = 'Pacific/Auckland'; // sampleOrg's timezone

@@ -65,7 +65,7 @@ export type StaffMember = z.infer<typeof StaffMember>;
 
 /**
  * Someone a class or lesson can be given to: an active member of staff. Only what a picker needs,
- * so staff who can't read the staff list can still choose a teacher (TUI-111).
+ * so staff who can't read the staff list can still choose a teacher (TUI-112).
  */
 export const Teacher = z
   .object({

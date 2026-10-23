@@ -189,7 +189,7 @@ function saveError(err: unknown): string | null {
 }
 
 /**
- * Add a class, with its weekly schedule, or edit one (TUI-111). A class keeps its course, term
+ * Add a class, with its weekly schedule, or edit one (TUI-112). A class keeps its course, term
  * and branch, so editing shows them but doesn't change them; its schedule has a dialog of its
  * own on the class page.
  */

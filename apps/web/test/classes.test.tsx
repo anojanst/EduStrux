@@ -13,7 +13,7 @@ import { renderRoutes, stubApi, Where } from './render';
 
 vi.mock('@clerk/react', async () => (await import('./clerk')).clerkModule);
 
-// The classes area (TUI-111): the list, adding a class, the class page and the attendance sheet.
+// The classes area (TUI-112): the list, adding a class, the class page and the attendance sheet.
 
 const org = { id: 'org_1', name: 'Bright Minds Tuition', slug: 'bright-minds' };
 const inOrg =

@@ -98,7 +98,7 @@ export async function listStaff(
 }
 
 /**
- * Who a class or lesson can be given to (TUI-111): every active member of staff, with only what
+ * Who a class or lesson can be given to (TUI-112): every active member of staff, with only what
  * a picker needs. Staff limited to some branches get those who work in one of them.
  */
 export async function listTeachers(ctx: OrgCtx, access: Access): Promise<TeacherList> {

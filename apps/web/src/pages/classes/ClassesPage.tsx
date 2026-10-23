@@ -37,7 +37,7 @@ import { ClassDialog } from './ClassDialog';
 import { Capacity, scheduleLabel } from './parts';
 
 /**
- * Classes (TUI-111): the classes the caller reaches, by term, branch, teacher and course. A
+ * Classes (TUI-112): the classes the caller reaches, by term, branch, teacher and course. A
  * teacher sees the classes they teach. Parents use the portal instead.
  */
 export function ClassesPage() {

@@ -87,7 +87,7 @@ const toSlot = (slot: ScheduleSlot): ScheduleSlot => ({
   endTime: slot.endTime,
 });
 
-/** What a class shows of other modules (TUI-111). */
+/** What a class shows of other modules (TUI-112). */
 type ClassExtras = Pick<Class, 'teacherName' | 'roomName' | 'enrolledCount'>;
 
 export function toClass(row: repo.ClassRow, slots: ScheduleSlot[], extras: ClassExtras): Class {

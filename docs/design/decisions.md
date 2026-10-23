@@ -4680,9 +4680,28 @@ under "Not changed here" for a reach that is a subquery.
   picker. Parent portal screens pick up the theme when they're built.
 - **Tasks:** TUI-110, TUI-64.
 
-## D-166 · 2026-10-23 · Classes and lessons carry teacher and room names; a teacher list for classes
+## D-166 · 2026-10-23 · Four light-sidebar themes
 
-- **Context:** TUI-111. The classes list, the class page and the lessons show who teaches and
+- **Context:** TUI-111. After D-165 shipped with 8 dark-sidebar themes, the owner asked for light
+  ones.
+- **Decision:** (stated by the owner)
+  - Add **4 light themes**, Light Teal, Sky, Lavender and Rose (keys `light-teal`, `sky`,
+    `lavender`, `rose`): a pale sidebar with dark text, the brand colour still on buttons, links
+    and the active nav item. 12 themes in all; the light ones sit after the dark ones in the
+    picker. Teal stays the default.
+  - Two tokens join a theme: `--sidebar-strong` (names and hovered items in the sidebar) and
+    `--sidebar-active` (the active nav item's pill, also behind the sidebar logo mark). Both are
+    white on the dark themes, so they look as before. The sidebar gets a faint right edge
+    (`black/5`), which only shows on a light one.
+  - Every text pair still passes WCAG AA, checked by a test over the whole catalog
+    (`apps/web/test/themes.test.ts`); the lowest is brand on Rose's active pill, 4.68:1.
+- **Consequences:** No migration: the theme list is enforced in code (`orgs.theme` is plain
+  text). A theme added later must pass the contrast test.
+- **Tasks:** TUI-111.
+
+## D-167 · 2026-10-23 · Classes and lessons carry teacher and room names; a teacher list for classes
+
+- **Context:** TUI-112. The classes list, the class page and the lessons show who teaches and
   where, but `Class` and `Session` had only `teacherId` and `roomId`. Choosing a teacher needs a
   list of staff, and `GET /staff` is `staff:read`, which front desk doesn't have.
 - **Decision:** (stated by the owner)
@@ -4697,11 +4716,11 @@ under "Not changed here" for a reach that is a subquery.
     with theirs.
 - **Consequences:** Additive: no migration, and existing clients ignore the new fields. The
   names come from correlated subqueries in the same statement, so no extra database trip.
-- **Tasks:** TUI-111.
+- **Tasks:** TUI-112.
 
-## D-167 · 2026-10-23 · Places taken on a class, marks on a lesson
+## D-168 · 2026-10-23 · Places taken on a class, marks on a lesson
 
-- **Context:** TUI-111. The classes list shows places taken against capacity, and the class page
+- **Context:** TUI-112. The classes list shows places taken against capacity, and the class page
   shows whether each lesson is marked. The Home dashboard had the same gap (ui-design §9).
 - **Decision:** (stated by the owner)
   - `Class.enrolledCount`: places taken today, the active enrolments not ended by today,
@@ -4711,11 +4730,11 @@ under "Not changed here" for a reach that is a subquery.
     `GET /sessions` and `GET /portal/sessions`, since a parent sees only their own child's marks.
 - **Consequences:** Additive: no migration. The Home dashboard can show per-lesson marked state
   from `GET /sessions` without one attendance read per lesson.
-- **Tasks:** TUI-111.
+- **Tasks:** TUI-112.
 
-## D-168 · 2026-10-23 · What the Classes and attendance screens show, and what waits
+## D-169 · 2026-10-23 · What the Classes and attendance screens show, and what waits
 
-- **Context:** TUI-111 builds the classes list, Add/edit class, the class page, enrolling and the
+- **Context:** TUI-112 builds the classes list, Add/edit class, the class page, enrolling and the
   attendance sheet from the owner's Figma Make design. Some of the design asks for what the API
   doesn't have, and some of it had small mistakes.
 - **Decision:**
@@ -4762,4 +4781,4 @@ under "Not changed here" for a reach that is a subquery.
   and rooms have no settings screens yet (TUI-64); leaving the attendance sheet with unsaved
   marks has no warning yet.
   - Assumption: taken during the build without asking; the owner hasn't stated it.
-- **Tasks:** TUI-111, TUI-57, TUI-64.
+- **Tasks:** TUI-112, TUI-57, TUI-64.
