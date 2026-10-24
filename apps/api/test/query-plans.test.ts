@@ -18,6 +18,7 @@ import * as enrolmentService from '../src/modules/enrolment/service';
 import * as learning from '../src/modules/learning/repository';
 import { termDates } from '../src/modules/calendar/for-classes';
 import { lessonLengths } from '../src/modules/curriculum/for-classes';
+import { classesOfCourse } from '../src/modules/classes/for-curriculum';
 import { placesTakenIn, timetableOf } from '../src/modules/enrolment/for-classes';
 import { marksAt } from '../src/modules/attendance/for-classes';
 import { roomNameOf } from '../src/modules/branches/for-classes';
@@ -48,6 +49,9 @@ const marks =
   (ctx: OrgCtx): classes.Marks =>
   (sessionId, status) =>
     marksAt(ctx, sessionId, status);
+const courseExtras = (ctx: OrgCtx): curriculum.CourseExtras => ({
+  classCount: (courseId) => classesOfCourse(ctx, courseId),
+});
 const RANGE = { startDate: '2026-01-01', endDate: '2026-03-31' };
 /** Tables in a plan, each with the column it must be reached by. */
 type Reached = [table: string, column: string][];
@@ -655,6 +659,16 @@ describe('what a class or lesson shows of other modules is read by its own ids (
   });
 });
 
+describe('a course’s class count is read by its own id (TUI-113)', () => {
+  it('GET /courses counts each course’s classes by course id', async () => {
+    const plan = await planOf((ctx) =>
+      curriculum.listCoursesShown(ctx, 50, undefined, {}, courseExtras(ctx)),
+    );
+    // The page itself walks the org's courses by id (below); each count is one index search.
+    expect(plan).toMatch(searchBy('classes', 'course_id'));
+  });
+});
+
 describe('a class’s emergency contacts are read by a query for its students (TUI-102)', () => {
   const onRoster = (ctx: OrgCtx) => enrolmentService.studentsEnrolledIn(ctx, IDS);
   const classesStudents: Reached = [['enrolments', 'class_id']];
@@ -1027,13 +1041,13 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
       'GET /courses',
       'courses',
       'courses_org_id_uq',
-      (ctx) => curriculum.listCourses(ctx, 50, undefined, {}),
+      (ctx) => curriculum.listCoursesShown(ctx, 50, undefined, {}, courseExtras(ctx)),
     ],
     [
       'GET /courses, a later page',
       'courses',
       'courses_org_id_uq',
-      (ctx) => curriculum.listCourses(ctx, 50, 'id_a', {}),
+      (ctx) => curriculum.listCoursesShown(ctx, 50, 'id_a', {}, courseExtras(ctx)),
     ],
     ['GET /subjects', 'subjects', 'subjects_org_id_uq', (ctx) => curriculum.listSubjects(ctx, 50)],
     [

@@ -15,7 +15,7 @@ import { Link, useSearchParams } from 'react-router';
 import { FilterSelect } from '../../components/FilterSelect';
 import { PageError, PageHeader } from '../../components/PageState';
 import { Avatar } from '../../components/ui/Avatar';
-import { Button } from '../../components/ui/Button';
+import { Button, buttonClass } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { t } from '../../i18n';
 import { api, ApiError } from '../../lib/api';
@@ -24,6 +24,7 @@ import {
   useClassPaths,
   useCourseLabel,
   useCourses,
+  useCoursesPath,
   useTeachers,
   useTerms,
 } from '../../lib/classes';
@@ -64,6 +65,7 @@ function Classes() {
   const courses = useCourses();
   const teachers = useTeachers();
   const courseLabel = useCourseLabel();
+  const coursesPath = useCoursesPath();
 
   const termList = terms.data?.data ?? [];
   const thisTerm = currentTerm(termList, format.today);
@@ -221,9 +223,14 @@ function Classes() {
               body={canWrite ? t('classes.empty.body') : undefined}
               action={
                 canWrite ? (
-                  <Button icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
-                    {t('classes.add')}
-                  </Button>
+                  <>
+                    <Button icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+                      {t('classes.add')}
+                    </Button>
+                    <Link to={coursesPath()} className={buttonClass('secondary')}>
+                      {t('classes.manageCourses')}
+                    </Link>
+                  </>
                 ) : null
               }
             />

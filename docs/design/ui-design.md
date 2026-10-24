@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -372,6 +372,11 @@ Settled when TUI-23 was built (D-158):
   the attendance sheet, a page of its own per lesson with a sticky Save. Changes from the
   source are in D-169. The list filters are a shared `FilterSelect`, used by Families & students
   too.
+- **Settings › Courses** (D-170), from the owner's Figma Make design, for roles that change
+  classes: tabs Courses (grouped by grade level, with classes, lesson length and price),
+  Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also
+  opened from Add class), a small name dialog for subjects and grade levels, and delete dialogs
+  that say what still uses the item, with Delete off.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

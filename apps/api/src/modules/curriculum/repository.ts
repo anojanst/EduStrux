@@ -1,5 +1,5 @@
 import { courses, gradeLevels, now, subjects } from '@edustrux/db';
-import { asc, count, eq, gt, isNull, max, ne, sql } from 'drizzle-orm';
+import { asc, count, eq, getTableColumns, gt, isNull, max, ne, sql, type SQL } from 'drizzle-orm';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
   changedFields,
@@ -279,12 +279,32 @@ export function listCourses(
   return ctx.db
     .select()
     .from(courses)
-    .where(
-      inOrg(ctx, courses, ...courseFilter(filter), afterId ? gt(courses.id, afterId) : undefined),
-    )
+    .where(coursePage(ctx, afterId, filter))
     .orderBy(asc(courses.id))
     .limit(limit + 1);
 }
+
+/** What a listed course shows of other modules: its class count, as the service builds it. */
+export type CourseExtras = { classCount: (courseId: SQLiteColumn) => SQL<number> };
+
+/** A page of courses as `GET /courses` shows them: each with how many classes run it. */
+export function listCoursesShown(
+  ctx: OrgCtx,
+  limit: number,
+  afterId: string | undefined,
+  filter: CourseFilter,
+  extras: CourseExtras,
+) {
+  return ctx.db
+    .select({ ...getTableColumns(courses), classCount: extras.classCount(courses.id) })
+    .from(courses)
+    .where(coursePage(ctx, afterId, filter))
+    .orderBy(asc(courses.id))
+    .limit(limit + 1);
+}
+
+const coursePage = (ctx: OrgCtx, afterId: string | undefined, filter: CourseFilter) =>
+  inOrg(ctx, courses, ...courseFilter(filter), afterId ? gt(courses.id, afterId) : undefined);
 
 export function findCourse(ctx: OrgCtx, id: string) {
   return ctx.db

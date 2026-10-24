@@ -22,6 +22,7 @@ import {
 } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as billing from '../billing/service';
+import { classesOfCourse } from '../classes/for-curriculum';
 import * as classes from '../classes/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
@@ -253,13 +254,24 @@ export async function listCourses(
   const [subject, grade, rows] = await Promise.all([
     filter.subjectId ? repo.findSubject(ctx, filter.subjectId) : undefined,
     filter.gradeLevelId ? repo.findGradeLevel(ctx, filter.gradeLevelId) : undefined,
-    repo.listCourses(ctx, limit, decodeCursor(cursor), filter),
+    repo.listCoursesShown(ctx, limit, decodeCursor(cursor), filter, courseExtras(ctx)),
   ]);
   if (filter.subjectId && !subject) throw notFound('Subject');
   if (filter.gradeLevelId && !grade) throw notFound('Grade level');
   const { data, nextCursor } = toPage(rows, limit);
-  return { data: data.map((row) => forReader(toCourse(row), access)), nextCursor };
+  return {
+    data: data.map(({ classCount, ...row }) => ({
+      ...forReader(toCourse(row), access),
+      classCount,
+    })),
+    nextCursor,
+  };
 }
+
+/** How many classes run each listed course, counted in the statement that lists them. */
+export const courseExtras = (ctx: OrgCtx): repo.CourseExtras => ({
+  classCount: (courseId) => classesOfCourse(ctx, courseId),
+});
 
 export async function getCourse(ctx: OrgCtx, id: string): Promise<Course> {
   const row = await repo.findCourse(ctx, id);

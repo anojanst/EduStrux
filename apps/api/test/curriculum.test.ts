@@ -348,7 +348,7 @@ describe('courses', () => {
 
     const list = await api('GET', '/courses');
     expect(list.status).toBe(200);
-    expect(list.body).toEqual({ data: [created.body], nextCursor: null });
+    expect(list.body).toEqual({ data: [{ ...created.body, classCount: 0 }], nextCursor: null });
 
     const updated = await api('PATCH', `/courses/${created.body.id}`, {
       updatedAt: created.body.updatedAt,
@@ -785,7 +785,7 @@ describe('org isolation', () => {
     ]);
     expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404]);
 
-    expect((await alice.api('GET', '/courses')).body.data).toEqual([course]);
+    expect((await alice.api('GET', '/courses')).body.data).toEqual([{ ...course, classCount: 0 }]);
     expect((await bob.api('GET', '/courses')).body.data).toEqual([]);
   });
 });
@@ -834,7 +834,7 @@ describe('permissions', () => {
         durationMinutes: 90,
       });
       expect(updated.status).toBe(200);
-      expect((await as('GET', '/courses')).body.data).toEqual([updated.body]);
+      expect((await as('GET', '/courses')).body.data).toEqual([{ ...updated.body, classCount: 0 }]);
       expect((await as('DELETE', `/courses/${created.body.id}`)).status).toBe(204);
 
       // The audit rows name the staff member, not the owner.
@@ -895,11 +895,13 @@ describe('permissions', () => {
 
     const list = await as('GET', '/courses');
     expect(list.status).toBe(200);
+    // A list shows how many classes run each course (TUI-113).
+    const listed = (course: Course) => ({ ...course, classCount: 0 });
     if (seesPrice) {
-      expect(list.body.data).toEqual([priced, unpriced]);
+      expect(list.body.data).toEqual([priced, unpriced].map(listed));
     } else {
-      const { defaultPrice: _a, ...pricedSeen } = priced;
-      const { defaultPrice: _b, ...unpricedSeen } = unpriced;
+      const { defaultPrice: _a, ...pricedSeen } = listed(priced);
+      const { defaultPrice: _b, ...unpricedSeen } = listed(unpriced);
       expect(list.body.data).toEqual([pricedSeen, unpricedSeen]);
       expect(list.body.data.some((c: object) => 'defaultPrice' in c)).toBe(false);
     }
