@@ -257,26 +257,29 @@ describe('making a course while adding a class', () => {
     [`${API}/classes?limit=100&termId=trm_4`]: page([]),
   };
 
-  it('lets the owner type the subject and grade, then makes them, the course and the class', async () => {
+  it('opens Add course from Add class, then picks the new course for the class', async () => {
     const made = { ...groupA, id: 'cls_new', courseId: 'crs_new', name: 'Group A', schedule: [] };
+    const newCourse = { ...course, id: 'crs_new', subjectId: 'sbj_new', gradeLevelId: 'grd_new' };
+    let courses: unknown[] = [];
     const calls = stubApi({
       ...empty,
+      [`${API}/courses?limit=200`]: () => ({ body: { data: courses, nextCursor: null } }),
       'POST /api/v1/orgs/org_1/subjects': { status: 201, body: { id: 'sbj_new', name: 'Maths' } },
       'POST /api/v1/orgs/org_1/grade-levels': {
         status: 201,
         body: { id: 'grd_new', name: 'Year 9', sortOrder: 1 },
       },
-      'POST /api/v1/orgs/org_1/courses': {
-        status: 201,
-        body: { ...course, id: 'crs_new', subjectId: 'sbj_new', gradeLevelId: 'grd_new' },
+      'POST /api/v1/orgs/org_1/courses': () => {
+        courses = [newCourse];
+        return { status: 201, body: newCourse };
       },
       'POST /api/v1/orgs/org_1/classes': { status: 201, body: made },
-      'PUT /api/v1/orgs/org_1/classes/cls_new/schedule': {
-        body: { class: made, sessions: { added: 10, removed: 0, kept: 0, through: termEnd } },
-      },
       [`${API}/classes/cls_new`]: { body: made },
       [`${API}/sessions?classId=cls_new&from=${termStart}&to=${termEnd}&limit=200`]: page([]),
       [`${API}/enrolments?classId=cls_new&limit=200`]: page([]),
+      'PUT /api/v1/orgs/org_1/classes/cls_new/schedule': {
+        body: { class: made, sessions: { added: 10, removed: 0, kept: 0, through: termEnd } },
+      },
       [`${API}/timetable/clashes?from=${today}&to=${addDays(today, 91)}&branchId=brn_main`]: {
         body: { data: [] },
       },
@@ -285,21 +288,21 @@ describe('making a course while adding a class', () => {
     await userEvent.click((await screen.findAllByRole('button', { name: 'Add class' }))[0]!);
     const dialog = await screen.findByRole('dialog', { name: 'Add class' });
     expect(
-      await within(dialog).findByText('No courses yet. Set up the first one with this class.'),
+      await within(dialog).findByText('No courses yet. Add one to make a class.'),
     ).toBeVisible();
 
-    // Nothing typed yet: the new course's fields say what they need.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add course' }));
+    const courseDialog = await screen.findByRole('dialog', { name: 'Add course' });
+    await userEvent.type(within(courseDialog).getByLabelText(/^Subject/), 'Maths');
+    await userEvent.type(within(courseDialog).getByLabelText(/^Grade level/), 'Year 9');
+    await userEvent.clear(within(courseDialog).getByLabelText('Lesson length (minutes)'));
+    await userEvent.type(within(courseDialog).getByLabelText('Lesson length (minutes)'), '90');
+    await userEvent.click(within(courseDialog).getByRole('button', { name: 'Add course' }));
+
+    // Back in Add class with the new course chosen.
+    await waitFor(() => expect(within(dialog).getByLabelText(/^Course/)).toHaveValue('crs_new'));
     await userEvent.type(within(dialog).getByLabelText(/^Name/), 'Group A');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add class' }));
-    expect(within(dialog).getAllByText('This is required.')).toHaveLength(2);
-    expect(calls.some((c) => c.key.startsWith('POST'))).toBe(false);
-
-    await userEvent.type(within(dialog).getByLabelText(/^Subject/), 'Maths');
-    await userEvent.type(within(dialog).getByLabelText(/^Grade level/), 'Year 9');
-    await userEvent.clear(within(dialog).getByLabelText('Lesson length (minutes)'));
-    await userEvent.type(within(dialog).getByLabelText('Lesson length (minutes)'), '90');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add class' }));
-
     await waitFor(() =>
       expect(screen.getByTestId('where')).toHaveTextContent(
         '/o/bright-minds/classes/cls_new?tab=schedule',
@@ -312,31 +315,31 @@ describe('making a course while adding a class', () => {
       '/courses',
       '/classes',
     ]);
-    expect(posts[0]!.body).toEqual({ name: 'Maths' });
-    expect(posts[1]!.body).toEqual({ name: 'Year 9' });
     expect(posts[2]!.body).toEqual({
       subjectId: 'sbj_new',
       gradeLevelId: 'grd_new',
+      curriculum: null,
+      teachingMedium: null,
       durationMinutes: 90,
+      defaultPrice: null,
     });
     expect(posts[3]!.body).toMatchObject({ courseId: 'crs_new', name: 'Group A' });
-    // The weekly time stays as it was in the form; the lesson length applies to new times.
-    expect(
-      calls.find((c) => c.key === 'PUT /api/v1/orgs/org_1/classes/cls_new/schedule')?.body,
-    ).toEqual({ slots: [{ weekday: 1, startTime: '16:00', endTime: '17:00' }] });
   });
 
-  it('uses a subject and grade that already exist, and tells front desk who adds new ones', async () => {
-    stubApi({ ...empty, [`${API}/subjects?limit=200`]: page([]) });
+  it('tells front desk who adds subjects and grade levels', async () => {
+    stubApi(empty);
     renderRoutes(routes, '/o/bright-minds/classes', inOrg('front_desk'));
     await userEvent.click((await screen.findAllByRole('button', { name: 'Add class' }))[0]!);
     const dialog = await screen.findByRole('dialog', { name: 'Add class' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Add course' }));
+    const courseDialog = await screen.findByRole('dialog', { name: 'Add course' });
     expect(
-      await within(dialog).findByText(
-        'Only the owner can add subjects and grade levels. Ask them to add the one you need.',
+      await within(courseDialog).findByText(
+        'Only the owner adds or changes subjects and grade levels.',
       ),
     ).toBeVisible();
-    expect(within(dialog).queryByRole('option', { name: '+ New subject…' })).toBeNull();
+    expect(within(courseDialog).queryByRole('option', { name: '+ New subject…' })).toBeNull();
+    expect(within(courseDialog).getByRole('button', { name: 'Add course' })).toBeDisabled();
   });
 });
 

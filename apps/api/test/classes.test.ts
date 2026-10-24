@@ -1244,6 +1244,10 @@ describe('records a class uses', () => {
       return res.body.error.message as string;
     };
 
+    // The course list says so first, so the screen can tell before asking (TUI-113).
+    const listed = async () =>
+      (await api('GET', '/courses')).body.data.find((c: { id: string }) => c.id === course.id);
+    expect((await listed()).classCount).toBe(2);
     expect(await refused(`/courses/${course.id}`)).toBe("Delete this course's 2 class(es) first.");
     expect(await refused(`/terms/${term.id}`)).toBe("Delete this term's 2 class(es) first.");
     expect(await refused(`/rooms/${room.id}`)).toBe(
@@ -1256,6 +1260,7 @@ describe('records a class uses', () => {
     expect((await api('DELETE', `/rooms/${room.id}`)).status).toBe(204);
     await api('DELETE', `/classes/${klass.id}`);
     await api('DELETE', `/classes/${albanyClass.id}`);
+    expect((await listed()).classCount).toBe(0);
     const freed = await Promise.all([
       api('DELETE', `/courses/${course.id}`),
       api('DELETE', `/terms/${term.id}`),

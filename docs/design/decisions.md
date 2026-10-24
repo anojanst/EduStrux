@@ -4750,12 +4750,8 @@ under "Not changed here" for a reach that is a subquery.
     Figma's per-slot room and teacher are left out: a schedule slot is weekday, start and end
     only. A new class saves the class, then its schedule, and opens on its Schedule tab; the
     schedule is changed later in its own dialog from the class page. The course select ends
-    with "+ New course…" (and starts on it when there's none): a subject and a grade level,
-    chosen or typed in, and a lesson length. Saving makes the subject, grade level and course
-    that don't exist yet (one with the same name is used instead), then the class. Typing a new
-    subject or grade level is for the owner (`org:write`); others choose from the ones there
-    are, and are told to ask the owner when there are none. Added after the owner, testing the
-    PR, couldn't add a class in an org with no courses.
+    with "+ New course…", which opens Add course (D-170) over the class; saving it chooses the
+    new course. With no courses, the dialog says so and offers Add course.
   - **Class page cards:** Enrolled (n of capacity, places left), Lessons ("x of y" done this
     term; with no term, up to 13 weeks ahead) and Next lesson. They replace the Figma's
     "Attendance this term %": the API has no rate per class. On phones: two cards, then one.
@@ -4782,8 +4778,47 @@ under "Not changed here" for a reach that is a subquery.
     attendance takes no `updatedAt`. The make-up badge is left out: the roster doesn't flag
     make-up students.
   - **Nav:** Classes, for roles with `classes:read`, not parents.
-- **Consequences:** Follow-ups: the teacher's phone "Today" view stays in TUI-57; courses can
-  be made only from the Add class dialog, and terms and rooms have no screens yet (TUI-64); leaving the attendance sheet with unsaved
-  marks has no warning yet.
+- **Consequences:** Follow-ups: the teacher's phone "Today" view stays in TUI-57; terms and
+  rooms have no screens yet (TUI-64); leaving the attendance sheet with unsaved marks has no
+  warning yet.
   - Assumption: taken during the build without asking; the owner hasn't stated it.
 - **Tasks:** TUI-112, TUI-57, TUI-64.
+
+## D-170 · 2026-10-25 · Settings › Courses: courses, subjects and grade levels, and a class count
+
+- **Context:** An org with no courses couldn't add a class. TUI-113 builds the screen for
+  courses, subjects and grade levels from the owner's Figma Make design, before more of the
+  classes work. The design shows how many classes run each course, which the API didn't return.
+- **Decision:**
+  - **API:** `GET /courses` gives each course a `classCount`: the classes that run it, counted
+    in the statement that lists the courses (a correlated subquery on `classes_org_course_idx`,
+    no extra trip, D-104). It's the count that blocks deleting the course. Only on the list:
+    a create or update response leaves it out.
+  - **Screen:** Settings › Courses at `/o/:slug/settings/courses`, in the nav for roles with
+    `classes:write` (owner, branch manager, front desk). Tabs Courses, Subjects and Grade levels
+    (`?tab=subjects|grades`); the header's button adds to the tab shown.
+  - **Courses tab:** grouped by grade level in grade order, subjects by name within a grade.
+    Columns: course (curriculum and medium under it), classes, lesson length, default price
+    ("/ term"; left out for roles that don't see prices, D-110). Filters for subject and grade
+    level, and a search, all in the browser. One line of meta per course on phones.
+  - **Add and edit course:** subject and grade level chosen, or typed in when new by the owner
+    (an existing one with that name is used rather than made again); curriculum, teaching
+    medium, lesson length (60 by default), and the default price for the owner only (D-111),
+    in the org's currency. Others see the price read only and send none. Editing shows the
+    subject and grade level read only: a course keeps them.
+  - **Subjects and grade levels:** each with its course count; the owner adds, renames and
+    deletes them, and moves grade levels up and down (`PUT /grade-levels/order`). Others read
+    them, with a note that only the owner changes them. A taken name shows the API's message on
+    the field.
+  - **Deleting:** the dialog says what still uses the course (its classes, with "View classes"
+    to the filtered list), subject or grade level (its courses), and Delete is off. The API's
+    422 is still shown if the lists were out of date, e.g. a course a price rule prices.
+  - **Add class:** "+ New course…" opens Add course over Add class and picks the course it
+    makes, replacing the inline course fields D-169 first had. An empty classes list links to
+    Manage courses.
+  - Left out of the Figma: dragging grade levels (up and down buttons do the same), and the
+    student count per grade level, which the API doesn't have (a student's grade is per
+    academic year).
+- **Consequences:** Terms and rooms still have no screens (TUI-64).
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-113, TUI-112, TUI-64.

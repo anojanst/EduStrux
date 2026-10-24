@@ -1,6 +1,7 @@
 import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  BookOpen,
   Check,
   ChevronsUpDown,
   House,
@@ -44,6 +45,9 @@ function navFor(role: Role): NavItem[] {
   }
   if (canSearchPeople(role)) {
     items.push({ to: 'families', label: 'nav.people', Icon: Users });
+  }
+  if (can(role, 'classes:write')) {
+    items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
   }
   if (can(role, 'staff:read')) {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });

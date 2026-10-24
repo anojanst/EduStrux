@@ -111,6 +111,26 @@ export function useRefreshClasses() {
     );
 }
 
+/** After a change to a subject, grade level or course: the lists that show them. */
+export function useRefreshCurriculum() {
+  const { membership } = useOrg();
+  const queryClient = useQueryClient();
+  const orgId = membership.org.id;
+  return () =>
+    Promise.all(
+      ['subjects', 'grade-levels', 'courses'].map((name) =>
+        queryClient.invalidateQueries({ queryKey: [name, orgId] }),
+      ),
+    );
+}
+
+/** Where the courses settings live in this org, on a tab. */
+export function useCoursesPath() {
+  const { membership } = useOrg();
+  return (tab?: 'subjects' | 'grades') =>
+    `${orgPath(membership.org.slug)}/settings/courses${tab ? `?tab=${tab}` : ''}`;
+}
+
 /** The term that is on today, else the next one to start, else the last one. */
 export function currentTerm(terms: Term[], today: string): Term | undefined {
   const sorted = [...terms].sort((a, b) => a.startDate.localeCompare(b.startDate));
