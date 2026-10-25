@@ -72,8 +72,10 @@ async function setup() {
       name,
       ...body,
     });
+    // Two days on from today, so the weekly lessons never land on today or yesterday, whose
+    // lessons are written in below: on a fixed weekday the counts doubled once a week.
     await api('PUT', `/classes/${klass.id}/schedule`, {
-      slots: [{ weekday: 1, startTime: '16:00', endTime: '17:00' }],
+      slots: [{ weekday: ((weekday(today()) + 1) % 7) + 1, startTime: '16:00', endTime: '17:00' }],
     });
     return klass;
   };
