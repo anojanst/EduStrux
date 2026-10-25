@@ -1,4 +1,5 @@
 import { classSchedules, classes, now, sessions } from '@edustrux/db';
+import type { AttendanceStatus } from '@edustrux/shared';
 import { and, asc, count, eq, gt, gte, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core';
@@ -144,13 +145,23 @@ export function listClasses(
   afterId: string | undefined,
   filter: ClassFilter,
   reach: Reach,
+  extras: Extras,
 ) {
   return ctx.db
-    .select()
+    .select(classShown(extras))
     .from(classes)
     .where(inOrg(ctx, classes, ...pageConditions(afterId, filter, reach)))
     .orderBy(asc(classes.id))
     .limit(limit + 1);
+}
+
+/** One class as it is shown, with its extras: `findClass` for an answer. */
+export function findClassShown(ctx: OrgCtx, id: string, reach: Reach, extras: Extras) {
+  return ctx.db
+    .select(classShown(extras))
+    .from(classes)
+    .where(inOrg(ctx, classes, eq(classes.id, id), within(reach)))
+    .get();
 }
 
 /**
@@ -542,13 +553,44 @@ export function lessonDates(ctx: OrgCtx, classIds: Ids, range: DateRange) {
     .orderBy(asc(sessions.date), asc(sessions.startTime), asc(sessions.id));
 }
 
-// A session is read with what a timetable needs from its class.
-const sessionWithClass = {
+/**
+ * What a class or lesson shows of other modules, as values worked out inside the statement that
+ * reads it, from the row's own columns. The service builds them from those modules (D-104).
+ */
+export type Labels = {
+  teacherName: (membershipId: SQLiteColumn) => SQL<string | null>;
+  roomName: (roomId: SQLiteColumn) => SQL<string | null>;
+};
+/** What a class shows beside its own row: its teacher's and room's names and the places taken. */
+export type Extras = { labels: Labels; placesTaken: (classId: SQLiteColumn) => SQL<number> };
+
+// A class is read for an answer with its extras, worked out for each row the page returns.
+const classShown = ({ labels, placesTaken }: Extras) => ({
+  class: classes,
+  teacherName: labels.teacherName(classes.teacherMembershipId),
+  roomName: labels.roomName(classes.roomId),
+  enrolledCount: placesTaken(classes.id),
+});
+
+/** How many students are marked each way at the session in the column. Left out for parents. */
+export type Marks = (sessionId: SQLiteColumn, status: AttendanceStatus) => SQL<number>;
+
+const noMarks = sql<number | null>`null`;
+
+// A session is read with what a timetable needs from its class, its teacher's and room's names,
+// and, for staff, how many students are marked each way.
+const sessionWithClass = (labels: Labels, marks: Marks | undefined) => ({
   session: sessions,
   className: classes.name,
   courseId: classes.courseId,
   branchId: classes.branchId,
-};
+  teacherName: labels.teacherName(sessions.teacherMembershipId),
+  roomName: labels.roomName(sessions.roomId),
+  present: marks ? marks(sessions.id, 'present') : noMarks,
+  late: marks ? marks(sessions.id, 'late') : noMarks,
+  absent: marks ? marks(sessions.id, 'absent') : noMarks,
+  excused: marks ? marks(sessions.id, 'excused') : noMarks,
+});
 
 /** In date, start-time, then id order. Fetches `limit + 1` rows to tell if there's another page. */
 export function listSessions(
@@ -557,6 +599,8 @@ export function listSessions(
   cursor: SessionCursor | undefined,
   filter: SessionFilter,
   reach: Reach,
+  labels: Labels,
+  marks: Marks | undefined,
 ) {
   const after = cursor
     ? or(
@@ -570,7 +614,7 @@ export function listSessions(
       )
     : undefined;
   return ctx.db
-    .select(sessionWithClass)
+    .select(sessionWithClass(labels, marks))
     .from(sessions)
     .innerJoin(classes, eq(classes.id, sessions.classId))
     .where(
@@ -599,9 +643,15 @@ export function listSessions(
     .limit(limit + 1);
 }
 
-export function findSession(ctx: OrgCtx, id: string, reach: Reach) {
+export function findSession(
+  ctx: OrgCtx,
+  id: string,
+  reach: Reach,
+  labels: Labels,
+  marks: Marks | undefined,
+) {
   return ctx.db
-    .select(sessionWithClass)
+    .select(sessionWithClass(labels, marks))
     .from(sessions)
     .innerJoin(classes, eq(classes.id, sessions.classId))
     .where(and(inOrg(ctx, sessions, eq(sessions.id, id)), inOrg(ctx, classes, within(reach))))

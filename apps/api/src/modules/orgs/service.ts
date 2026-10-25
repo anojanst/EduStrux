@@ -114,7 +114,7 @@ export function countMembersLimitedToBranch(ctx: OrgCtx, branchId: string) {
   return repo.countMembersLimitedToBranch(ctx, branchId);
 }
 
-/** A member of the org by membership id: their role and status, or undefined. */
+/** A member of the org by membership id: their role, status and name, or undefined. */
 export function findMember(ctx: OrgCtx, membershipId: string) {
   return repo.findMembership(ctx, membershipId);
 }

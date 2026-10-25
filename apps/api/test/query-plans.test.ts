@@ -18,7 +18,10 @@ import * as enrolmentService from '../src/modules/enrolment/service';
 import * as learning from '../src/modules/learning/repository';
 import { termDates } from '../src/modules/calendar/for-classes';
 import { lessonLengths } from '../src/modules/curriculum/for-classes';
-import { timetableOf } from '../src/modules/enrolment/for-classes';
+import { placesTakenIn, timetableOf } from '../src/modules/enrolment/for-classes';
+import { marksAt } from '../src/modules/attendance/for-classes';
+import { roomNameOf } from '../src/modules/branches/for-classes';
+import { memberNameOf } from '../src/modules/staff/for-classes';
 import * as people from '../src/modules/people/repository';
 import * as staff from '../src/modules/staff/repository';
 import * as peopleService from '../src/modules/people/service';
@@ -32,6 +35,19 @@ import { planOf, READS_AN_ORG, searchBy, searchIn, SORT, type Send } from './que
 // To cover another statement, add a row to the table it belongs in.
 
 const IDS = ['id_a', 'id_b'];
+/** What a class or lesson shows of other modules, as the classes service builds it (TUI-112). */
+const labels = (ctx: OrgCtx): classes.Labels => ({
+  teacherName: (membershipId) => memberNameOf(ctx, membershipId),
+  roomName: (roomId) => roomNameOf(ctx, roomId),
+});
+const classExtras = (ctx: OrgCtx): classes.Extras => ({
+  labels: labels(ctx),
+  placesTaken: (classId) => placesTakenIn(ctx, classId, '2026-02-01'),
+});
+const marks =
+  (ctx: OrgCtx): classes.Marks =>
+  (sessionId, status) =>
+    marksAt(ctx, sessionId, status);
 const RANGE = { startDate: '2026-01-01', endDate: '2026-03-31' };
 /** Tables in a plan, each with the column it must be reached by. */
 type Reached = [table: string, column: string][];
@@ -130,13 +146,13 @@ describe('a lookup by a list of ids goes to the ids (D-100)', () => {
       'the classes branch staff reach',
       'classes',
       'branch_id',
-      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { branchIds: IDS }),
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { branchIds: IDS }, classExtras(ctx)),
     ],
     [
       'the classes a parent reaches',
       'classes',
       'id',
-      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { classIds: IDS }),
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { classIds: IDS }, classExtras(ctx)),
     ],
   ];
 
@@ -241,17 +257,43 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
     ],
     [
       'the classes a parent reaches: four levels',
-      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { classIds: childrensClasses(ctx) }),
+      (ctx) =>
+        classes.listClasses(
+          ctx,
+          50,
+          undefined,
+          {},
+          { classIds: childrensClasses(ctx) },
+          classExtras(ctx),
+        ),
       [['classes', 'id'], ...parentsClasses],
     ],
     [
       'the sessions a teacher reaches',
-      (ctx) => classes.listSessions(ctx, 50, undefined, WEEK, { teacherMembershipId: MEMBER }),
+      (ctx) =>
+        classes.listSessions(
+          ctx,
+          50,
+          undefined,
+          WEEK,
+          { teacherMembershipId: MEMBER },
+          labels(ctx),
+          marks(ctx),
+        ),
       [['sessions', 'class_id'], ...teachersClasses],
     ],
     [
       'the sessions a parent reaches',
-      (ctx) => classes.listSessions(ctx, 50, undefined, WEEK, { classIds: childrensClasses(ctx) }),
+      (ctx) =>
+        classes.listSessions(
+          ctx,
+          50,
+          undefined,
+          WEEK,
+          { classIds: childrensClasses(ctx) },
+          labels(ctx),
+          undefined,
+        ),
       [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
     ],
     [
@@ -263,6 +305,8 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
           undefined,
           { ...WEEK, enrolled: timetableOf(ctx, 'stu_a') },
           {},
+          labels(ctx),
+          marks(ctx),
         ),
       [
         ['sessions', 'class_id'],
@@ -279,6 +323,8 @@ describe('a lookup by a query for ids goes to the ids at every level (D-104)', (
           undefined,
           { ...WEEK, enrolled: timetableOf(ctx, children(ctx)) },
           { classIds: childrensClasses(ctx) },
+          labels(ctx),
+          undefined,
         ),
       [['sessions', 'class_id'], ['classes', 'id'], ...parentsClasses],
     ],
@@ -558,6 +604,47 @@ describe('a session’s roster is read through the session’s id, in the stage 
       'the marks at the session',
       (ctx) => attendance.listMarks(ctx, SESSION),
       [['attendance', 'session_id']],
+    ],
+  ];
+
+  it.each(reads)('%s', async (_what, send, reached) => {
+    const plan = await planOf(send);
+    for (const [table, column] of reached) expect(plan).toMatch(searchBy(table, column));
+    expect(plan).not.toMatch(READS_AN_ORG);
+  });
+});
+
+describe('what a class or lesson shows of other modules is read by its own ids (TUI-112)', () => {
+  // The teacher's and room's names, the places taken and the marks, each looked up for its row.
+  const extras: Reached = [
+    ['memberships', 'id'],
+    ['users', 'id'],
+    ['rooms', 'id'],
+  ];
+
+  const reads: [string, Send, Reached][] = [
+    [
+      'one class, with its extras',
+      (ctx) => classes.findClassShown(ctx, 'cls_a', {}, classExtras(ctx)),
+      [['classes', 'id'], ['enrolments', 'class_id'], ...extras],
+    ],
+    [
+      'a teacher’s classes, with their extras',
+      (ctx) =>
+        classes.listClasses(
+          ctx,
+          50,
+          undefined,
+          {},
+          { teacherMembershipId: 'mem_a' },
+          classExtras(ctx),
+        ),
+      [['classes', 'teacher_membership_id'], ['enrolments', 'class_id'], ...extras],
+    ],
+    [
+      'one lesson, with its names and marks',
+      (ctx) => classes.findSession(ctx, 'ses_a', {}, labels(ctx), marks(ctx)),
+      [['sessions', 'id'], ['classes', 'id'], ['attendance', 'session_id'], ...extras],
     ],
   ];
 
@@ -889,43 +976,52 @@ describe('a list paged by id reads its page in index order (D-101)', () => {
       'GET /classes',
       'classes',
       'classes_org_id_uq',
-      (ctx) => classes.listClasses(ctx, 50, undefined, {}, {}),
+      (ctx) => classes.listClasses(ctx, 50, undefined, {}, {}, classExtras(ctx)),
     ],
     [
       'GET /classes, a later page',
       'classes',
       'classes_org_id_uq',
-      (ctx) => classes.listClasses(ctx, 50, 'id_a', {}, {}),
+      (ctx) => classes.listClasses(ctx, 50, 'id_a', {}, {}, classExtras(ctx)),
     ],
     [
       'GET /classes?branchId',
       'classes',
       'classes_org_branch_idx',
-      (ctx) => classes.listClasses(ctx, 50, undefined, { branchId: 'brn_a' }, {}),
+      (ctx) => classes.listClasses(ctx, 50, undefined, { branchId: 'brn_a' }, {}, classExtras(ctx)),
     ],
     [
       'GET /classes?termId',
       'classes',
       'classes_org_term_idx',
-      (ctx) => classes.listClasses(ctx, 50, 'id_a', { termId: 'trm_a' }, {}),
+      (ctx) => classes.listClasses(ctx, 50, 'id_a', { termId: 'trm_a' }, {}, classExtras(ctx)),
     ],
     [
       'GET /classes?courseId',
       'classes',
       'classes_org_course_idx',
-      (ctx) => classes.listClasses(ctx, 50, undefined, { courseId: 'crs_a' }, {}),
+      (ctx) => classes.listClasses(ctx, 50, undefined, { courseId: 'crs_a' }, {}, classExtras(ctx)),
     ],
     [
       'GET /classes?teacherId',
       'classes',
       'classes_org_teacher_idx',
-      (ctx) => classes.listClasses(ctx, 50, undefined, { teacherId: 'mem_a' }, {}),
+      (ctx) =>
+        classes.listClasses(ctx, 50, undefined, { teacherId: 'mem_a' }, {}, classExtras(ctx)),
     ],
     [
       'GET /classes, for a teacher',
       'classes',
       'classes_org_teacher_idx',
-      (ctx) => classes.listClasses(ctx, 50, undefined, {}, { teacherMembershipId: 'mem_a' }),
+      (ctx) =>
+        classes.listClasses(
+          ctx,
+          50,
+          undefined,
+          {},
+          { teacherMembershipId: 'mem_a' },
+          classExtras(ctx),
+        ),
     ],
     [
       'GET /courses',

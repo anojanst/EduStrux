@@ -34,7 +34,10 @@ import { closedFrom, termDates, termsRunningFrom } from '../calendar/for-classes
 import * as calendar from '../calendar/service';
 import { lessonLengths } from '../curriculum/for-classes';
 import * as curriculum from '../curriculum/service';
-import { timetableOf } from '../enrolment/for-classes';
+import { marksAt } from '../attendance/for-classes';
+import { roomNameOf } from '../branches/for-classes';
+import { placesTakenIn, timetableOf } from '../enrolment/for-classes';
+import { memberNameOf } from '../staff/for-classes';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as people from '../people/service';
@@ -84,14 +87,27 @@ const toSlot = (slot: ScheduleSlot): ScheduleSlot => ({
   endTime: slot.endTime,
 });
 
-export function toClass(row: repo.ClassRow, slots: ScheduleSlot[]): Class {
+/** What a class shows of other modules (TUI-112). */
+type ClassExtras = Pick<Class, 'teacherName' | 'roomName' | 'enrolledCount'>;
+
+export function toClass(row: repo.ClassRow, slots: ScheduleSlot[], extras: ClassExtras): Class {
   const { orgId: _org, deletedAt: _deleted, teacherMembershipId, ...klass } = row;
-  return { ...klass, teacherId: teacherMembershipId, schedule: slots.map(toSlot) };
+  return {
+    ...klass,
+    teacherId: teacherMembershipId,
+    teacherName: extras.teacherName,
+    roomName: extras.roomName,
+    enrolledCount: extras.enrolledCount,
+    schedule: slots.map(toSlot),
+  };
 }
 
 type SessionWithClass = NonNullable<Awaited<ReturnType<typeof repo.findSession>>>;
 
-/** The UTC instants come from the local date and times in the org's timezone, at read time. */
+/**
+ * The UTC instants come from the local date and times in the org's timezone, at read time. The
+ * attendance counts are there when they were read: for staff, not parents.
+ */
 export function toSession(row: SessionWithClass, timezone: string): Session {
   const {
     orgId: _org,
@@ -111,10 +127,45 @@ export function toSession(row: SessionWithClass, timezone: string): Session {
     courseId: row.courseId,
     branchId: row.branchId,
     teacherId: teacherMembershipId,
+    teacherName: row.teacherName,
+    roomName: row.roomName,
     startsAt: localToUtc(session.date, session.startTime, timezone),
     endsAt: localToUtc(session.date, session.endTime, timezone),
+    ...(row.present === null
+      ? {}
+      : {
+          attendance: {
+            present: row.present,
+            late: row.late ?? 0,
+            absent: row.absent ?? 0,
+            excused: row.excused ?? 0,
+          },
+        }),
   };
 }
+
+/** Teacher and room names, read inside the statement that reads a class or lesson. */
+const labelsOf = (ctx: OrgCtx): repo.Labels => ({
+  teacherName: (membershipId) => memberNameOf(ctx, membershipId),
+  roomName: (roomId) => roomNameOf(ctx, roomId),
+});
+
+/** Attendance counts on lessons are for staff: a parent sees only their own child's marks. */
+const marksFor = (ctx: OrgCtx, access: Access): repo.Marks | undefined =>
+  access.role === 'parent' ? undefined : (sessionId, status) => marksAt(ctx, sessionId, status);
+
+/** A class's extras, worked out inside the statement that reads the class. */
+const extrasOf = (ctx: OrgCtx, today: string): repo.Extras => ({
+  labels: labelsOf(ctx),
+  placesTaken: (classId) => placesTakenIn(ctx, classId, today),
+});
+
+type Shown = NonNullable<Awaited<ReturnType<typeof repo.findClassShown>>>;
+const shownExtras = ({ teacherName, roomName, enrolledCount }: Shown): ClassExtras => ({
+  teacherName,
+  roomName,
+  enrolledCount,
+});
 
 /**
  * A role's scope as a filter on classes. Branch staff reach the classes in their branches, a
@@ -203,6 +254,7 @@ export async function listClasses(
 ) {
   const reach = reachOf(ctx, access);
   const afterId = decodeCursor(cursor);
+  const { now } = await orgClock(ctx);
   // The page's weekly slots are read by a query for the ids on the page, not by the ids.
   const [branch, term, course, grade, teacher, rows, slots] = await Promise.all([
     hold(filter.branchId ? branches.getBranch(ctx, filter.branchId) : null),
@@ -210,7 +262,7 @@ export async function listClasses(
     hold(filter.courseId ? curriculum.getCourse(ctx, filter.courseId) : null),
     hold(filter.gradeLevelId ? curriculum.getGradeLevel(ctx, filter.gradeLevelId) : null),
     filter.teacherId ? orgs.findMember(ctx, filter.teacherId) : null,
-    repo.listClasses(ctx, limit, afterId, filter, reach),
+    repo.listClasses(ctx, limit, afterId, filter, reach, extrasOf(ctx, now.date)),
     repo.listSlots(ctx, repo.classesOnPage(ctx, limit, afterId, filter, reach)),
   ]);
   take(branch);
@@ -219,12 +271,16 @@ export async function listClasses(
   take(grade);
   if (filter.teacherId && !teacher) throw notFound('Teacher');
 
-  const { data, nextCursor } = toPage(rows, limit);
+  const { data, nextCursor } = toPage(
+    rows.map((row) => ({ ...row, id: row.class.id })),
+    limit,
+  );
   return {
-    data: data.map((c) =>
+    data: data.map((row) =>
       toClass(
-        c,
-        slots.filter((s) => s.classId === c.id),
+        row.class,
+        slots.filter((s) => s.classId === row.class.id),
+        shownExtras(row),
       ),
     ),
     nextCursor,
@@ -233,12 +289,13 @@ export async function listClasses(
 
 /** One stage: the weekly slots are read by the id asked for, together with the class. */
 export async function getClass(ctx: OrgCtx, access: Access, id: string): Promise<Class> {
+  const { now } = await orgClock(ctx);
   const [row, slots] = await Promise.all([
-    repo.findClass(ctx, id, reachOf(ctx, access)),
+    repo.findClassShown(ctx, id, reachOf(ctx, access), extrasOf(ctx, now.date)),
     repo.listSlots(ctx, [id]),
   ]);
   if (!row) throw notFound('Class');
-  return toClass(row, slots);
+  return toClass(row.class, slots, shownExtras(row));
 }
 
 // Who a caller reaches, for other modules to filter by. Each is a query for ids, written into
@@ -350,7 +407,11 @@ export async function createClass(ctx: OrgCtx, access: Access, input: CreateClas
     capacity: input.capacity ?? null,
     ...dates,
   });
-  return toClass(row, []);
+  return toClass(row, [], {
+    teacherName: teacher?.name ?? null,
+    roomName: input.roomId ? take(room)!.name : null,
+    enrolledCount: 0,
+  });
 }
 
 /**
@@ -371,17 +432,19 @@ export async function updateClass(
   // Dates in the request may move the class's sessions, so what that needs is read now, with
   // the class. Whether they differ from the stored dates is only known once the class is back.
   const datesGiven = 'startDate' in changes || 'endDate' in changes;
-  const [before, slots, room, teacher, taken, generation] = await Promise.all([
-    repo.findClass(ctx, id, reachOf(ctx, access)),
+  const [found, slots, room, teacher, taken, generation] = await Promise.all([
+    repo.findClassShown(ctx, id, reachOf(ctx, access), extrasOf(ctx, now.date)),
     repo.listSlots(ctx, [id]),
     hold(changes.roomId ? branches.getRoom(ctx, changes.roomId) : null),
     changes.teacherMembershipId ? orgs.findMember(ctx, changes.teacherMembershipId) : undefined,
     changes.name !== undefined ? repo.otherClassHasName(ctx, id, changes.name) : false,
     datesGiven ? readGeneration(ctx, id, now) : null,
   ]);
-  if (!before) throw notFound('Class');
+  if (!found) throw notFound('Class');
+  const before = found.class;
   if (before.updatedAt !== updatedAt) throw staleData();
-  if (Object.keys(changes).length === 0) return toClass(before, slots);
+  const read = shownExtras(found);
+  if (Object.keys(changes).length === 0) return toClass(before, slots, read);
 
   const after = { ...before, ...changes };
   if (changes.roomId) checkRoom(take(room)!, before.branchId);
@@ -411,7 +474,14 @@ export async function updateClass(
       : undefined,
   );
   if (!updated) throw notFound('Class');
-  return toClass(updated, slots);
+  // A new room or teacher was read to check it; the names otherwise stay as read.
+  return toClass(updated, slots, {
+    ...read,
+    teacherName:
+      changes.teacherMembershipId === undefined ? read.teacherName : (teacher?.name ?? null),
+    roomName:
+      changes.roomId === undefined ? read.roomName : changes.roomId ? take(room)!.name : null,
+  });
 }
 
 /**
@@ -560,13 +630,14 @@ export async function setSchedule(
   input: SetSchedule,
 ): Promise<ScheduleResult> {
   const { now } = await orgClock(ctx);
-  const [klass, before, lengths, generation] = await Promise.all([
-    repo.findClass(ctx, classId, reachOf(ctx, access)),
+  const [found, before, lengths, generation] = await Promise.all([
+    repo.findClassShown(ctx, classId, reachOf(ctx, access), extrasOf(ctx, now.date)),
     repo.listSlots(ctx, [classId]),
     lessonLengths(ctx, repo.ofClass(ctx, classId, 'courseId')),
     readGeneration(ctx, classId, now),
   ]);
-  if (!klass) throw notFound('Class');
+  if (!found) throw notFound('Class');
+  const klass = found.class;
   const course = lengths.find((c) => c.id === klass.courseId);
   if (!course) throw notFound('Course');
   const resolved = resolveSlots(input.slots, course.durationMinutes);
@@ -594,7 +665,7 @@ export async function setSchedule(
   }
   // The write leaves the class's own row as it was read, and its slots are now the ones saved.
   return {
-    class: toClass(klass, slotsChanged ? slots : before),
+    class: toClass(klass, slotsChanged ? slots : before, shownExtras(found)),
     sessions: { added: plan.add.length, removed: plan.removeIds.length, kept, through },
   };
 }
@@ -663,7 +734,15 @@ export async function listSessions(
     filter.classId ? repo.findClass(ctx, filter.classId, reach) : null,
     filter.teacherId ? orgs.findMember(ctx, filter.teacherId) : null,
     hold(studentId ? people.getStudent(ctx, access, studentId) : null),
-    repo.listSessions(ctx, limit, decodeDateTimeCursor(cursor), { ...filter, enrolled }, reach),
+    repo.listSessions(
+      ctx,
+      limit,
+      decodeDateTimeCursor(cursor),
+      { ...filter, enrolled },
+      reach,
+      labelsOf(ctx),
+      marksFor(ctx, access),
+    ),
   ]);
   take(branch);
   take(room);
@@ -681,7 +760,13 @@ export async function listSessions(
 }
 
 export async function getSession(ctx: OrgCtx, access: Access, id: string): Promise<Session> {
-  const row = await repo.findSession(ctx, id, reachOf(ctx, access));
+  const row = await repo.findSession(
+    ctx,
+    id,
+    reachOf(ctx, access),
+    labelsOf(ctx),
+    marksFor(ctx, access),
+  );
   if (!row) throw notFound('Session');
   const { timezone } = await orgClock(ctx);
   return toSession(row, timezone);
@@ -810,7 +895,7 @@ export async function updateSession(
 ): Promise<SessionUpdate> {
   const reach = reachOf(ctx, access);
   const [found, room, teacher, expectedOn, clock, org] = await Promise.all([
-    repo.findSession(ctx, id, reach),
+    repo.findSession(ctx, id, reach, labelsOf(ctx), marksFor(ctx, access)),
     hold(input.roomId ? branches.getRoom(ctx, input.roomId) : null),
     input.teacherId ? orgs.findMember(ctx, input.teacherId) : null,
     studentsExpectedIn(ctx, classOfSession(ctx, id)),
@@ -885,7 +970,18 @@ export async function updateSession(
     throw err;
   }
   if (!updated) throw staleData();
-  const session = toSession({ ...found, session: updated }, timezone);
+  // A new room or teacher was read to check it; the names otherwise stay as read.
+  const session = toSession(
+    {
+      ...found,
+      session: updated,
+      teacherName:
+        changes.teacherMembershipId === undefined ? found.teacherName : (teacher?.name ?? null),
+      roomName:
+        changes.roomId === undefined ? found.roomName : changes.roomId ? take(room)!.name : null,
+    },
+    timezone,
+  );
 
   // Who to tell: whoever is expected at the lesson, on its old date and its new one.
   let messageId: string | null = null;
