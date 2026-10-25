@@ -29,6 +29,7 @@ A global SaaS for running tuition centres, from a solo tutor up to a centre with
 6. Make-up lessons, cancellations and credits are first-class workflows.
 7. AI drafts and suggests, and a person confirms (paid add-on only).
 8. Templates per school type (tuition, music, language/cultural, dance) on one engine. Academic tuition comes first; the others follow (D-028).
+9. Least data: store only what a feature can't work without. "Good to have" is not a reason to keep a field, and data that has served its purpose is erased (D-171).
 
 ---
 
