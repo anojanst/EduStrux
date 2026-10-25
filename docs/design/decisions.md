@@ -4410,6 +4410,9 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-155 · 2026-10-22 · Student consents, erasing a family, and retention
 
+**Retention superseded in part by D-171** (an inactive family is erased automatically after 6
+months; the owner sets how long invoices and payments are kept).
+
 - **Context:** TUI-79 builds privacy controls. D-052 left which consents exist to it. Built in the
   session of 2026-10-21 (Q-64 to Q-66).
 - **Decision:**
@@ -4698,3 +4701,39 @@ under "Not changed here" for a reach that is a subquery.
 - **Consequences:** No migration: the theme list is enforced in code (`orgs.theme` is plain
   text). A theme added later must pass the contrast test.
 - **Tasks:** TUI-111.
+
+## D-171 · 2026-10-25 · Least data: store only what the product can't work without
+
+- **Context:** TUI-114. In the AI era any system can face brute-force attacks at scale, so every
+  stored field is a liability, and most of what EduStrux holds is about children. The owner
+  chose to store only what is crucial, so a breach can expose as little as possible. This adds
+  to sign-in security (Clerk, rate limits); it doesn't replace it.
+- **Decision:** (stated by the owner)
+  - **The rule:** a field is stored only if a feature can't work without it. "Good to have" is
+    not a reason. Product principle 9 in the handoff.
+  - **Six fields removed:** student date of birth, student notes, family address, guardian
+    relationship, guardian language, and the free-text absence reason (replaced by an optional
+    fixed reason: `sick`, `holiday` or `other`).
+  - **Lesson notes stay:** they are how a tutor tells a parent how a lesson went.
+  - **Inactive families are erased automatically after 6 months:** no running enrolments,
+    nothing owed, and no lesson, invoice or payment in the last 6 months. Same erase as
+    `POST /families/{id}/erase` (D-155), run by the daily cron. The 6 months is fixed.
+  - **The org owner sets how long financial records are kept** (1 to 10 years), since it
+    depends on the centre's local tax law. There is no country default: until the owner sets
+    it, no invoice or payment is deleted. Once the period has passed, an erased family's
+    invoices and payments are deleted too.
+  - Following from the rule, put forward during the decision and confirmed by the owner on
+    2026-10-26:
+    - The audit log records _which_ personal fields changed on families, guardians, students,
+      consents and lesson notes, not their values, and the rows already stored are scrubbed.
+    - Enquiries lose their personal details 30 days after they're handled (6 months if never
+      handled); enrolment requests lose the guardian and student details they carried 30 days
+      after they're approved or rejected.
+    - Message recipients stop storing a copy of the guardian's email.
+    - "Admin" in the owner's answer means the org's `owner` role.
+- **Consequences:** Values already stored in the dropped columns are lost by the migration.
+  Invoices and PDFs no longer show an address, and a student's age can't be shown (the grade
+  level does the job). Duplicate warnings keep using name, email and phone. D-155's "nothing is
+  erased automatically" no longer holds. A field added later has to pass the rule.
+- **Tasks:** TUI-114 (this decision), TUI-115 (drop the fields), TUI-116 (audit log), TUI-117
+  (enquiry and request purge), TUI-118 (automatic erase and financial retention).
