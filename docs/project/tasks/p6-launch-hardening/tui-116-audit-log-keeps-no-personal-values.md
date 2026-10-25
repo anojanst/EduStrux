@@ -13,7 +13,7 @@ pr:
 
 # TUI-116 Audit log keeps no personal values
 
-D-171 (assumption that follows from the least-data rule). Today the audit log's `before` and
+D-171 (follows from the least-data rule; confirmed by the owner on 2026-10-26). Today the audit log's `before` and
 `after` keep a second copy of every personal value that changed, for ever.
 
 - For families, guardians, students, consents and lesson notes, a personal field in `before` or

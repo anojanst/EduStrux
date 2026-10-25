@@ -4722,14 +4722,15 @@ months; the owner sets how long invoices and payments are kept).
     depends on the centre's local tax law. There is no country default: until the owner sets
     it, no invoice or payment is deleted. Once the period has passed, an erased family's
     invoices and payments are deleted too.
-  - Assumptions that follow from the rule (the owner hasn't stated them):
+  - Following from the rule, put forward during the decision and confirmed by the owner on
+    2026-10-26:
     - The audit log records _which_ personal fields changed on families, guardians, students,
       consents and lesson notes, not their values, and the rows already stored are scrubbed.
     - Enquiries lose their personal details 30 days after they're handled (6 months if never
       handled); enrolment requests lose the guardian and student details they carried 30 days
       after they're approved or rejected.
     - Message recipients stop storing a copy of the guardian's email.
-    - "Admin" in the owner's answer is read as the org's `owner` role.
+    - "Admin" in the owner's answer means the org's `owner` role.
 - **Consequences:** Values already stored in the dropped columns are lost by the migration.
   Invoices and PDFs no longer show an address, and a student's age can't be shown (the grade
   level does the job). Duplicate warnings keep using name, email and phone. D-155's "nothing is

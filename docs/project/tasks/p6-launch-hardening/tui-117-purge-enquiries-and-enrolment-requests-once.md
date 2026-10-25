@@ -13,7 +13,7 @@ pr:
 
 # TUI-117 Purge enquiries and enrolment requests once decided
 
-D-171 (assumption that follows from the least-data rule).
+D-171 (follows from the least-data rule; confirmed by the owner on 2026-10-26).
 
 - Enquiries: name, email, phone, student name, message and `ip_hash` are cleared 30 days after
   the enquiry is handled, or 6 months after it arrived if it never is. The row keeps its id,
