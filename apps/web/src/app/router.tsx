@@ -8,6 +8,9 @@ import { ClassesPage } from '../pages/classes/ClassesPage';
 import { CoursesPage } from '../pages/courses/CoursesPage';
 import { ClassPage } from '../pages/classes/ClassPage';
 import { LessonPage } from '../pages/classes/LessonPage';
+import { InvoicePage } from '../pages/billing/InvoicePage';
+import { InvoicesPage } from '../pages/billing/InvoicesPage';
+import { PaymentsPage } from '../pages/billing/PaymentsPage';
 import { InvitationPage } from '../pages/InvitationPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
@@ -95,6 +98,9 @@ export const routes = [
               { path: 'families', element: <PeoplePage /> },
               { path: 'families/:familyId', element: <FamilyPage /> },
               { path: 'students/:studentId', element: <StudentPage /> },
+              { path: 'invoices', element: <InvoicesPage /> },
+              { path: 'invoices/:invoiceId', element: <InvoicePage /> },
+              { path: 'payments', element: <PaymentsPage /> },
               { path: 'settings/courses', element: <CoursesPage /> },
               { path: 'settings/team', element: <TeamPage /> },
               { path: 'settings/theme', element: <ThemePage /> },

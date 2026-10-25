@@ -18,7 +18,13 @@ export function setTokenGetter(getter: TokenGetter) {
   getToken = getter;
 }
 
-type Options = { body?: unknown; signal?: AbortSignal; auth?: boolean };
+type Options = {
+  body?: unknown;
+  signal?: AbortSignal;
+  auth?: boolean;
+  /** Sent as `Idempotency-Key`, so a retried payment or invoice action runs once. */
+  idempotencyKey?: string;
+};
 
 /**
  * Calls `/api/v1{path}` with the signed-in user's Clerk token as a Bearer header. The API also
@@ -31,6 +37,7 @@ export async function api<T>(method: string, path: string, options: Options = {}
     const token = await getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
+  if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
 
   let res: Response;
   try {
@@ -57,6 +64,48 @@ export async function api<T>(method: string, path: string, options: Options = {}
     error?.message ?? res.statusText,
     (error?.fields as Record<string, string[]> | undefined) ?? {},
   );
+}
+
+/**
+ * A document the API makes (an invoice PDF, a receipt), read with the user's token and opened in
+ * a new tab. The tab opens first, so the browser doesn't block it as a pop-up.
+ */
+export async function openDocument(path: string): Promise<void> {
+  const tab = window.open('', '_blank');
+  try {
+    const token = await getToken();
+    let res: Response;
+    try {
+      res = await fetch(`/api/v1${path}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {
+      throw new ApiError(0, 'network', 'The server could not be reached');
+    }
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        error?: { code?: string; message?: string };
+      } | null;
+      throw new ApiError(
+        res.status,
+        body?.error?.code ?? 'unknown',
+        body?.error?.message ?? res.statusText,
+      );
+    }
+    const url = URL.createObjectURL(await res.blob());
+    if (tab) {
+      tab.location.href = url;
+    } else {
+      // Pop-ups blocked: save the file instead of leaving the app.
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = '';
+      link.click();
+    }
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
 }
 
 /** The first message for each field of a 400 or 422, keyed by its dotted path. */

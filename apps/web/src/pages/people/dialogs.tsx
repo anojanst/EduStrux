@@ -41,7 +41,7 @@ function saveError(err: unknown): string | null {
   return errorMessage(err);
 }
 
-function FormActions({
+export function FormActions({
   onClose,
   saving,
   label,
@@ -65,7 +65,7 @@ function FormActions({
 }
 
 /** A save that failed because someone else saved first: say so, and offer to read it again. */
-function StaleOrError({ error, onReload }: { error: unknown; onReload: () => void }) {
+export function StaleOrError({ error, onReload }: { error: unknown; onReload: () => void }) {
   const message = saveError(error);
   if (!message) return null;
   const stale = error instanceof ApiError && error.code === 'stale_data';
@@ -459,6 +459,7 @@ export function ConfirmDialog({
   body,
   action,
   onConfirm,
+  variant = 'danger',
 }: {
   open: boolean;
   onClose: () => void;
@@ -466,6 +467,8 @@ export function ConfirmDialog({
   body: ReactNode;
   action: string;
   onConfirm: () => Promise<unknown>;
+  /** `primary` for a confirm that isn't destructive, such as issuing an invoice. */
+  variant?: 'danger' | 'primary';
 }) {
   const run = useMutation({ mutationFn: onConfirm, onSuccess: onClose });
   return (
@@ -478,7 +481,7 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onClose} disabled={run.isPending}>
             {t('common.cancel')}
           </Button>
-          <Button variant="danger" loading={run.isPending} onClick={() => run.mutate()}>
+          <Button variant={variant} loading={run.isPending} onClick={() => run.mutate()}>
             {action}
           </Button>
         </>

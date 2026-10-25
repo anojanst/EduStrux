@@ -11,11 +11,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  ReceiptText,
   School,
   Search,
   TriangleAlert,
   Users,
   UsersRound,
+  Wallet,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,6 +47,10 @@ function navFor(role: Role): NavItem[] {
   }
   if (canSearchPeople(role)) {
     items.push({ to: 'families', label: 'nav.people', Icon: Users });
+  }
+  if (can(role, 'billing:read') && role !== 'parent') {
+    items.push({ to: 'invoices', label: 'nav.invoices', Icon: ReceiptText });
+    items.push({ to: 'payments', label: 'nav.payments', Icon: Wallet });
   }
   if (can(role, 'classes:write')) {
     items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
