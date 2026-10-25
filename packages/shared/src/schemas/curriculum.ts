@@ -121,6 +121,15 @@ export const Course = z
       .optional()
       .openapi({ description: 'null = not set. Left out for teachers and parents (D-110).' }),
     durationMinutes: z.number().int().nullable(),
+    classCount: z
+      .number()
+      .int()
+      .optional()
+      .openapi({
+        description:
+          'How many classes run the course; it can’t be deleted while any do. In `GET /courses` ' +
+          'only.',
+      }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })

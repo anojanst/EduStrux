@@ -5,6 +5,7 @@ import { ApiError } from '../lib/api';
 import { HomePage } from '../pages/HomePage';
 import { ChooseOrgPage } from '../pages/ChooseOrgPage';
 import { ClassesPage } from '../pages/classes/ClassesPage';
+import { CoursesPage } from '../pages/courses/CoursesPage';
 import { ClassPage } from '../pages/classes/ClassPage';
 import { LessonPage } from '../pages/classes/LessonPage';
 import { InvitationPage } from '../pages/InvitationPage';
@@ -94,6 +95,7 @@ export const routes = [
               { path: 'families', element: <PeoplePage /> },
               { path: 'families/:familyId', element: <FamilyPage /> },
               { path: 'students/:studentId', element: <StudentPage /> },
+              { path: 'settings/courses', element: <CoursesPage /> },
               { path: 'settings/team', element: <TeamPage /> },
               { path: 'settings/theme', element: <ThemePage /> },
               { path: 'profile', element: <ProfilePage /> },
