@@ -8,7 +8,7 @@ priority: P0
 size: S
 endpoints: []
 branch: docs/tui-114-least-data
-pr:
+pr: 59
 ---
 
 # TUI-114 Decide the least-data rule
