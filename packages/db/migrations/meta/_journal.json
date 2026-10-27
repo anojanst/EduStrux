@@ -239,6 +239,13 @@
       "when": 1792721201465,
       "tag": "0033_org_theme",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1793073758038,
+      "tag": "0034_invoice_numbers",
+      "breakpoints": true
     }
   ]
 }

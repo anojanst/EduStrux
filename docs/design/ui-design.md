@@ -232,7 +232,7 @@ for "Needs attention" (students away, make-up credits to book, overdue invoices)
 ### Activity row
 
 Initials avatar, a sentence title ("Payment received from Ngata family"), a meta line
-("$450.00 · Ref 7K2M9QXA": invoices have no number, D-172), relative time on the right.
+("$450.00 · INV-0042", D-173), relative time on the right.
 
 ### Quick action tile
 
@@ -382,7 +382,7 @@ Settled when TUI-23 was built (D-158):
   issuing many drafts at once), the invoice page (lines grouped by student, actions by status,
   a sticky action bar on phones), the Run invoices dialog with job progress and a "Left off"
   list, the Record payment dialog (shared across invoices oldest first) and the payments list.
-  An invoice is titled by family and period, with its bank reference. PDFs and receipts open in
+  An invoice is titled by family and period, with its number (D-173). PDFs and receipts open in
   a new tab. Stat cards gained tone tints and the confirm dialog a primary variant.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small

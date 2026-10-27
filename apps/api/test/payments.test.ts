@@ -17,6 +17,7 @@ type Family = Row & { name: string };
 type Invoice = Row & {
   familyId: string;
   status: string;
+  number: string | null;
   total: Money;
   paid: Money;
   balance: Money;
@@ -30,7 +31,7 @@ type Payment = Row & {
   receivedOn: string;
   reference: string | null;
   notes: string | null;
-  allocations: { invoiceId: string; amount: Money }[];
+  allocations: { invoiceId: string; invoiceNumber: string | null; amount: Money }[];
 };
 type As = (
   method: string,
@@ -236,7 +237,13 @@ describe('recording a payment', () => {
       receivedOn: addDays(today(), -2),
       reference: '7K2M9QXA',
       notes: 'Term 1 fees',
-      allocations: [{ invoiceId: invoice!.id, amount: nzd(TERM_PRICE) }],
+      allocations: [
+        {
+          invoiceId: invoice!.id,
+          invoiceNumber: expect.stringMatching(/^INV-\d{4}$/),
+          amount: nzd(TERM_PRICE),
+        },
+      ],
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -304,8 +311,16 @@ describe('recording a payment', () => {
     });
 
     expect(payment.allocations).toEqual([
-      { invoiceId: older!.id, amount: nzd(TERM_PRICE) },
-      { invoiceId: newer!.id, amount: nzd(15000) },
+      {
+        invoiceId: older!.id,
+        invoiceNumber: expect.stringMatching(/^INV-\d{4}$/),
+        amount: nzd(TERM_PRICE),
+      },
+      {
+        invoiceId: newer!.id,
+        invoiceNumber: expect.stringMatching(/^INV-\d{4}$/),
+        amount: nzd(15000),
+      },
     ]);
     expect(await s.payments()).toEqual([payment]);
     expect((await s.invoicesOf(perera.id)).map((i) => [i.id, i.status, i.balance])).toEqual([
@@ -573,6 +588,22 @@ describe('listing payments', () => {
     expect(await s.payments(s.api, `?familyId=${perera.id}`)).toEqual([third, first]);
     expect(await s.payments(s.api, `?invoiceId=${silvas!.id}`)).toEqual([second]);
     expect(await s.payments(s.api, `?familyId=${silva.id}&invoiceId=${pereras!.id}`)).toEqual([]);
+  });
+
+  it('filters by method, and names each invoice paid by its number (TUI-121, D-173)', async () => {
+    const s = await setup();
+    const perera = await s.addFamily('Perera');
+    const silva = await s.addFamily('Silva');
+    const [pereras, silvas] = await s.issued(perera, silva);
+    const cash = await s.pay({ ...s.paying(perera.id, pereras!.id, 10000), method: 'cash' });
+    const card = await s.pay({ ...s.paying(silva.id, silvas!.id, 20000), method: 'card' });
+
+    expect(await s.payments(s.api, '?method=cash')).toEqual([cash]);
+    expect(await s.payments(s.api, `?method=card&familyId=${perera.id}`)).toEqual([]);
+    expect(await s.payments(s.api, '?method=bank_transfer')).toEqual([]);
+    expect(cash.allocations[0]!.invoiceNumber).toBe(pereras!.number);
+    expect(card.allocations[0]!.invoiceNumber).toBe(silvas!.number);
+    expect((await s.api('GET', '/payments?method=crypto')).status).toBe(400);
   });
 
   it('returns 404 for a filter id the org doesn’t have, and 400 for a bad limit', async () => {

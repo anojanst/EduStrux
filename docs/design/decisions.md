@@ -4136,6 +4136,9 @@ under "Not changed here" for a reach that is a subquery.
 
 **Superseded in part by D-165** (the PDF's colour comes from the org's preset theme, not a free brand colour).
 
+**Superseded in part by D-173** (invoices get a sequential per-org number when issued; the
+"no sequential number" bullet no longer holds).
+
 - **Context:** TUI-59 builds invoice PDFs and payment receipts. D-025 chose Cloudflare Browser
   Rendering; its Worker binding is a wrangler change, which the session didn't make. Built in the
   session of 2026-10-21 (Q-33 to Q-35).
@@ -4864,6 +4867,9 @@ months; the owner sets how long invoices and payments are kept).
 
 ## D-172 · 2026-10-26 · What the Invoices and Payments screens show, and what waits
 
+**Superseded in part by D-173 and TUI-121** (invoices have numbers, shown in place of the bank
+reference; the method filter goes to the API; "Paid towards" lists each invoice by number).
+
 - **Context:** TUI-119 builds the invoices list, the invoice page, invoice runs, Record payment
   and the payments list from the owner's Figma Make design, on the existing billing endpoints.
   Some of the design asks for what the API doesn't have.
@@ -4915,3 +4921,34 @@ months; the owner sets how long invoices and payments are kept).
   should include Record payment; screens for pricing, tax and discount settings.
   - Assumption: taken during the build without asking; the owner hasn't stated it.
 - **Tasks:** TUI-119.
+
+## D-173 · 2026-10-27 · Sequential invoice numbers, given at issue
+
+- **Context:** D-142 left invoices without a number (the paper showed the last 8 characters of
+  the id) and asked whether a sequential per-org number was wanted, as some tax authorities
+  require. The owner answered on 2026-10-27. TUI-120 builds it; TUI-121, in the same branch,
+  adds the method filter D-172 left as a follow-up.
+- **Decision:**
+  - Each invoice gets a sequential number per org, shown as `INV-0001`: zero-padded to 4 digits,
+    and longer past 9999.
+  - The number is given when a draft is issued: the org's highest number plus one, worked out in
+    the same write that issues it, with a unique index on `(org_id, number)`. Drafts have none.
+    A draft voided before it is issued never gets one, so there are no gaps. A voided issued
+    invoice keeps its number.
+  - Invoices already issued when numbers arrived are numbered per org in the order they were
+    issued (migration `0034_invoice_numbers`).
+  - The API returns `number` as the formatted string (`"INV-0042"`), or null. Each payment
+    allocation carries its invoice's `invoiceNumber`.
+  - Where it shows: the invoices list (a Number column in place of Ref, struck through when
+    void), the invoice page, Record payment, the payments list ("Paid towards" lists each
+    invoice by number, linked), the invoice PDF ("Invoice number", the title and the file name
+    `invoice-INV-0042.pdf`; a draft keeps the short id reference), receipts (each invoice paid,
+    by number), the invoice-issued email ("Invoice INV-0042 from {org}: {total}"), the overdue
+    reminder, and the parent portal.
+  - The family's bank reference stays, for bank transfers.
+  - `GET /payments` takes `?method` (`cash`, `bank_transfer`, `cheque`, `card`, `other`; another
+    value is 400), and the Payments screen's method filter uses it (TUI-121).
+- **Consequences:** Supersedes D-142's "no sequential number" and D-172's "no invoice numbers",
+  method-filter and "Paid towards" bullets. The Payments screen no longer loads the newest 200
+  invoices to name what a payment paid. Answers the invoice-number open question in handoff §11.
+- **Tasks:** TUI-120, TUI-121.

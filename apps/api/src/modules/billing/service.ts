@@ -8,6 +8,7 @@ import {
   utcToLocal,
   type MoneyReport,
   formatDate,
+  formatInvoiceNumber,
   formatMoney,
   localNow,
   newId,
@@ -376,6 +377,7 @@ export function toInvoice(
     familyName: family.name,
     branchId: family.branchId,
     status: row.status,
+    number: row.number === null ? null : formatInvoiceNumber(row.number),
     termId: row.termId,
     month: row.month,
     periodStart: row.periodStart,
@@ -605,8 +607,13 @@ async function tellFamily(ctx: OrgCtx, queue: Queue<EmailMessage>, invoice: Invo
   const total = formatMoney(invoice.total, org.locale);
   await comms.queueNotice(ctx, queue, {
     event: 'invoice_issued',
-    subject: t('invoice.issued.subject', { orgName: org.name, total }),
+    subject: t('invoice.issued.subject', {
+      orgName: org.name,
+      total,
+      number: invoice.number ?? '',
+    }),
     body: t('invoice.issued.body', {
+      number: invoice.number ?? '',
       familyName: invoice.familyName,
       total,
       due: invoice.dueDate
@@ -668,7 +675,11 @@ export function toPayment(
     // Oldest invoice first, as they are read: ids made in the same moment don't sort by it.
     allocations: allocations
       .toSorted((a, b) => (a.invoiceId < b.invoiceId ? -1 : 1))
-      .map((a) => ({ invoiceId: a.invoiceId, amount: money(a.amount) })),
+      .map((a) => ({
+        invoiceId: a.invoiceId,
+        invoiceNumber: a.invoiceNumber === null ? null : formatInvoiceNumber(a.invoiceNumber),
+        amount: money(a.amount),
+      })),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -801,7 +812,14 @@ export async function createPayment(
         amount: a.amount.amount,
       })),
     );
-    return toPayment(payment, family, allocations);
+    return toPayment(
+      payment,
+      family,
+      allocations.map((a) => ({
+        ...a,
+        invoiceNumber: invoices.get(a.invoiceId)?.number ?? null,
+      })),
+    );
   } catch (error) {
     // An invoice was paid, or stopped taking payments, between the read and the write.
     if (repo.allocationRejected(error)) throw staleData();
@@ -1240,6 +1258,7 @@ export async function remindOverdue(
       event: 'invoice_overdue',
       subject: t('invoice.overdue.subject', { balance }),
       body: t('invoice.overdue.body', {
+        number: row.number === null ? '' : formatInvoiceNumber(row.number),
         familyName: family.name,
         dueDate: formatDate(row.dueDate!, org.dateFormat),
         balance,

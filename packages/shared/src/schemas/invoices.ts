@@ -29,6 +29,11 @@ export const INVOICE_SKIP_REASONS = [
 ] as const;
 export type InvoiceSkipReason = (typeof INVOICE_SKIP_REASONS)[number];
 
+/** An invoice's number as people see it: 42 → `INV-0042` (D-173). */
+export function formatInvoiceNumber(n: number): string {
+  return `INV-${String(n).padStart(4, '0')}`;
+}
+
 /** A calendar month, for classes with no term: `2026-11`. */
 export const BillingMonth = z
   .string()
@@ -110,6 +115,15 @@ export const Invoice = z
     familyName: z.string(),
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     status: z.enum(INVOICE_STATUSES),
+    number: z
+      .string()
+      .nullable()
+      .openapi({
+        example: 'INV-0042',
+        description:
+          'The org’s next number, given when the invoice is issued. null for a draft, and for ' +
+          'one voided before it was issued.',
+      }),
     termId: z.string().nullable().openapi({ description: 'The term billed, for a term run.' }),
     month: BillingMonth.nullable().openapi({
       description: 'The month billed, for a monthly run.',

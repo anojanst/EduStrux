@@ -25,14 +25,14 @@ export const en = {
   'session.restored.subject': '{className}: lesson on {date} is back on',
   'session.restored.body': 'The {className} lesson on {date} at {time} is going ahead after all.',
   'session.note': '\n\n{note}',
-  'invoice.issued.subject': 'Invoice from {orgName}: {total}',
+  'invoice.issued.subject': 'Invoice {number} from {orgName}: {total}',
   'invoice.issued.body':
-    'A new invoice for {familyName} is ready: {total}.{due}\n\nPlease quote your reference ' +
+    'Invoice {number} for {familyName} is ready: {total}.{due}\n\nPlease quote your reference ' +
     '{bankReference} when you pay by bank transfer.',
   'invoice.issued.due': ' It is due on {dueDate}.',
   'invoice.overdue.subject': 'Reminder: {balance} overdue',
   'invoice.overdue.body':
-    'The invoice for {familyName} was due on {dueDate}, and {balance} is still owing.\n\nPlease ' +
+    'Invoice {number} for {familyName} was due on {dueDate}, and {balance} is still owing.\n\nPlease ' +
     'quote your reference {bankReference} when you pay by bank transfer. If you have already ' +
     'paid, thank you, and please ignore this reminder.',
   'pdf.invoice.title': 'Invoice',
@@ -40,6 +40,7 @@ export const en = {
   'pdf.invoice.void': 'Void',
   'pdf.invoice.billTo': 'Bill to',
   'pdf.invoice.reference': 'Reference',
+  'pdf.invoice.number': 'Invoice number',
   'pdf.invoice.period': 'Period',
   'pdf.invoice.issued': 'Issued',
   'pdf.invoice.due': 'Due',
