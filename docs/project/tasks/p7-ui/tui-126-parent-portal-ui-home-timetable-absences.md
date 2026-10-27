@@ -8,7 +8,7 @@ priority: P0
 size: L
 endpoints: []
 branch: task/tui-126-parent-portal-ui
-pr:
+pr: 69
 ---
 
 # TUI-126 Parent portal UI: home, timetable, absences, invoices, messages
