@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-124-branches-rooms-ui
-pr:
+pr: 67
 ---
 
 # TUI-124 Branches & rooms settings UI
