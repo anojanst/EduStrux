@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-128-staff-messages-ui
-pr:
+pr: 72
 ---
 
 # TUI-128 Staff Messages screen
