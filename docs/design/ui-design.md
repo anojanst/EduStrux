@@ -409,6 +409,12 @@ Settled when TUI-23 was built (D-158):
   edit dialogs for branches and rooms, and delete dialogs that list what still uses the item,
   with Delete off. Only the owner changes anything; other staff get a read-only notice and no
   menus. Single-tutor mode hides Add branch with a muted note.
+- **Settings › Terms & holidays** (D-181), from the owner's Figma Make design: a year switcher,
+  the academic year card with a timeline of its terms, holidays and today, the year's terms
+  (weeks, classes, Finished / Now · Week n of m / Upcoming, Run invoices on the next term) and
+  its holidays by month (all branches or one). Add/edit dialogs for years and terms check
+  overlaps as the dates change; Add holiday lists the lessons it will remove. Only the owner
+  changes anything; other staff get a read-only notice.
 - **Parent portal** (D-180), from the owner's Figma Make design: Home (next lesson, Report an
   absence, the children, latest homework, family balance), a week Timetable by day with child
   chips and a lesson sheet (homework, the teacher's note, report absence for it), the Report an

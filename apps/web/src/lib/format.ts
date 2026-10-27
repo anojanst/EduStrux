@@ -28,6 +28,12 @@ export function useFormat() {
     month: 'long',
     timeZone: 'UTC',
   });
+  const short = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+  const monthOnly = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' });
   const monthYear = new Intl.DateTimeFormat(locale, {
     month: 'long',
     year: 'numeric',
@@ -61,6 +67,10 @@ export function useFormat() {
     dayLong: (date: string) => long.format(new Date(`${date}T00:00:00Z`)),
     /** "28 October": a day without its weekday, as a week's heading names its Monday. */
     dayMonth: (date: string) => dayMonth.format(new Date(`${date}T00:00:00Z`)),
+    /** "27 Jan": one end of a term or a holiday. */
+    dayShort: (date: string) => short.format(new Date(`${date}T00:00:00Z`)),
+    /** "November" for the month `2026-11`, under a heading that already names the year. */
+    monthName: (month: string) => monthOnly.format(new Date(`${month}-01T00:00:00Z`)),
     /** "November 2026" for the billing month `2026-11`. */
     month: (month: string) => monthYear.format(new Date(`${month}-01T00:00:00Z`)),
   };

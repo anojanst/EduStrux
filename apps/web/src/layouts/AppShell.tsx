@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
   CalendarDays,
+  CalendarRange,
   Check,
   Ellipsis,
   ChevronsUpDown,
@@ -65,6 +66,7 @@ function navFor(role: Role): NavItem[] {
   }
   if (can(role, 'classes:write')) {
     items.push({ to: 'settings/branches', label: 'nav.branches', Icon: MapPin });
+    items.push({ to: 'settings/terms', label: 'nav.terms', Icon: CalendarRange });
     items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
   }
   if (can(role, 'billing:read')) {

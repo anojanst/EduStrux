@@ -21,7 +21,16 @@ import { StaleOrError } from '../people/dialogs';
  * Run invoices (TUI-119): make the drafts for a term, or for a month of the classes with no
  * term. The run is a job; the dialog follows it and shows what it made and what it left off.
  */
-export function RunInvoicesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RunInvoicesDialog({
+  open,
+  termId,
+  onClose,
+}: {
+  open: boolean;
+  /** The term to start on, e.g. from Settings › Terms & holidays; else the current one. */
+  termId?: string;
+  onClose: () => void;
+}) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const close = () => {
@@ -40,6 +49,7 @@ export function RunInvoicesDialog({ open, onClose }: { open: boolean; onClose: (
         <RunProgress jobId={jobId} label={label} onClose={close} />
       ) : (
         <RunForm
+          termId={termId}
           onClose={close}
           onStarted={(id, what) => {
             setLabel(what);
@@ -52,9 +62,11 @@ export function RunInvoicesDialog({ open, onClose }: { open: boolean; onClose: (
 }
 
 function RunForm({
+  termId: initialTerm,
   onClose,
   onStarted,
 }: {
+  termId?: string;
   onClose: () => void;
   onStarted: (jobId: string, label: string) => void;
 }) {
@@ -65,7 +77,7 @@ function RunForm({
     b.startDate.localeCompare(a.startDate),
   );
   const [kind, setKind] = useState<'term' | 'month'>('term');
-  const [termId, setTermId] = useState('');
+  const [termId, setTermId] = useState(initialTerm ?? '');
   const [month, setMonth] = useState(format.today.slice(0, 7));
   const [dueDate, setDueDate] = useState('');
   const byTerm = kind === 'term' && termList.length > 0;

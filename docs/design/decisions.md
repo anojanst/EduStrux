@@ -5246,3 +5246,54 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
 - **Consequences:** Bank details and contact details on the org would complete "How to pay" and
   "Centre contact". A homework list in the portal would replace Home's reading of lesson notes.
   Read state on portal messages would bring back the unread style.
+- **Tasks:** TUI-126.
+
+## D-181 · 2026-10-28 · Settings › Terms & holidays
+
+- **Context:** Academic years, terms and holidays had an API but no screen, so a centre could
+  only set its calendar through Swagger. TUI-127 builds the screen from the owner's Figma Make
+  design (Terms & holidays).
+- **Decision:**
+  - **Screen:** Settings › Terms & holidays at `/o/:slug/settings/terms`. Nav item "Terms &
+    holidays" (calendar-range icon) after Branches, for roles with `classes:write`. The page
+    opens for any role with `org:read` except parents. No new endpoints: it uses the academic
+    year, term and holiday endpoints, `GET /classes` for each term's class count, and
+    `GET /sessions` for the lessons a new holiday removes.
+  - **Who changes what:** only the owner (`org:write`) adds and edits years and terms, deletes
+    terms, and adds and deletes holidays. Other staff get the notice "Only the owner can change
+    terms and holidays." and no Add buttons or row menus. "Run invoices" follows
+    `billing:write`, so front desk and branch managers keep it.
+  - **Year switcher:** ‹ select › over the academic years, kept in `?year=`. It opens on the
+    year that's on today, else the next to start, else the last (the rule `currentTerm` already
+    used, now generic). The header reads "2026 · 4 terms · 3 holidays".
+  - **Year card:** name, dates, Current / Upcoming / Finished, Edit, and a timeline: terms as
+    blocks (T1…), holidays as amber marks and a Today line, hidden from screen readers since
+    the lists say the same; on phones a thin bar without labels. "Add academic year" at the
+    foot. Years have no delete (the API has none).
+  - **Terms:** one row per term in the year: dates, length in whole weeks (days ÷ 7, rounded,
+    at least 1), class count, and Finished, "Now · Week 3 of 10" or "Upcoming · Starts in 2
+    weeks" (in days under two weeks). "Run invoices" sits on the next term to start, else the
+    current one, and opens the Run invoices dialog with that term chosen (it now takes a
+    `termId`). Empty: "No terms in 2026 yet. Terms are optional…".
+  - **Holidays:** every holiday that touches the year, grouped by month, with the dates, length,
+    and "All branches" or "Albany only"; past ones faded. Delete only: the API has no edit.
+  - **Dialogs:** a term shows its year read only; overlap with another term ("Overlaps Term 2
+    (14 Apr – 27 Jun)") and dates outside the year are caught as the dates change, before
+    sending, with a "11 weeks · 27 Jan – 11 Apr" line when they're fine. A year checks overlap
+    with other years the same way; the API's 422 (e.g. a term would fall outside) shows as a
+    notice. Add holiday has From, To (empty for one day) and, with more than one branch,
+    "Applies to" cards. It lists the lessons it will remove (scheduled and not started, as the
+    API removes them), first two by name, and says removed lessons don't come back.
+  - **Deleting a term** used by classes lists them, linked, with Delete off ("Move these classes
+    to another term, or delete them, first."), matching the API's refusal.
+  - **Copy changed from the design:** editing a term with classes says their lessons already on
+    the timetable don't move, and saving a class's schedule brings them in line. The design's
+    "Their lessons stay inside the new dates" isn't what the API does (D-047: sessions change
+    only when a class's schedule is saved). Deleting a holiday says the same about adding the
+    removed lessons back.
+- **Consequences:** Changing a term's dates leaves its classes' lessons where they were until
+  each class's schedule is saved again; a "refresh lessons for this term" action would close
+  that gap.
+  - Assumption: the screen details were settled during the build from the design, without
+    asking the owner.
+- **Tasks:** TUI-127.

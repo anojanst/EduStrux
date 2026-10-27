@@ -13,7 +13,7 @@ import { Notice } from '../../components/ui/Notice';
 import { useToast } from '../../components/ui/Toast';
 import { t } from '../../i18n';
 import { api, ApiError, fieldErrors } from '../../lib/api';
-import { useClassPaths } from '../../lib/classes';
+import { useAllClasses, useClassPaths } from '../../lib/classes';
 import { orgApiPath, useOrg } from '../../lib/org';
 import { useBranches, usePeoplePaths, type Page } from '../../lib/people';
 import { can } from '../../lib/roles';
@@ -46,17 +46,6 @@ const roomsQuery = (orgId: string, path: string, branchId: string) => ({
     api<Page<Room>>('GET', `${path}/branches/${branchId}/rooms?limit=200`, { signal }),
   staleTime: 60_000,
 });
-
-/** Every class the caller reaches, to count those held at each branch and in each room. */
-function useAllClasses() {
-  const { membership } = useOrg();
-  return useQuery({
-    queryKey: ['classes', membership.org.id, { all: true }],
-    queryFn: ({ signal }) =>
-      api<Page<Class>>('GET', orgApiPath(membership, '/classes?limit=200'), { signal }),
-    staleTime: 60_000,
-  });
-}
 
 /** After a change to a branch or room: the lists that show them. */
 function useRefreshBranches() {
