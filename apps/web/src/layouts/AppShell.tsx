@@ -14,6 +14,7 @@ import {
   ReceiptText,
   School,
   Search,
+  Tag,
   TriangleAlert,
   Users,
   UsersRound,
@@ -58,6 +59,9 @@ function navFor(role: Role): NavItem[] {
   }
   if (can(role, 'classes:write')) {
     items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
+  }
+  if (can(role, 'billing:read') && role !== 'parent') {
+    items.push({ to: 'settings/pricing', label: 'nav.pricing', Icon: Tag });
   }
   if (can(role, 'staff:read')) {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });
