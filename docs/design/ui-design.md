@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), and Theme for owners (D-165). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -398,6 +398,11 @@ Settled when TUI-23 was built (D-158):
   attendance sheet in the shared wide dialog (a bottom sheet on phones); the lesson page's sheet
   and it share one implementation, now with homework for the class. Rows keep the sheet's status
   buttons rather than the design's segmented control.
+- **Settings › Branches & rooms** (D-178), from the owner's Figma Make design: a card per
+  branch (address, room and class counts) with its rooms as rows (seats, class count), add and
+  edit dialogs for branches and rooms, and delete dialogs that list what still uses the item,
+  with Delete off. Only the owner changes anything; other staff get a read-only notice and no
+  menus. Single-tutor mode hides Add branch with a muted note.
 - **Settings › Courses** (D-170), from the owner's Figma Make design, for roles that change
   classes: tabs Courses (grouped by grade level, with classes, lesson length and price),
   Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also

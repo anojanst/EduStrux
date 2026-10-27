@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   House,
   LogOut,
+  MapPin,
   Menu,
   Palette,
   PanelLeftClose,
@@ -60,6 +61,7 @@ function navFor(role: Role): NavItem[] {
     items.push({ to: 'payments', label: 'nav.payments', Icon: Wallet });
   }
   if (can(role, 'classes:write')) {
+    items.push({ to: 'settings/branches', label: 'nav.branches', Icon: MapPin });
     items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
   }
   if (can(role, 'billing:read') && role !== 'parent') {

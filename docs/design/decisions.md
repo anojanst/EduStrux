@@ -5115,3 +5115,47 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details and the changes from the design were taken during the build
     without asking; the owner hasn't stated them.
 - **Tasks:** TUI-57, TUI-40, TUI-84.
+
+## D-178 · 2026-10-27 · Settings › Branches & rooms
+
+- **Context:** The branches and rooms API was built, but an org could only add a branch or a
+  room through Swagger, and classes need a room. TUI-124, split from TUI-40, builds the screen
+  from the owner's Figma Make design (Branches & rooms).
+- **Decision:**
+  - **Screen:** Settings › Branches & rooms at `/o/:slug/settings/branches`. Nav item "Branches"
+    (map-pin icon) under Settings, before Courses, for roles with `classes:write` (owner, branch
+    manager, front desk: the ones who give classes a room). The page itself opens for any role
+    with `org:read` except parents. No new endpoints: it uses the branch and room endpoints, and
+    `GET /classes`, `/families?branchId`, `/holidays` and `/staff` to say what still uses a
+    branch.
+  - **Who changes what:** only the owner adds, edits and deletes (`org:write`, D-033). Other
+    staff see the page read only, with the notice "Only the owner can change branches and
+    rooms." and no Add buttons or row menus.
+  - **Header:** "2 branches · 7 rooms" and Add branch (full width on phones), with a one-line
+    explainer about rooms. In single-tutor mode Add branch is hidden and a muted note says the
+    centre has one branch (D-032). The design's "Turn off single-tutor mode in Settings" is left
+    out: that setting has no screen yet (TUI-64).
+  - **Branch card:** name, address (or "No address · Add address" for the owner, which opens Edit
+    branch), "4 rooms · 9 classes" and a row menu (Edit, Delete). Rooms are rows with the name,
+    "Seats 12" or "No limit", and a class count (under the name on phones), each with its own
+    menu; "+ Add room" at the foot, "No rooms yet" when empty. Class counts come from
+    `GET /classes`, so they cover the classes the caller can reach. The design's class count was
+    a link; the classes list has no room filter, so it is plain text.
+  - **Dialogs:** a branch has a name (required) and an address (optional, several lines). A room
+    shows its branch read only, a name, and a capacity of 1 to 1000 or empty for no limit,
+    checked before sending. A duplicate name (409) shows "There's already a branch called …" or
+    "… already has a room called …".
+  - **Deleting a branch:** the dialog lists up front everything that still uses it, with Delete
+    off: rooms, classes (linked to the classes list filtered by branch), families whose home
+    branch it is (linked to the families list filtered by branch; "200+" past one page), its own
+    holidays, and staff limited to it (linked to Team). The last branch says every centre needs
+    at least one. These checks mirror the API's (D-034, D-038, D-050, D-057), which checks again;
+    its 422 message shows if the lists were out of date.
+  - **Deleting a room:** names the classes held there, each linked, with Delete off; otherwise a
+    plain confirm (D-050).
+- **Consequences:** Room pickers elsewhere (Add class) see changes at once, since the screen
+  refreshes branches, rooms and classes. A room filter on the classes list would let a room's
+  class count link somewhere. Turning single-tutor mode off belongs to TUI-64.
+  - Assumption: the screen details were settled during the build from the design, without
+    asking the owner.
+- **Tasks:** TUI-124 (split from TUI-40).

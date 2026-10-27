@@ -20,6 +20,6 @@ Mostly built through split tasks (board sync 2026-10-27): onboarding (TUI-23), f
 Still to build:
 
 - The staff Home dashboard (ui-design.md §9, from the Figma Make Home design): staff still see the placeholder greeting.
-- Setup screens for branches and rooms.
+- Setup screens for branches and rooms (TUI-124).
 - "Book make-up" (the student page only lists make-up credits).
 - The bell in the top bar.
