@@ -8,7 +8,7 @@ priority: P0
 size: L
 endpoints: []
 branch: task/tui-51-timetable-calendar
-pr:
+pr: 64
 ---
 
 # TUI-51 Calendar views: day/week/month by branch, room, teacher, student
