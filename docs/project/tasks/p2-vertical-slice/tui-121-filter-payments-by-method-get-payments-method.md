@@ -8,7 +8,7 @@ priority: P2
 size: S
 endpoints: []
 branch: task/tui-120-121-invoice-numbers-payment-filter
-pr:
+pr: 61
 ---
 
 # TUI-121 Filter payments by method (GET /payments?method=)
