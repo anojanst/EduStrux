@@ -8,7 +8,7 @@ priority: P1
 size: L
 endpoints: []
 branch: task/tui-123-billing-settings
-pr:
+pr: 63
 ---
 
 # TUI-123 Billing settings: tax rates, price rules and discount rules screens
