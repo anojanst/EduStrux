@@ -2,6 +2,7 @@ import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
+  CalendarDays,
   Check,
   ChevronsUpDown,
   House,
@@ -48,6 +49,7 @@ type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean 
 function navFor(role: Role): NavItem[] {
   const items: NavItem[] = [{ to: '', label: 'nav.home', Icon: House, end: true }];
   if (can(role, 'classes:read') && role !== 'parent') {
+    items.push({ to: 'timetable', label: 'nav.timetable', Icon: CalendarDays });
     items.push({ to: 'classes', label: 'nav.classes', Icon: School });
   }
   if (canSearchPeople(role)) {

@@ -5024,3 +5024,53 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details were taken during the build without asking; the owner stated
     only that it is built without a Figma design.
 - **Tasks:** TUI-123.
+
+## D-176 · 2026-10-27 · The Timetable screen: day, week and month calendars
+
+- **Context:** The API had the timetable (`GET /sessions` with its filters, clashes, holidays,
+  terms, one-off moves) but no calendar screen. TUI-51 builds it from the owner's Figma Make
+  design (the Timetable screen). No new endpoints.
+- **Decision:**
+  - **Screen:** Timetable at `/o/:slug/timetable`, nav item "Timetable" (calendar icon) between
+    Home and Classes, for roles with `classes:read` except parents. Day, Week (the default) and
+    Month as a segmented control, Today, ‹ › and a date button (the browser's date picker). The
+    view, date, View by and filters (branch, room, teacher, grade, class, student) live in the
+    URL. It reads every page of `GET /sessions` for the range shown.
+  - **Week:** Monday to Sunday, a time grid from 7:00 to 21:00 that stretches for earlier or
+    later lessons, 24-hour labels as in the design. Today is tinted, with a "Now" line in the
+    org's timezone. Holidays are hatched with their name in the day head; a term's first and last
+    day say "Term 4 starts" or "ends". A lesson block takes its class colour (left bar, tinted
+    fill) and shows the class, the time, and "Room · Teacher" (or "Moved from …"), with one flag,
+    most urgent first: Cancelled (struck through, faded), Clash (danger outline), Moved, then
+    Marked or Not marked once it has begun (for roles that take attendance). Overlapping lessons
+    share the day in lanes.
+  - **Day:** a column per resource: the rooms with lessons that day ("No room" last) when
+    viewing by branch or room, the teachers when viewing by teacher, one column when viewing by
+    student. View by changes only the day's columns (and by student, which student); week and
+    month stay by day.
+  - **Month:** whole weeks, Monday to Sunday, up to 3 lessons a day, then "+n more"; that and
+    the date open the day.
+  - **Clash banner:** counts room and teacher clashes (`GET /timetable/clashes`) among the lessons
+    shown. Student and grade clashes stay on the class page's Schedule tab (D-169). "Review" opens
+    the first clash's day by room; × hides it for those dates.
+  - **Holidays:** the org-wide ones always; a branch's own only when that branch is chosen or is
+    the caller's only branch.
+  - **Lesson detail** is the shared dialog (a bottom sheet on phones), not the design's floating
+    popover: class, day, time and course, room, teacher, a status badge (Scheduled, Moved,
+    Cancelled), the attendance summary ("Not marked yet" once due) and a warning per clash.
+    Actions: "Mark attendance" (for `attendance:write`, when due and unmarked) or "Open lesson",
+    "Open class →", and a "…" menu with Move lesson and Cancel lesson (or Put lesson back on) for
+    `classes:write` before the lesson starts, as on the class page.
+  - **Move lesson** (a new dialog): date, room (the branch's rooms), start, end and teacher. It
+    sends only the fields changed, with `updatedAt`. Families are told as the API does (D-138),
+    and the dialog says so. The end must be after the start.
+  - **By student:** a name search (`GET /search`), then that student's lessons (`?studentId`),
+    for roles with `people:read`.
+  - **Phones (< 640px):** a Filters button opens a sheet with View by and the filters. Today and
+    ‹ › (a week at a time) sit beside it: the design left them out, but there was no other way to
+    change week. A 7-day strip picks the day, and its lessons list as rows.
+- **Consequences:** Drag-and-drop editing stays v1.1 (TUI-52, D-022). The phone bottom tab bar
+  in the design is still TUI-84.
+  - Assumption: the screen details and the changes from the design were taken during the build
+    without asking; the owner hasn't stated them.
+- **Tasks:** TUI-51, TUI-52, TUI-84.

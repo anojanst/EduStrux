@@ -20,6 +20,7 @@ import { StudentPage } from '../pages/people/StudentPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
 import { PricingPage } from '../pages/settings/PricingPage';
 import { ThemePage } from '../pages/settings/ThemePage';
+import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
 import { SignUpPage } from '../pages/SignUpPage';
@@ -93,6 +94,7 @@ export const routes = [
             element: <OrgLayout />,
             children: [
               { index: true, element: <HomePage /> },
+              { path: 'timetable', element: <TimetablePage /> },
               { path: 'classes', element: <ClassesPage /> },
               { path: 'classes/:classId', element: <ClassPage /> },
               { path: 'lessons/:sessionId', element: <LessonPage /> },
