@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-127-terms-holidays-ui
-pr:
+pr: 70
 ---
 
 # TUI-127 Terms & holidays settings UI
