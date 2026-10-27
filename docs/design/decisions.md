@@ -4981,3 +4981,46 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: taken during the build without asking; the owner hasn't stated it and can
     change it.
 - **Tasks:** TUI-122.
+
+## D-175 · 2026-10-27 · Settings › Pricing: price rules, discounts and tax rates
+
+- **Context:** The billing API had price rules, discount rules and tax rates but no screens, so
+  an org couldn't set what it charges without Swagger. TUI-123 builds them. The owner chose on
+  2026-10-27 to build this screen straight to the design system (ui-design.md) without a Figma
+  design first.
+- **Decision:**
+  - **Screen:** Settings › Pricing at `/o/:slug/settings/pricing`, nav item "Pricing" (tag icon)
+    for every role with `billing:read` except parents: owner, branch manager, front desk and
+    accountant. Tabs Prices (price rules), Discounts and Tax rates, each a card list in the style
+    of Settings › Courses with a one-line explainer above. No new endpoints: it uses the price
+    rule, discount rule and tax rate endpoints, and `GET /classes`, `/students` and `/families`
+    for pickers.
+  - **Prices:** grouped into Every class, Courses and Classes. Each row says what it prices, a
+    line such as "Per term · 1 free trial lesson · GST 15% (default)", and the price ("$450.00
+    per term", "$35.00 per lesson", "$300.00 for 10 lessons"). The add dialog chooses Applies to
+    (Every class, A course or A class for the owner; branch staff see only A class, for their
+    branches), Charged (the basis, with a help line for each), Price, Lessons in a pack (pack
+    only, 2 to 200), Free trial lessons (0 to 20) and Tax (the default or a named rate). Editing
+    changes only the price, pack size, trial and tax: the target and basis show as fixed, with
+    "delete it and add another". Branch staff get the row menu only on class rules (D-111), and a
+    link points to course default prices on Settings › Courses. Class names need `classes:read`,
+    so the accountant sees "A class".
+  - **Discounts:** each row shows the name, the kind and who gets it ("Families with 2 or more
+    children billed", "Enrolled by …", "3 students", "2 courses together"), an optional date
+    range, the value ("10% off", "$20.00 off", "$500.00 together") and an "Off" badge when
+    inactive. Only the owner adds, edits and deletes (D-140). The dialog: Kind (on create only,
+    with a help line for each), Name, Discount type (Percentage or Amount off; Bundle price for
+    bundles), the kind's own fields (minimum count; cut-off date and term; students, families or
+    courses chosen from a searchable checkbox list, at least two courses for a bundle), optional
+    Starts and Ends, and an On switch.
+  - **Tax rates:** each row shows the name, "Included in prices" or "Added on top of prices", the
+    rate and a Default badge. Owner only (`org:write`). The rate is typed as a percentage with up
+    to two decimals ("12.5" is 1250 basis points). An org's first rate starts as the default.
+    Deleting a rate a price still names shows the API's 422 message in the dialog.
+  - **Phones:** rows put the value under the name (a two-column grid), so long names aren't cut
+    short, and nothing scrolls sideways at 375px.
+- **Consequences:** A course's default price stays on Settings › Courses; this screen links to
+  it. The searchable checkbox list is a new shared component for pickers.
+  - Assumption: the screen details were taken during the build without asking; the owner stated
+    only that it is built without a Figma design.
+- **Tasks:** TUI-123.

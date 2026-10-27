@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Invoices and Payments are for staff with `billing:read` (D-172). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -396,6 +396,12 @@ Settled when TUI-23 was built (D-158):
   list, the Record payment dialog (shared across invoices oldest first) and the payments list.
   An invoice is titled by family and period, with its number (D-173). PDFs and receipts open in
   a new tab. Stat cards gained tone tints and the confirm dialog a primary variant.
+- **Settings › Pricing** (D-175), built straight to this design system without a Figma design
+  (the owner's choice, 2026-10-27), for staff with `billing:read`: tabs Prices (grouped into
+  every class, courses and classes), Discounts and Tax rates, card lists in the style of
+  Settings › Courses with a one-line explainer above; add and edit dialogs per tab, and a
+  searchable checkbox list (`PickList`) for choosing students, families or courses. On phones
+  each row puts its value under the name in a two-column grid, so long names aren't cut short.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

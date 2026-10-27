@@ -18,6 +18,7 @@ import { FamilyPage } from '../pages/people/FamilyPage';
 import { PeoplePage } from '../pages/people/PeoplePage';
 import { StudentPage } from '../pages/people/StudentPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { PricingPage } from '../pages/settings/PricingPage';
 import { ThemePage } from '../pages/settings/ThemePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
 import { SignInPage } from '../pages/SignInPage';
@@ -103,6 +104,7 @@ export const routes = [
               { path: 'payments', element: <PaymentsPage /> },
               { path: 'settings/courses', element: <CoursesPage /> },
               { path: 'settings/team', element: <TeamPage /> },
+              { path: 'settings/pricing', element: <PricingPage /> },
               { path: 'settings/theme', element: <ThemePage /> },
               { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },
