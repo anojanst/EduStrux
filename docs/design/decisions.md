@@ -5200,3 +5200,49 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
 - **Consequences:** Home can show a recent activity feed once an endpoint gives one per role. An
   overdue filter on invoices, an absence list and a make-up booking screen would let the other
   attention rows link somewhere.
+
+## D-180 · 2026-10-27 · The parent portal screens
+
+- **Context:** The portal API (D-126) was built, but a signed-in parent saw only a list of their
+  children. TUI-126 builds the portal from the owner's Figma Make design (Parent portal).
+- **Decision:**
+  - **Paths:** a parent uses the same paths as staff where they share a name: `/o/:slug` (Home),
+    `timetable` and `invoices` show the parent's own pages, chosen by role. `messages` and `more`
+    are the parent's only (staff get not found until they have a messages screen). The sidebar
+    for a parent is Home, Timetable, Invoices, Messages, More; on phones (under 640px) a tab bar
+    with the same five replaces the menu button.
+  - **No new endpoints.** Every read is a portal route (`/portal/children`, `/portal/sessions`,
+    `/portal/invoices`, `/portal/messages`) or one a parent already reads: grade levels,
+    holidays (the ones for every branch and the children's home branches) and a lesson's notes
+    (`GET /sessions/{id}/notes`, which keeps to the parent's children).
+  - **Home:** the next lesson in the coming two weeks (the child, the class, day, time with the
+    old time struck through when it moved, room and teacher), Report an absence, the children
+    (grade and classes, each opening the timetable for that child), the latest homework and the
+    family balance (owing across open invoices; overdue in a danger badge, "All paid" when
+    nothing is owed). There's no homework list, so Home reads the notes of the last six lessons
+    that have started in the last three weeks and shows up to three with homework.
+  - **Timetable:** a Monday-to-Sunday week, stepped with ‹ This week ›, listed by day ("Today,
+    27 October", "Tomorrow, …", then "Thu 29 Oct"), with chips for each child when there's more
+    than one. Moved and cancelled lessons are badged; a holiday with no lessons shows "No lessons
+    – Mid-term break". A lesson opens a sheet with its day, time, room and teacher, the homework
+    and the teacher's note about each of the parent's children, and "Report absence for this
+    lesson" while it's still to come.
+  - **Report an absence:** the child (radio cards, skipped for one child), from, an optional to
+    and an optional reason (500 characters, counted), then a preview of which lessons it covers
+    ("Aria will miss 2 lessons: Year 7 English (Thu), …"), read for absences up to two months
+    long. Sent through `POST /portal/absence-notices`; notices can't be changed once sent
+    (D-129), and the sheet says so.
+  - **Invoices:** owing and overdue at the top, then each issued invoice with its number, period,
+    children, balance and status. One opens with its dates, the staff invoice page's lines and
+    totals, and Download PDF (`GET /portal/invoices/{id}/pdf`). "How to pay" gives the family's
+    payment reference. The design's bank account line is left out: the org has no bank details
+    field yet.
+  - **Messages:** subject, the centre's name, a one-line preview and the day sent; one opens to
+    read in full. "To reply, contact the centre." The design's unread highlight is left out: the
+    API keeps no read state.
+  - **More:** Profile (the existing profile page), My family (family name and how many
+    children), Sign out. The design's Consents and Centre contact rows are left out: consents
+    need a screen of their own, and the org has no phone or email fields.
+- **Consequences:** Bank details and contact details on the org would complete "How to pay" and
+  "Centre contact". A homework list in the portal would replace Home's reading of lesson notes.
+  Read state on portal messages would bring back the unread style.

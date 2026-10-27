@@ -163,7 +163,8 @@ menu button.
   icon button. Nothing may overflow the screen width.
 - **Bottom tab bar** with the four most used areas for the role. Staff: Home, Timetable,
   Families, Invoices, More. Teacher: Today, Timetable, Messages, More. Parent: Home, Timetable,
-  Invoices, Messages, More.
+  Invoices, Messages, More. Built for parents, under 640px, in place of the menu button
+  (D-180); staff and teachers follow in TUI-84.
 - Stat cards sit in a **2 × 2 grid**, not a sideways scroller.
 - Tables become stacked rows (title, meta line, status badge, chevron).
 
@@ -408,6 +409,13 @@ Settled when TUI-23 was built (D-158):
   edit dialogs for branches and rooms, and delete dialogs that list what still uses the item,
   with Delete off. Only the owner changes anything; other staff get a read-only notice and no
   menus. Single-tutor mode hides Add branch with a muted note.
+- **Parent portal** (D-180), from the owner's Figma Make design: Home (next lesson, Report an
+  absence, the children, latest homework, family balance), a week Timetable by day with child
+  chips and a lesson sheet (homework, the teacher's note, report absence for it), the Report an
+  absence sheet with which lessons it covers, Invoices (owing and overdue, each invoice with
+  its lines and PDF, how to pay with the family reference), Messages to read, and More
+  (profile, family, sign out). Same paths as staff (`timetable`, `invoices`) plus `messages`
+  and `more`.
 - **Settings › Courses** (D-170), from the owner's Figma Make design, for roles that change
   classes: tabs Courses (grouped by grade level, with classes, lesson length and price),
   Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also
