@@ -50,25 +50,35 @@ export function Capacity({ klass, className }: { klass: Class; className?: strin
   );
 }
 
+const tiles = {
+  brand: 'bg-brand-soft text-brand',
+  info: 'bg-info-soft text-info',
+  success: 'bg-success-soft text-success',
+  warning: 'bg-warning-soft text-warning',
+  danger: 'bg-danger-soft text-danger',
+} as const;
+
 /** ui-design.md §6 Stat card: label and icon tile, the value, then one supporting line. */
 export function StatCard({
   label,
   Icon,
   value,
   note,
+  tone = 'brand',
   className,
 }: {
   label: string;
   Icon: LucideIcon;
   value: ReactNode;
   note?: ReactNode;
+  tone?: keyof typeof tiles;
   className?: string;
 }) {
   return (
     <Card className={cn('flex flex-col gap-2', className)}>
       <div className="flex items-start justify-between gap-3">
         <span className="text-body text-muted">{label}</span>
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+        <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', tiles[tone])}>
           <Icon className="size-4" aria-hidden />
         </span>
       </div>

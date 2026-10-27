@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Invoices and Payments are for staff with `billing:read` (D-172). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -232,7 +232,7 @@ for "Needs attention" (students away, make-up credits to book, overdue invoices)
 ### Activity row
 
 Initials avatar, a sentence title ("Payment received from Ngata family"), a meta line
-("$450.00 · INV-1042"), relative time on the right.
+("$450.00 · Ref 7K2M9QXA": invoices have no number, D-172), relative time on the right.
 
 ### Quick action tile
 
@@ -275,8 +275,8 @@ banners show to everyone, since saving fails for every role.
 
 - **Toasts** bottom right (bottom centre on phones) for completed actions, 4s, with Undo where
   the API allows it.
-- **Confirm dialogs** for destructive actions, naming what happens ("Void invoice INV-1042? Its
-  enrolments can then be invoiced again."). Irreversible ones (erase a family) need the name
+- **Confirm dialogs** for destructive actions, naming what happens ("Void this invoice for the
+  Perera family? Its enrolments can then be invoiced again."). Irreversible ones (erase a family) need the name
   typed to confirm.
 - **Empty states**: an icon, one sentence and the next action ("No classes yet. Add your first
   class.").
@@ -377,6 +377,13 @@ Settled when TUI-23 was built (D-158):
   Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also
   opened from Add class), a small name dialog for subjects and grade levels, and delete dialogs
   that say what still uses the item, with Delete off.
+- **Billing** (D-172), from the owner's Figma Make design, for staff with `billing:read`: the
+  invoices list (status chips, filters, money stat cards for the owner and branch managers,
+  issuing many drafts at once), the invoice page (lines grouped by student, actions by status,
+  a sticky action bar on phones), the Run invoices dialog with job progress and a "Left off"
+  list, the Record payment dialog (shared across invoices oldest first) and the payments list.
+  An invoice is titled by family and period, with its bank reference. PDFs and receipts open in
+  a new tab. Stat cards gained tone tints and the confirm dialog a primary variant.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

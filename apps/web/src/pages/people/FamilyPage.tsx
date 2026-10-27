@@ -36,7 +36,9 @@ import {
   StudentDialog,
   useRefreshPeople,
 } from './dialogs';
-import { invoiceStatus } from './invoices';
+import { invoiceStatus, isOpen, useBillingPaths } from '../../lib/billing';
+import { InvoiceBadge } from '../billing/parts';
+import { RecordPaymentDialog } from '../billing/RecordPaymentDialog';
 import { methodLabel } from './labels';
 import { CardEmpty, DetailHeader, SectionCard } from './parts';
 
@@ -195,7 +197,7 @@ function FamilyDetail({ familyId }: { familyId: string }) {
           </SectionCard>
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          {canBill ? <MoneyCards familyId={data.id} /> : null}
+          {canBill ? <MoneyCards familyId={data.id} familyName={data.name} /> : null}
           {data.address ? (
             <SectionCard title={t('people.address')}>
               <p className="px-4 py-3.5 text-body whitespace-pre-line text-text">{data.address}</p>
@@ -459,9 +461,10 @@ function RemoveGuardian({ guardian, onClose }: { guardian: Guardian; onClose: ()
 }
 
 /** Balance and recent payments: for roles that read billing. */
-function MoneyCards({ familyId }: { familyId: string }) {
+function MoneyCards({ familyId, familyName }: { familyId: string; familyName: string }) {
   const { membership } = useOrg();
   const format = useFormat();
+  const [paying, setPaying] = useState(false);
   const invoices = useQuery({
     queryKey: ['invoices', membership.org.id, { familyId }],
     queryFn: ({ signal }) =>
@@ -482,7 +485,7 @@ function MoneyCards({ familyId }: { familyId: string }) {
   });
 
   const list = invoices.data?.data ?? [];
-  const open = list.filter((i) => i.status === 'issued' || i.status === 'part_paid');
+  const open = list.filter(isOpen);
   const overdue = open.filter((i) => invoiceStatus(i, format.today) === 'overdue').length;
   const owing = open.reduce((sum, i) => sum + i.balance.amount, 0);
   const currency = open[0]?.balance.currency;
@@ -498,7 +501,16 @@ function MoneyCards({ familyId }: { familyId: string }) {
       <SectionCard
         title={t('people.balance')}
         action={
-          overdue ? <Badge tone="danger">{t('people.overdueCount', { n: overdue })}</Badge> : null
+          <span className="flex items-center gap-2">
+            {overdue ? (
+              <Badge tone="danger">{t('people.overdueCount', { n: overdue })}</Badge>
+            ) : null}
+            {owing > 0 && can(membership.role, 'billing:write') ? (
+              <Button variant="secondary" size="sm" onClick={() => setPaying(true)}>
+                {t('billing.recordPayment')}
+              </Button>
+            ) : null}
+          </span>
         }
       >
         {invoices.isPending ? (
@@ -558,45 +570,39 @@ function MoneyCards({ familyId }: { familyId: string }) {
           </ul>
         )}
       </SectionCard>
+      <RecordPaymentDialog
+        open={paying}
+        onClose={() => setPaying(false)}
+        familyId={familyId}
+        familyName={familyName}
+      />
     </>
   );
 }
 
 function InvoiceRow({ invoice }: { invoice: Invoice }) {
   const format = useFormat();
+  const paths = useBillingPaths();
   const status = invoiceStatus(invoice, format.today);
   return (
-    <li className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-3">
-      <span className="flex min-w-0 flex-col">
-        <b className="truncate text-body font-semibold text-text">
-          {format.date(invoice.periodStart)} – {format.date(invoice.periodEnd)}
-        </b>
-        <small className="text-meta text-muted">
-          {invoice.dueDate
-            ? t('people.due', { date: format.date(invoice.dueDate) })
-            : t('people.noDueDate')}
-        </small>
-      </span>
-      <span className="text-body text-text tabular-nums">{format.money(invoice.total)}</span>
-      <InvoiceBadge status={status} />
+    <li>
+      <Link
+        to={paths.invoice(invoice.id)}
+        className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-3 hover:bg-canvas"
+      >
+        <span className="flex min-w-0 flex-col">
+          <b className="truncate text-body font-semibold text-text">
+            {format.date(invoice.periodStart)} – {format.date(invoice.periodEnd)}
+          </b>
+          <small className="text-meta text-muted">
+            {invoice.dueDate
+              ? t('people.due', { date: format.date(invoice.dueDate) })
+              : t('people.noDueDate')}
+          </small>
+        </span>
+        <span className="text-body text-text tabular-nums">{format.money(invoice.total)}</span>
+        <InvoiceBadge status={status} />
+      </Link>
     </li>
-  );
-}
-
-function InvoiceBadge({ status }: { status: ReturnType<typeof invoiceStatus> }) {
-  const tone = {
-    draft: 'neutral',
-    issued: 'info',
-    part_paid: 'warning',
-    paid: 'success',
-    void: 'neutral',
-    overdue: 'danger',
-  } as const;
-  return (
-    <Badge tone={tone[status]}>
-      <span className={status === 'void' ? 'line-through' : undefined}>
-        {t(`invoice.status.${status}`)}
-      </span>
-    </Badge>
   );
 }

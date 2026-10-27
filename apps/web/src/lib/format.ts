@@ -1,4 +1,4 @@
-import { diffDays, formatDate, formatTime, localNow } from '@edustrux/shared/dates';
+import { diffDays, formatDate, formatTime, localNow, utcToLocal } from '@edustrux/shared/dates';
 import { formatMoney, type MoneyValue } from '@edustrux/shared/money';
 import { useOrg } from './org';
 
@@ -28,6 +28,11 @@ export function useFormat() {
     month: 'long',
     timeZone: 'UTC',
   });
+  const monthYear = new Intl.DateTimeFormat(locale, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
   const long = new Intl.DateTimeFormat(locale, {
     weekday: 'long',
     day: 'numeric',
@@ -39,6 +44,8 @@ export function useFormat() {
     today,
     money: (money: MoneyValue) => formatMoney(money, locale),
     date: (date: string) => formatDate(date, dateFormat),
+    /** The day an event happened (`issuedAt`), in the org's timezone and date format. */
+    stamp: (instant: string) => formatDate(utcToLocal(instant, timezone).date, dateFormat),
     /** "Mon 2 Mar": a lesson's day. */
     day: (date: string) => words.format(new Date(`${date}T00:00:00Z`)),
     time: (time: string) => formatTime(time, locale),
@@ -54,6 +61,8 @@ export function useFormat() {
     dayLong: (date: string) => long.format(new Date(`${date}T00:00:00Z`)),
     /** "28 October": a day without its weekday, as a week's heading names its Monday. */
     dayMonth: (date: string) => dayMonth.format(new Date(`${date}T00:00:00Z`)),
+    /** "November 2026" for the billing month `2026-11`. */
+    month: (month: string) => monthYear.format(new Date(`${month}-01T00:00:00Z`)),
   };
 }
 

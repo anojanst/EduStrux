@@ -4861,3 +4861,57 @@ months; the owner sets how long invoices and payments are kept).
   erased automatically" no longer holds. A field added later has to pass the rule.
 - **Tasks:** TUI-114 (this decision), TUI-115 (drop the fields), TUI-116 (audit log), TUI-117
   (enquiry and request purge), TUI-118 (automatic erase and financial retention).
+
+## D-172 · 2026-10-26 · What the Invoices and Payments screens show, and what waits
+
+- **Context:** TUI-119 builds the invoices list, the invoice page, invoice runs, Record payment
+  and the payments list from the owner's Figma Make design, on the existing billing endpoints.
+  Some of the design asks for what the API doesn't have.
+- **Decision:**
+  - **No invoice numbers:** the API has none (D-142), so an invoice is titled by family and
+    period ("Perera family", "Term 4 2026" or "November 2026"), and its bank reference ("Ref
+    7K2M9QXA") is the identifier shown. The "INV-1042" examples in ui-design.md §6 are changed
+    to match.
+  - **Invoices list:** status chips All, Draft, Issued, Part paid, Paid and Void. Overdue shows
+    on the row, worked out in the browser, and isn't a chip: the API has no overdue filter.
+    Filters: period (the terms and months in the loaded invoices), family (roles with
+    `people:read`) and branch. "Load more" paging. The money stat cards come from
+    `GET /reports/dashboard` and show only to roles with both `reports:read` and `reports:money`
+    (owner, branch manager); front desk and the accountant (who has `reports:money` but not
+    `reports:read`) don't see them.
+  - **Issuing many:** drafts get checkboxes; "Issue n invoices" confirms, then issues each draft
+    in turn (there's no bulk endpoint), each with the Idempotency-Key `issue-<id>-<updatedAt>`.
+    A toast reports any that failed.
+  - **Invoice page:** lines grouped by student, each with a line under it by how it's priced
+    ("8 lessons × $35.00", "6 of 8 lessons · term price $280.00", packs, free-trial lessons, own
+    price); discounts in green; one tax row per rate; totals, with Balance in red when overdue;
+    Details and Payments cards. The main action follows the status: draft → Issue invoice;
+    issued or part paid → Record payment; paid or void → Download PDF. The "…" menu has
+    Download PDF, Edit due date and note, and Void (hidden once the invoice has payments). A
+    void invoice shows a notice. On phones the main action (or Download PDF) is a sticky bar
+    at the bottom.
+  - **Run invoices:** a dialog to choose Term or Month and an optional due date, then a
+    progress bar that polls `GET /jobs/{id}` every second ("You can close this; it carries
+    on"). The result shows invoices made out of the total, lines, how many were already
+    invoiced, and a "Left off (n)" list with student names (from `GET /enrolments?classId`)
+    and plain-word reasons. "Set a price →" goes to Courses for the owner; "Review drafts"
+    opens the list filtered to drafts.
+  - **Record payment:** the family picker lists only families with issued or part-paid
+    invoices, read from the invoices list, so it needs no `people:read`. The amount is shared
+    across the invoices oldest first (the invoice it was opened from goes first), each up to
+    its balance, and can be changed per invoice. The dialog refuses more than is owed, amounts
+    that don't add up, and a date after today. One Idempotency-Key per opening of the dialog.
+    It opens from Invoices, Payments, an invoice, and the family page (a new "Record payment"
+    button on the Balance card; the family's invoice rows now open the invoice page).
+  - **Payments list:** the family filter goes to the API; the method filter applies only to
+    the pages loaded, since the API has no method filter. "Paid towards" names the invoice when
+    it's among the newest 200 invoices, else says "1 invoice" or "n invoices".
+  - **PDFs and receipts** open in a new tab through a signed-in fetch. A 503 shows the toast
+    "PDFs aren't available yet: print the page instead." (§6 Feedback).
+  - **Nav:** Invoices and Payments, for staff with `billing:read` (not parents).
+- **Consequences:** Follow-ups: a `method` filter on `GET /payments`; invoice numbers, if
+  wanted, are a small API task (the open question in handoff §11 stays open); toast actions
+  (e.g. "Download receipt" after recording a payment); the "+ New" top-bar menu, still unbuilt,
+  should include Record payment; screens for pricing, tax and discount settings.
+  - Assumption: taken during the build without asking; the owner hasn't stated it.
+- **Tasks:** TUI-119.
