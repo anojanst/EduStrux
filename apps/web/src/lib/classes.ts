@@ -33,6 +33,17 @@ export const useTerms = () => useOrgList<Term>('terms', '/terms?limit=200');
 export const useSubjects = () => useOrgList<Subject>('subjects', '/subjects?limit=200');
 export const useCourses = () => useOrgList<Course>('courses', '/courses?limit=200');
 
+/** Every class the caller reaches, to count those at a branch, in a room or in a term. */
+export function useAllClasses() {
+  const { membership } = useOrg();
+  return useQuery({
+    queryKey: ['classes', membership.org.id, { all: true }],
+    queryFn: ({ signal }) =>
+      api<Page<Class>>('GET', orgApiPath(membership, '/classes?limit=200'), { signal }),
+    staleTime: 60_000,
+  });
+}
+
 /** A branch's rooms; off until a branch is chosen. */
 export function useRooms(branchId: string | null | undefined) {
   const { membership } = useOrg();
@@ -131,8 +142,11 @@ export function useCoursesPath() {
     `${orgPath(membership.org.slug)}/settings/courses${tab ? `?tab=${tab}` : ''}`;
 }
 
-/** The term that is on today, else the next one to start, else the last one. */
-export function currentTerm(terms: Term[], today: string): Term | undefined {
+/** The term (or academic year) that is on today, else the next one to start, else the last one. */
+export function currentTerm<T extends { startDate: string; endDate: string }>(
+  terms: T[],
+  today: string,
+): T | undefined {
   const sorted = [...terms].sort((a, b) => a.startDate.localeCompare(b.startDate));
   return (
     sorted.find((term) => term.startDate <= today && term.endDate >= today) ??

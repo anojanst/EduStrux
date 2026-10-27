@@ -25,6 +25,7 @@ import { PortalInvoices } from '../pages/portal/PortalInvoices';
 import { PortalMessages, PortalMore } from '../pages/portal/PortalMessages';
 import { PortalTimetable } from '../pages/portal/PortalTimetable';
 import { PricingPage } from '../pages/settings/PricingPage';
+import { TermsPage } from '../pages/settings/TermsPage';
 import { ThemePage } from '../pages/settings/ThemePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { SetupNeededPage } from '../pages/SetupNeededPage';
@@ -128,6 +129,7 @@ export const routes = [
               { path: 'invoices/:invoiceId', element: <InvoicePage /> },
               { path: 'payments', element: <PaymentsPage /> },
               { path: 'settings/branches', element: <BranchesPage /> },
+              { path: 'settings/terms', element: <TermsPage /> },
               { path: 'settings/courses', element: <CoursesPage /> },
               { path: 'settings/team', element: <TeamPage /> },
               { path: 'settings/pricing', element: <PricingPage /> },
