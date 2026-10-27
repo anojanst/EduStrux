@@ -4,11 +4,13 @@ import {
   BookOpen,
   CalendarDays,
   Check,
+  Ellipsis,
   ChevronsUpDown,
   House,
   LogOut,
   MapPin,
   Menu,
+  MessageSquare,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -49,14 +51,15 @@ type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean 
  */
 function navFor(role: Role): NavItem[] {
   const items: NavItem[] = [{ to: '', label: 'nav.home', Icon: House, end: true }];
-  if (can(role, 'classes:read') && role !== 'parent') {
+  if (role === 'parent') return [...items, ...PORTAL_NAV];
+  if (can(role, 'classes:read')) {
     items.push({ to: 'timetable', label: 'nav.timetable', Icon: CalendarDays });
     items.push({ to: 'classes', label: 'nav.classes', Icon: School });
   }
   if (canSearchPeople(role)) {
     items.push({ to: 'families', label: 'nav.people', Icon: Users });
   }
-  if (can(role, 'billing:read') && role !== 'parent') {
+  if (can(role, 'billing:read')) {
     items.push({ to: 'invoices', label: 'nav.invoices', Icon: ReceiptText });
     items.push({ to: 'payments', label: 'nav.payments', Icon: Wallet });
   }
@@ -64,7 +67,7 @@ function navFor(role: Role): NavItem[] {
     items.push({ to: 'settings/branches', label: 'nav.branches', Icon: MapPin });
     items.push({ to: 'settings/courses', label: 'nav.courses', Icon: BookOpen });
   }
-  if (can(role, 'billing:read') && role !== 'parent') {
+  if (can(role, 'billing:read')) {
     items.push({ to: 'settings/pricing', label: 'nav.pricing', Icon: Tag });
   }
   if (can(role, 'staff:read')) {
@@ -75,6 +78,14 @@ function navFor(role: Role): NavItem[] {
   }
   return items;
 }
+
+/** The parent portal's areas (TUI-126), after Home: the sidebar, and the tab bar on phones. */
+const PORTAL_NAV: NavItem[] = [
+  { to: 'timetable', label: 'nav.timetable', Icon: CalendarDays },
+  { to: 'invoices', label: 'nav.invoices', Icon: ReceiptText },
+  { to: 'messages', label: 'nav.messages', Icon: MessageSquare },
+  { to: 'more', label: 'nav.more', Icon: Ellipsis },
+];
 
 /** Staff who read families get the people area and the search; parents use the portal. */
 function canSearchPeople(role: Role) {
@@ -137,6 +148,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { membership } = useOrg();
   const canSearch = canSearchPeople(membership.role);
   const canCreate = newItemsFor(membership.role).length > 0;
+  // Parents get a tab bar on phones in place of the menu (ui-design.md §5, TUI-126).
+  const parent = membership.role === 'parent';
   useEffect(() => setDrawerOpen(false), [location.pathname]);
   useSearchShortcut(
     canSearch,
@@ -178,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
+            className={cn('lg:hidden', parent && 'max-sm:hidden')}
             aria-label={t('shell.openMenu')}
             onClick={() => setDrawerOpen(true)}
             icon={<Menu className="size-5 text-text" />}
@@ -213,9 +226,43 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
         {searching ? <SearchPalette onClose={() => setSearching(false)} /> : null}
         <OrgBanner />
-        <main className="w-full flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main
+          className={cn('w-full flex-1 px-4 py-6 sm:px-8 sm:py-8', parent && 'max-sm:pb-[90px]')}
+        >
+          {children}
+        </main>
       </div>
+      {parent ? <TabBar /> : null}
     </div>
+  );
+}
+
+/** The parent's areas as a tab bar fixed to the foot of a phone screen. */
+function TabBar() {
+  const { membership } = useOrg();
+  const base = orgPath(membership.org.slug);
+  return (
+    <nav
+      aria-label={t('shell.tabs')}
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
+    >
+      {navFor(membership.role).map(({ to, label, Icon, end }) => (
+        <NavLink
+          key={to}
+          to={to ? `${base}/${to}` : base}
+          end={end}
+          className={({ isActive }) =>
+            cn(
+              'flex h-[66px] flex-col items-center justify-center gap-[3px] text-meta',
+              isActive ? 'font-semibold text-brand' : 'text-muted',
+            )
+          }
+        >
+          <Icon className="size-5" aria-hidden />
+          {t(label)}
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 

@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceLine, Payment } from '@edustrux/shared';
+import type { Invoice, Payment, PortalInvoice, PortalInvoiceLine } from '@edustrux/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronLeft, Download, Send, Wallet } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
@@ -255,10 +255,13 @@ function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
   );
 }
 
-/** The lines by student, each class's charge and discounts, then the totals. */
-function Lines({ invoice, overdue }: { invoice: Invoice; overdue: boolean }) {
+/**
+ * The lines by student, each class's charge and discounts, then the totals. Also the parent's
+ * invoice sheet in the portal (TUI-126).
+ */
+export function Lines({ invoice, overdue }: { invoice: PortalInvoice; overdue: boolean }) {
   const format = useFormat();
-  const byStudent = new Map<string, InvoiceLine[]>();
+  const byStudent = new Map<string, PortalInvoiceLine[]>();
   for (const line of invoice.lines) {
     byStudent.set(line.studentId, [...(byStudent.get(line.studentId) ?? []), line]);
   }
@@ -360,7 +363,7 @@ function Total({
 }
 
 /** "8 lessons × $35.00", "6 of 8 lessons · term price $280.00", with free trial lessons. */
-export function lineMeta(line: InvoiceLine, format: Format) {
+export function lineMeta(line: PortalInvoiceLine, format: Format) {
   const price = format.money(line.unitPrice);
   let charge: string;
   if (line.basis === 'per_lesson') {

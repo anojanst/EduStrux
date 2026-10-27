@@ -1,4 +1,4 @@
-import type { Dashboard, Invoice, InvoiceStatus, Term } from '@edustrux/shared';
+import type { Dashboard, Invoice, InvoiceStatus, PortalInvoice, Term } from '@edustrux/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from '../i18n';
 import { api } from './api';
@@ -10,7 +10,7 @@ import { orgPath } from './session';
 type Format = ReturnType<typeof useFormat>;
 
 /** The status to show: an issued or part-paid invoice past its due date is overdue. */
-export function invoiceStatus(invoice: Invoice, today: string): InvoiceStatus | 'overdue' {
+export function invoiceStatus(invoice: PortalInvoice, today: string): InvoiceStatus | 'overdue' {
   if (isOpen(invoice) && invoice.dueDate && invoice.dueDate < today && invoice.balance.amount > 0) {
     return 'overdue';
   }
@@ -18,7 +18,7 @@ export function invoiceStatus(invoice: Invoice, today: string): InvoiceStatus | 
 }
 
 /** Issued or part paid: what a payment can go towards. */
-export function isOpen(invoice: Invoice) {
+export function isOpen(invoice: PortalInvoice) {
   return invoice.status === 'issued' || invoice.status === 'part_paid';
 }
 
@@ -38,7 +38,7 @@ export function periodLabel(
 }
 
 /** "Amaya, Kavi": the first names of the students the invoice bills. */
-export function studentNames(invoice: Invoice) {
+export function studentNames(invoice: PortalInvoice) {
   const seen = new Map<string, string>();
   for (const line of invoice.lines) seen.set(line.studentId, line.studentFirstName);
   return [...seen.values()].join(', ');

@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, Outlet } from 'react-router';
 import { ToastProvider } from '../components/ui/Toast';
+import type { ReactNode } from 'react';
 import { ApiError } from '../lib/api';
+import { useOrg } from '../lib/org';
 import { HomePage } from '../pages/HomePage';
 import { ChooseOrgPage } from '../pages/ChooseOrgPage';
 import { ClassesPage } from '../pages/classes/ClassesPage';
@@ -19,6 +21,9 @@ import { PeoplePage } from '../pages/people/PeoplePage';
 import { StudentPage } from '../pages/people/StudentPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
 import { BranchesPage } from '../pages/settings/BranchesPage';
+import { PortalInvoices } from '../pages/portal/PortalInvoices';
+import { PortalMessages, PortalMore } from '../pages/portal/PortalMessages';
+import { PortalTimetable } from '../pages/portal/PortalTimetable';
 import { PricingPage } from '../pages/settings/PricingPage';
 import { ThemePage } from '../pages/settings/ThemePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
@@ -62,6 +67,15 @@ function Root() {
  * welcome, onboarding, the org picker, and each org under `/o/:orgSlug` (its slug, from
  * `GET /me`).
  */
+/**
+ * A path the parent portal shares with staff (TUI-126): the parent's own page for a parent, the
+ * staff page for everyone else, or not found where staff have none yet.
+ */
+function ForParent({ portal, staff }: { portal: ReactNode; staff?: ReactNode }) {
+  const { membership } = useOrg();
+  return <>{membership.role === 'parent' ? portal : (staff ?? <NotFoundPage />)}</>;
+}
+
 export const routes = [
   {
     element: <Root />,
@@ -95,14 +109,22 @@ export const routes = [
             element: <OrgLayout />,
             children: [
               { index: true, element: <HomePage /> },
-              { path: 'timetable', element: <TimetablePage /> },
+              {
+                path: 'timetable',
+                element: <ForParent portal={<PortalTimetable />} staff={<TimetablePage />} />,
+              },
               { path: 'classes', element: <ClassesPage /> },
               { path: 'classes/:classId', element: <ClassPage /> },
               { path: 'lessons/:sessionId', element: <LessonPage /> },
               { path: 'families', element: <PeoplePage /> },
               { path: 'families/:familyId', element: <FamilyPage /> },
               { path: 'students/:studentId', element: <StudentPage /> },
-              { path: 'invoices', element: <InvoicesPage /> },
+              {
+                path: 'invoices',
+                element: <ForParent portal={<PortalInvoices />} staff={<InvoicesPage />} />,
+              },
+              { path: 'messages', element: <ForParent portal={<PortalMessages />} /> },
+              { path: 'more', element: <ForParent portal={<PortalMore />} /> },
               { path: 'invoices/:invoiceId', element: <InvoicePage /> },
               { path: 'payments', element: <PaymentsPage /> },
               { path: 'settings/branches', element: <BranchesPage /> },
