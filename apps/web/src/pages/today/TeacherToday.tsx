@@ -327,17 +327,23 @@ function NextLesson({
   );
 }
 
-/** A lesson today: its times, class and room, then its marks or what to do about them. */
-function LessonRow({
+/**
+ * A lesson today: its times, class and room, then its marks or what to do about them. A teacher
+ * sees how many students to expect; other staff (the staff Home, TUI-125) who teaches it. Without
+ * `onMark` an unmarked lesson only says so.
+ */
+export function LessonRow({
   session,
   students,
   now,
   onMark,
+  showTeacher = false,
 }: {
   session: Session;
-  students: number | undefined;
+  students?: number;
   now: string;
-  onMark: () => void;
+  onMark?: () => void;
+  showTeacher?: boolean;
 }) {
   const format = useFormat();
   const cancelled = session.status === 'cancelled';
@@ -345,9 +351,11 @@ function LessonRow({
   const marked = markedCount(session) > 0;
   const where = [
     session.roomName,
-    students !== undefined
-      ? t(students === 1 ? 'today.students.one' : 'today.students', { n: students })
-      : null,
+    showTeacher
+      ? session.teacherName
+      : students !== undefined
+        ? t(students === 1 ? 'today.students.one' : 'today.students', { n: students })
+        : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -365,9 +373,11 @@ function LessonRow({
     state = (
       <>
         <Badge tone="warning">{t('classes.notMarked')}</Badge>
-        <Button variant="secondary" size="sm" className="max-md:h-11" onClick={onMark}>
-          {t('today.mark')}
-        </Button>
+        {onMark ? (
+          <Button variant="secondary" size="sm" className="max-md:h-11" onClick={onMark}>
+            {t('today.mark')}
+          </Button>
+        ) : null}
       </>
     );
   else if (!begun)

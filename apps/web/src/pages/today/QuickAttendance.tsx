@@ -22,7 +22,12 @@ import {
 export function QuickAttendance({ session, onClose }: { session: Session; onClose: () => void }) {
   const format = useFormat();
   const { roster, notes } = useLessonAttendance(session.id);
-  const subtitle = [format.timeRange(session.startTime, session.endTime), session.roomName]
+  // An earlier lesson, opened from "Needs attention", says which day it was.
+  const subtitle = [
+    session.date === format.today ? null : format.day(session.date),
+    format.timeRange(session.startTime, session.endTime),
+    session.roomName,
+  ]
     .filter(Boolean)
     .join(' · ');
 

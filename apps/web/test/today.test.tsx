@@ -215,11 +215,11 @@ describe("a teacher's Today", () => {
     expect(screen.queryByRole('button', { name: 'Take attendance' })).toBeNull();
   });
 
-  it('is only for teachers: other staff keep the staff home', () => {
+  it('is only for teachers: other staff get the staff home', () => {
     stubApi({});
-    renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
+    renderRoutes(routes, '/o/bright-minds', inOrg('accountant'));
     expect(screen.queryByText('Today’s lessons')).toBeNull();
-    expect(screen.getByText('Getting started')).toBeVisible();
+    expect(screen.getByText('Quick actions')).toBeVisible();
   });
 });
 
