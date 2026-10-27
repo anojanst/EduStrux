@@ -410,7 +410,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Fees:** automatic term/monthly invoices (a term run and a monthly run that staff start, D-089), pro-rata by lessons (D-086), tax on invoices, recording payments (partial, receipts), unique bank transfer references (one per family, D-097), overdue reminders **by email** (D-148), invoice and receipt PDFs (D-142).
 - **Communication:** announcements (all, branch, grade, subject, class, teacher's students, custom list), email and portal channels, automatic messages, message templates.
 - **Parent portal (PWA):** passwordless sign-in through Clerk (email code or link, D-021), timetable and changes, invoices and balance, reporting absences.
-- **Teacher:** a today view, plus attendance and notes on phone.
+- **Teacher:** a today view (a teacher's Home, with quick attendance and homework, D-177), plus attendance and notes on phone.
 - **Reports:** home dashboard, money reports (invoiced vs received, aged debt, tax collected).
 - **Data and platform:** org data isolation (a sweep over every route, D-156), login security (passwordless parents, 2FA for staff), audit log, mobile-first PWA, full data export as one JSON file (D-147), nightly per-org backups (D-149), privacy controls (consents, retention, erasing a family, D-155).
 - **SaaS layer:** sign-up and trial, onboarding wizard, plans and limits, Paddle subscription billing, super-admin console.

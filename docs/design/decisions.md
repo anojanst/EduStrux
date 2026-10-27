@@ -5074,3 +5074,44 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details and the changes from the design were taken during the build
     without asking; the owner hasn't stated them.
 - **Tasks:** TUI-51, TUI-52, TUI-84.
+
+## D-177 · 2026-10-27 · A teacher's Home is Today, with quick attendance
+
+- **Context:** The MVP promises teachers a today view with attendance and notes on phone, and the
+  API had everything it needs. TUI-57 builds it from the owner's Figma Make design (Teacher
+  home). No new endpoints.
+- **Decision:**
+  - **Who sees it:** a teacher's Home (`/o/:slug`) is Today. Other staff keep the staff home (the
+    Home dashboard is still TUI-40) and parents the portal home. Overline is the org's day, then
+    the greeting and "3 lessons today · 1 to mark".
+  - **Data:** the teacher's own sessions from `GET /sessions` (today − 14 to today + 7), class
+    `enrolledCount` from `GET /classes`, and `GET /absence-notices` (today to today + 7). "Today",
+    "begun" and "unmarked" use the org's local time.
+  - **Next lesson card:** the lesson on now ("On now") or next today ("Next lesson · in 25 min"),
+    else the next one this week ("Next lesson · Thu 29 Oct 4:00 pm"). Class-colour bar, course,
+    time, room, enrolled count, and a warning badge "N away today" from the lesson's absence
+    notices. "Take attendance" shows only for a lesson today, since attendance opens on the day
+    (D-070).
+  - **Today's lessons:** rows with a class-colour time column and "room · students". State:
+    Cancelled (struck through), a marks summary once marked, "Not marked" with Mark once begun,
+    "in 25 min" before. A moved lesson says "Moved from …".
+  - **Quick attendance** (new): the attendance sheet in the shared wide dialog (a bottom sheet on
+    phones): "N of M marked", "Mark the rest present", the sheet's student rows (four statuses,
+    absence notices pre-filled as excused, a note for the family) and homework. Footer "N
+    changes" and Save attendance; saving closes it with a toast.
+  - **Needs attention:** "N earlier lessons not marked" (scheduled, begun, nothing marked, last 14
+    days) with "Mark <day> →", which opens quick attendance on the oldest; "N absences reported
+    this week" listing up to three "Name · day" lines; "All caught up" when there's neither.
+  - **This week:** the next five lessons after today, hidden on phones as in the design.
+  - **Attendance sheet:** the lesson page's sheet and quick attendance share one implementation,
+    so they behave the same. The sheet gains "Homework for the class" (`PUT
+/sessions/{id}/notes` `homework`, D-130), which the API had but no screen used.
+  - **Changes from the design:** "Mark all present" is "Mark the rest present", the sheet's
+    wording, because it keeps marks already set. The design's joined segmented control isn't
+    copied; rows reuse the sheet's status buttons so both screens match. The design's "View
+    report →" for absences had no screen to go to, so the names are listed instead.
+- **Consequences:** The phone bottom tab bar in the design is still TUI-84. A page for absence
+  notices would give "View report" somewhere to go; none is planned yet.
+  - Assumption: the screen details and the changes from the design were taken during the build
+    without asking; the owner hasn't stated them.
+- **Tasks:** TUI-57, TUI-40, TUI-84.

@@ -391,6 +391,13 @@ Settled when TUI-23 was built (D-158):
   clashes. A lesson opens in the shared dialog (not the design's floating popover), with Move
   lesson and Cancel lesson. On phones: a Filters sheet, Today and ‹ › beside it, a 7-day strip
   and the day's lessons as rows. Drag-and-drop waits for v1.1 (TUI-52).
+- **Teacher Today** (D-177), from the owner's Figma Make design (Teacher home): a teacher's
+  Home. A next lesson card (on now, next today, else next this week) with "Take attendance" on
+  the day, today's lessons with their marking state, Needs attention (earlier lessons not marked,
+  absences reported this week) and This week (hidden on phones). Quick attendance is the
+  attendance sheet in the shared wide dialog (a bottom sheet on phones); the lesson page's sheet
+  and it share one implementation, now with homework for the class. Rows keep the sheet's status
+  buttons rather than the design's segmented control.
 - **Settings › Courses** (D-170), from the owner's Figma Make design, for roles that change
   classes: tabs Courses (grouped by grade level, with classes, lesson length and price),
   Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also

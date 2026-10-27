@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { orgApiPath, useOrg } from '../lib/org';
 import { can, roleLabel } from '../lib/roles';
 import { orgPath } from '../lib/session';
+import { TeacherToday } from './today/TeacherToday';
 
 /** The day and part of the day in the org's time zone (UTC until the org has loaded). */
 function todayIn(timeZone: string | undefined, locale: string | undefined) {
@@ -34,10 +35,27 @@ function useFirstName() {
   return user?.firstName ?? me.name?.split(/\s+/)[0] ?? null;
 }
 
-/** `/o/:orgSlug`: the parent portal's home for a parent, the staff home for everyone else. */
+/**
+ * `/o/:orgSlug`: the parent portal's home for a parent, Today for a teacher (TUI-57), the staff
+ * home for everyone else.
+ */
 export function HomePage() {
   const { membership } = useOrg();
-  return membership.role === 'parent' ? <PortalHome /> : <StaffHome />;
+  if (membership.role === 'parent') return <PortalHome />;
+  if (membership.role === 'teacher') return <TeacherHome />;
+  return <StaffHome />;
+}
+
+function TeacherHome() {
+  const { org } = useOrg();
+  const firstName = useFirstName();
+  const { overline, greeting } = todayIn(org?.timezone, org?.locale);
+  return (
+    <TeacherToday
+      overline={overline}
+      greeting={firstName ? t(`${greeting}Name`, { name: firstName }) : t(greeting)}
+    />
+  );
 }
 
 /**
