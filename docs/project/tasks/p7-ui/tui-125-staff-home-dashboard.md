@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-125-staff-home-dashboard
-pr:
+pr: 68
 ---
 
 # TUI-125 Staff Home dashboard
