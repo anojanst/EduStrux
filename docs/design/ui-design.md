@@ -139,10 +139,11 @@ widths; the app doesn't).
     students and guardians (`GET /search`).
   - **+ New**: the primary button ("New" with a plus icon) at the right, with a menu of what the
     role may create, each with an icon, opening the same dialog as its own page (D-174):
-    Family (`people:write`, Add family), Class (`classes:write`, Add class) and Payment
-    (`billing:write`, Record payment for any family that owes). Student, enrolment and message
-    aren't in it: a student is added inside a family, an enrolment from a class, and messages
-    aren't built. Parents, teachers and accountants have no "+ New".
+    Family (`people:write`, Add family), Class (`classes:write`, Add class), Payment
+    (`billing:write`, Record payment for any family that owes) and Announcement
+    (`messages:write`, New announcement, D-183). Student and enrolment aren't in it: a student
+    is added inside a family, an enrolment from a class. Parents and accountants have no
+    "+ New"; a teacher's has only Announcement.
   - Notifications bell with a dot when there's something new.
 - **Banner slot** under the top bar, full width (see §6, Banners).
 - **Content**: the full width beside the sidebar, edge to edge, with 32px padding (16px on
@@ -377,7 +378,7 @@ Settled when TUI-23 was built (D-158):
 - **Top-bar search** (D-164): built without Radix. A command palette over the page, full screen on
   phones, opened from the top bar or with Ctrl/⌘ K. The top bar shows on desktop too for roles
   that can search (staff with `people:read`).
-- **+ New** (D-174): the top-bar menu of §5 (Family, Class, Payment by role) and toast actions,
+- **+ New** (D-174): the top-bar menu of §5 (Family, Class, Payment, Announcement by role) and toast actions,
   first "Download receipt". The bell is still to come.
 - **Families & students** (D-164), from the Figma Make people design: the list with families and
   students tabs, the family page, the student page and the Add family dialog. Dialogs take a
@@ -412,6 +413,12 @@ Settled when TUI-23 was built (D-158):
   edit dialogs for branches and rooms, and delete dialogs that list what still uses the item,
   with Delete off. Only the owner changes anything; other staff get a read-only notice and no
   menus. Single-tutor mode hides Add branch with a muted note.
+- **Messages** (D-183), from the owner's Figma Make design, for staff with `messages:read`:
+  Sent (kind chips for the owner; each message with its audience, channels, recipient count,
+  date and sender, then a detail dialog with delivery tiles and the recipients by email status),
+  the New announcement dialog (template, audience cards with chips, subject, message, channels,
+  then a confirm step), and for the owner Templates and Automatic (the automatic-message
+  switches, reminder days and hour, reply-to). Teachers write to their own classes.
 - **Settings › Terms & holidays** (D-181), from the owner's Figma Make design: a year switcher,
   the academic year card with a timeline of its terms, holidays and today, the year's terms
   (weeks, classes, Finished / Now · Week n of m / Upcoming, Run invoices on the next term) and

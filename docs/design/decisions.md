@@ -5312,3 +5312,49 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
 - **Consequences:** On wide screens, lists and cards stretch; grids on Home already spread their
   columns. A new screen checks this before its PR.
 - **Tasks:** none (owner request, `chore/full-width-pages`).
+
+## D-183 · 2026-10-28 · The staff Messages screen
+
+- **Context:** Announcements, templates and the automatic-message settings had an API (TUI-69,
+  TUI-70) but no staff screen. TUI-128 builds it from the owner's Figma Make design (Messages).
+- **Decision:**
+  - **Screen:** Messages at `/o/:slug/messages`, the path the parent portal already uses for its
+    own Messages (parents keep that page). Nav item "Messages" after Payments for staff with
+    `messages:read` (owner, branch manager, front desk, teacher). "+ New" gains Announcement for
+    `messages:write`, so a teacher now has "+ New" with that one item. No new endpoints.
+  - **Tabs:** Sent for everyone who reads messages; Templates and Automatic for the owner
+    (`org:write`), who alone may change them. Others still pick a template when writing.
+  - **Sent:** the API gives the owner every message and anyone else the announcements they
+    sent, so only the owner gets the All / Announcements / Automatic chips. A row shows the kind
+    icon, subject, first line, the automatic message's reason ("Lesson changed", "Invoice
+    issued", "Overdue reminder"), the audience ("All families", "Albany", "Year 9 Maths +1",
+    "3 families", "My classes"), the channels as icons, the recipient count, when ("Today 3:40
+    pm", the day in the last week, else the date) and who sent it ("System" for automatic).
+    Columns line up from 1280px; narrower, the audience, channels and count go on a line under
+    the text. 25 at a time with Load more.
+  - **Counts are guardians, not families:** the API makes one recipient per guardian, so rows
+    read "42 guardians" and the toast "Announcement sent to 42 guardians". The design said
+    families.
+  - **Detail:** a wide dialog with the body, "Sent Mon 26 Oct, 3:40 pm by … · Email and
+    portal", delivery tiles (Delivered, Sent, Bounced, No email always; Queued, Failed,
+    Complained when above 0) and the recipients (email, error under a bounce, "Perera family",
+    status, delivered time) with a status filter. Family names come from the families list,
+    every page of it. A portal-only message says there are no emails to track.
+  - **New announcement:** optional template (fills subject and message, still editable);
+    "To" as cards (All families, Branch, Grade, Subject, Class, Teacher's classes, Chosen
+    families), with chosen items as removable chips added from a select, or for families a
+    name search (`GET /search`). Branch staff see only their branches. A teacher gets "My
+    classes" (audience `teacher` with their own membership) and Class. Subject (200) and
+    message (10,000) with counters, Email and Parent portal (at least one). Sending first asks
+    "Send to Year 9 by email and the portal?". There's no recipient count before sending (no
+    endpoint gives one), so the confirm names the audience instead of the design's "42
+    families". A 422 (nobody reached) returns to the form with the API's message.
+  - **Templates:** name (unique, "There's already a template called …"), subject, message;
+    edit and delete (messages already sent keep their text).
+  - **Automatic:** the three switches, reminder days as chips (the due date to 30 days after,
+    at most 5), the hour they go out, and the reply-to email, saved together (`PUT`).
+- **Consequences:** Home's quick actions could gain "Send announcement" now there's a screen. A
+  recipient-count preview endpoint would let the confirm say how many guardians will get it.
+  - Assumption: the screen details were settled during the build from the design, without
+    asking the owner.
+- **Tasks:** TUI-128.

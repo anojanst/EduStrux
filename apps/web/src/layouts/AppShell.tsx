@@ -10,6 +10,7 @@ import {
   House,
   LogOut,
   MapPin,
+  Megaphone,
   Menu,
   MessageSquare,
   Palette,
@@ -39,6 +40,7 @@ import { cn } from '../lib/cn';
 import { useOrg } from '../lib/org';
 import { RecordPaymentDialog } from '../pages/billing/RecordPaymentDialog';
 import { ClassDialog } from '../pages/classes/ClassDialog';
+import { NewAnnouncementDialog } from '../pages/messages/NewAnnouncement';
 import { AddFamilyDialog } from '../pages/people/AddFamilyDialog';
 import { orgBanner, seesTrialBanner } from '../lib/orgStatus';
 import { can, roleLabel, type Role } from '../lib/roles';
@@ -63,6 +65,9 @@ function navFor(role: Role): NavItem[] {
   if (can(role, 'billing:read')) {
     items.push({ to: 'invoices', label: 'nav.invoices', Icon: ReceiptText });
     items.push({ to: 'payments', label: 'nav.payments', Icon: Wallet });
+  }
+  if (can(role, 'messages:read')) {
+    items.push({ to: 'messages', label: 'nav.messages', Icon: MessageSquare });
   }
   if (can(role, 'classes:write')) {
     items.push({ to: 'settings/branches', label: 'nav.branches', Icon: MapPin });
@@ -268,7 +273,7 @@ function TabBar() {
   );
 }
 
-type NewKind = 'family' | 'class' | 'payment';
+type NewKind = 'family' | 'class' | 'payment' | 'announcement';
 
 /** What the role may create from "+ New" (ui-design.md §5), in the menu's order. */
 function newItemsFor(role: Role): NewKind[] {
@@ -277,10 +282,16 @@ function newItemsFor(role: Role): NewKind[] {
   if (can(role, 'people:write')) kinds.push('family');
   if (can(role, 'classes:write')) kinds.push('class');
   if (can(role, 'billing:write')) kinds.push('payment');
+  if (can(role, 'messages:write')) kinds.push('announcement');
   return kinds;
 }
 
-const NEW_ICONS = { family: Users, class: School, payment: Wallet } as const;
+const NEW_ICONS = {
+  family: Users,
+  class: School,
+  payment: Wallet,
+  announcement: Megaphone,
+} as const;
 
 /**
  * "+ New" in the top bar: the primary button with a menu of what the role may create, a 44px
@@ -308,6 +319,7 @@ function NewMenu({ pushRight }: { pushRight: boolean }) {
       <AddFamilyDialog open={open === 'family'} onClose={close} />
       <ClassDialog open={open === 'class'} onClose={close} />
       <RecordPaymentDialog open={open === 'payment'} onClose={close} />
+      <NewAnnouncementDialog open={open === 'announcement'} onClose={close} />
     </div>
   );
 }
