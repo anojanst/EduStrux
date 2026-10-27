@@ -153,8 +153,9 @@ function Payments() {
   );
 }
 
+// Method and reference join the columns only on wide screens, so the row fits beside the sidebar.
 const GRID =
-  'md:grid md:grid-cols-[minmax(96px,0.7fr)_minmax(150px,1.2fr)_minmax(130px,1fr)_minmax(100px,0.8fr)_minmax(170px,1.4fr)_minmax(90px,0.7fr)_40px]';
+  'md:grid md:grid-cols-[minmax(96px,0.7fr)_minmax(150px,1.2fr)_minmax(150px,1.4fr)_minmax(90px,0.7fr)_40px] xl:grid-cols-[minmax(96px,0.7fr)_minmax(150px,1.2fr)_minmax(130px,1fr)_minmax(100px,0.8fr)_minmax(170px,1.4fr)_minmax(90px,0.7fr)_40px]';
 
 function PaymentRows({
   rows,
@@ -192,8 +193,8 @@ function PaymentRows({
       >
         <span>{t('billing.col.received')}</span>
         <span>{t('billing.col.family')}</span>
-        <span>{t('billing.col.method')}</span>
-        <span>{t('billing.col.reference')}</span>
+        <span className="hidden xl:block">{t('billing.col.method')}</span>
+        <span className="hidden xl:block">{t('billing.col.reference')}</span>
         <span>{t('billing.col.towards')}</span>
         <span className="text-right">{t('billing.col.amount')}</span>
         <span />
@@ -227,14 +228,14 @@ function PaymentRows({
                 <b className="truncate font-semibold">
                   {t('people.familyName', { name: payment.familyName })}
                 </b>
-                <small className="truncate text-meta text-muted md:hidden">
+                <small className="truncate text-meta text-muted xl:hidden">
                   {t(`people.method.${payment.method}`)} · {format.date(payment.receivedOn)}
                 </small>
               </span>
-              <span className="hidden md:block">
+              <span className="hidden xl:block">
                 <Method method={payment.method} />
               </span>
-              <span className="hidden truncate text-muted md:block">
+              <span className="hidden truncate text-muted xl:block">
                 {payment.reference ?? '—'}
               </span>
               <span className="hidden truncate md:block">{towards(payment)}</span>

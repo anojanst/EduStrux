@@ -133,11 +133,16 @@ widths; the app doesn't).
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
-- **Top bar**, 64px, white with a bottom border:
+- **Top bar**, 64px, white with a bottom border. It shows for any role that can search or
+  create (D-164, D-174):
   - Global search: full-width field with a search icon and a `⌘K` hint, finding families,
     students and guardians (`GET /search`).
-  - **+ New**: the primary button with a menu (family, student, enrolment, payment, message),
-    showing only what the role may create.
+  - **+ New**: the primary button ("New" with a plus icon) at the right, with a menu of what the
+    role may create, each with an icon, opening the same dialog as its own page (D-174):
+    Family (`people:write`, Add family), Class (`classes:write`, Add class) and Payment
+    (`billing:write`, Record payment for any family that owes). Student, enrolment and message
+    aren't in it: a student is added inside a family, an enrolment from a class, and messages
+    aren't built. Parents, teachers and accountants have no "+ New".
   - Notifications bell with a dot when there's something new.
 - **Banner slot** under the top bar, full width (see §6, Banners).
 - **Content**: the full width beside the sidebar, edge to edge, with 32px padding (16px on
@@ -154,8 +159,8 @@ menu button.
 
 ### Phone (< 640px)
 
-- Top bar: menu button (opens the sidebar as a drawer), search, and **+ New** as a 40px icon
-  button. Nothing may overflow the screen width.
+- Top bar: menu button (opens the sidebar as a drawer), search, and **+ New** as a 44px brand
+  icon button. Nothing may overflow the screen width.
 - **Bottom tab bar** with the four most used areas for the role. Staff: Home, Timetable,
   Families, Invoices, More. Teacher: Today, Timetable, Messages, More. Parent: Home, Timetable,
   Invoices, Messages, More.
@@ -244,6 +249,9 @@ Icon tile, title and a one-line description, chevron; two columns on desktop, on
 - Sorting by clicking headers that support it; filters as chips above the list.
 - Paging is cursor based: a "Load more" button at the end, never page numbers.
 - Selection with checkboxes only where a bulk action exists.
+- A table must fit its card at 1024px beside the sidebar. When it doesn't, the less needed
+  columns show only from 1280px and their values move to the meta line under the title (D-174:
+  Invoices drops Due date and Total, Payments drops Method and Reference).
 
 ### Forms
 
@@ -274,7 +282,9 @@ banners show to everyone, since saving fails for every role.
 ### Feedback
 
 - **Toasts** bottom right (bottom centre on phones) for completed actions, 4s, with Undo where
-  the API allows it.
+  the API allows it. A toast can carry one action button ("Download receipt" after "Payment of
+  $120.00 recorded for the Perera family"); one with a button stays 8s, so there's time to
+  reach it (D-174). Long toasts wrap on phones.
 - **Confirm dialogs** for destructive actions, naming what happens ("Void this invoice for the
   Perera family? Its enrolments can then be invoiced again."). Irreversible ones (erase a family) need the name
   typed to confirm.
@@ -344,7 +354,8 @@ Settled when TUI-23 was built (D-158):
   class names read `bg-brand`, `text-muted`, `border-border`.
 - **shadcn/ui** (Radix underneath) isn't added. Own primitives cover the screens so far: the
   dialog is the browser's `<dialog>` (focus trap and Escape built in; a bottom sheet on phones),
-  plus a 6-digit code input, toasts and a row "…" menu. Radix comes in when a popover, combobox
+  plus a 6-digit code input, toasts (with an optional action) and a menu that opens from any
+  trigger (the row "…" menu is one), with optional item icons (D-174). Radix comes in when a popover, combobox
   or the `⌘K` search needs it.
 - **Lucide** icons; **Inter** self-hosted with the app (no Google Fonts call).
 - Components live in `apps/web/src/components/ui/` (primitives) and
@@ -353,11 +364,12 @@ Settled when TUI-23 was built (D-158):
   auth layout: the teal brand panel beside the form (D-160).
 - **Built so far** (D-161): the desktop sidebar of §5 (logo, org switcher, nav by role, user
   footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
-  past due. Not yet: top-bar search, "+ New", the bell, the tablet icon rail and the phone tab
-  bar (TUI-40, TUI-84).
+  past due. Not yet: the bell, the tablet icon rail and the phone tab bar (TUI-40, TUI-84).
 - **Top-bar search** (D-164): built without Radix. A command palette over the page, full screen on
   phones, opened from the top bar or with Ctrl/⌘ K. The top bar shows on desktop too for roles
-  that can search (staff with `people:read`). "+ New" and the bell are still to come.
+  that can search (staff with `people:read`).
+- **+ New** (D-174): the top-bar menu of §5 (Family, Class, Payment by role) and toast actions,
+  first "Download receipt". The bell is still to come.
 - **Families & students** (D-164), from the Figma Make people design: the list with families and
   students tabs, the family page, the student page and the Add family dialog. Dialogs take a
   `wide` size (640px) for forms with sections, and focus their first field when they open.

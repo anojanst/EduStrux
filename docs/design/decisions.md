@@ -4952,3 +4952,32 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   method-filter and "Paid towards" bullets. The Payments screen no longer loads the newest 200
   invoices to name what a payment paid. Answers the invoice-number open question in handoff §11.
 - **Tasks:** TUI-120, TUI-121.
+
+## D-174 · 2026-10-27 · The top bar "+ New" menu and toast actions
+
+- **Context:** D-172 left the "+ New" menu of ui-design.md §5 and toast actions as follow-ups.
+  TUI-122 builds both, and fixes the billing tables clipping at 1024px found while checking.
+- **Decision:**
+  - **"+ New"** is a primary button, "New" with a plus icon, at the right of the top bar on
+    desktop, and a 44px brand icon button on phones. Its menu lists what the role may create,
+    each with an icon, and opens the same dialog as that item's own page: Family
+    (`people:write`, Add family), Class (`classes:write`, Add class) and Payment
+    (`billing:write`, Record payment for any family that owes).
+  - Student, enrolment and message, listed in §5, are left out: a student is added inside a
+    family, an enrolment from a class, and messages aren't built.
+  - Parents, teachers and accountants have no "+ New". The top bar shows on desktop for any role
+    that can search or create (was: search only, D-164).
+  - The menu primitive opens from any trigger (the row "…" menu uses it), and items can have an
+    icon.
+  - **Toasts** take an optional action button. A toast with one stays 8 seconds instead of 4, so
+    there's time to reach it, and long toasts wrap on phones. First use: "Download receipt" on
+    "Payment of $X recorded for the Y family".
+  - **Tables at 1024px:** beside the sidebar, the invoices and payments tables were wider than
+    their cards and were clipped. Below 1280px the Invoices list drops the Due date and Total
+    columns (the due date moves to a meta line under the family) and the Payments list drops
+    Method and Reference (the method is in the meta line). All columns show from 1280px.
+- **Consequences:** Follow-ups: Student, enrolment and message entries in "+ New" once those
+  flows can start from anywhere; the notifications bell.
+  - Assumption: taken during the build without asking; the owner hasn't stated it and can
+    change it.
+- **Tasks:** TUI-122.

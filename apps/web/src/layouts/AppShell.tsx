@@ -27,9 +27,13 @@ import { Logo } from '../components/Logo';
 import { SearchPalette } from '../components/SearchPalette';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
+import { Menu as ActionMenu, type MenuItem } from '../components/ui/Menu';
 import { t, type MessageKey } from '../i18n';
 import { cn } from '../lib/cn';
 import { useOrg } from '../lib/org';
+import { RecordPaymentDialog } from '../pages/billing/RecordPaymentDialog';
+import { ClassDialog } from '../pages/classes/ClassDialog';
+import { AddFamilyDialog } from '../pages/people/AddFamilyDialog';
 import { orgBanner, seesTrialBanner } from '../lib/orgStatus';
 import { can, roleLabel, type Role } from '../lib/roles';
 import { orgPath, rememberOrg } from '../lib/session';
@@ -124,6 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { membership } = useOrg();
   const canSearch = canSearchPeople(membership.role);
+  const canCreate = newItemsFor(membership.role).length > 0;
   useEffect(() => setDrawerOpen(false), [location.pathname]);
   useSearchShortcut(
     canSearch,
@@ -159,7 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header
           className={cn(
             'sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-surface px-2 lg:px-8',
-            canSearch ? null : 'lg:hidden',
+            canSearch || canCreate ? null : 'lg:hidden',
           )}
         >
           <Button
@@ -196,11 +201,56 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
             </>
           ) : null}
+          {canCreate ? <NewMenu pushRight={!canSearch} /> : null}
         </header>
         {searching ? <SearchPalette onClose={() => setSearching(false)} /> : null}
         <OrgBanner />
         <main className="w-full flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
+    </div>
+  );
+}
+
+type NewKind = 'family' | 'class' | 'payment';
+
+/** What the role may create from "+ New" (ui-design.md §5), in the menu's order. */
+function newItemsFor(role: Role): NewKind[] {
+  if (role === 'parent') return [];
+  const kinds: NewKind[] = [];
+  if (can(role, 'people:write')) kinds.push('family');
+  if (can(role, 'classes:write')) kinds.push('class');
+  if (can(role, 'billing:write')) kinds.push('payment');
+  return kinds;
+}
+
+const NEW_ICONS = { family: Users, class: School, payment: Wallet } as const;
+
+/**
+ * "+ New" in the top bar: the primary button with a menu of what the role may create, a 44px
+ * icon button on phones. Each opens the same dialog as its own page.
+ */
+function NewMenu({ pushRight }: { pushRight: boolean }) {
+  const { membership } = useOrg();
+  const [open, setOpen] = useState<NewKind | null>(null);
+  const items: MenuItem[] = newItemsFor(membership.role).map((kind) => ({
+    label: t(`shell.new.${kind}`),
+    Icon: NEW_ICONS[kind],
+    onSelect: () => setOpen(kind),
+  }));
+  const close = () => setOpen(null);
+  return (
+    <div className={cn('lg:ml-auto', pushRight && 'max-lg:ml-auto')}>
+      <ActionMenu
+        label={t('shell.new')}
+        items={items}
+        className="inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand text-label font-semibold text-white transition-colors duration-150 hover:bg-brand-hover lg:h-10 lg:w-auto lg:px-4"
+      >
+        <Plus className="size-5 lg:size-4" aria-hidden />
+        <span className="max-lg:sr-only">{t('shell.new')}</span>
+      </ActionMenu>
+      <AddFamilyDialog open={open === 'family'} onClose={close} />
+      <ClassDialog open={open === 'class'} onClose={close} />
+      <RecordPaymentDialog open={open === 'payment'} onClose={close} />
     </div>
   );
 }

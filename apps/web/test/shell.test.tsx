@@ -7,7 +7,7 @@ import type { Org } from '@edustrux/shared';
 import { OrgContext } from '../src/lib/org';
 import type { Role } from '../src/lib/roles';
 import { resetAccount } from './clerk';
-import { renderRoutes } from './render';
+import { renderRoutes, stubApi } from './render';
 
 vi.mock('@clerk/react', async () => (await import('./clerk')).clerkModule);
 
@@ -100,5 +100,49 @@ describe('the trial banner', () => {
       </OrgContext.Provider>
     ));
     expect(screen.getByRole('alert')).toHaveTextContent('read-only');
+  });
+});
+
+describe('the + New menu', () => {
+  const as = (role: Role) => (tree: ReactNode) => (
+    <OrgContext.Provider
+      value={{
+        me: { id: 'usr_1', email: 'ethan@example.com', name: 'Ethan Nojan', memberships: [] },
+        membership: { id: 'mem_1', role, branchIds: null, org },
+        org: undefined,
+      }}
+    >
+      {tree}
+    </OrgContext.Provider>
+  );
+
+  it('offers what the role may create, and opens its dialog', async () => {
+    stubApi({
+      'GET /api/v1/orgs/org_1/invoices?status=issued&limit=200': {
+        body: { data: [], nextCursor: null },
+      },
+      'GET /api/v1/orgs/org_1/invoices?status=part_paid&limit=200': {
+        body: { data: [], nextCursor: null },
+      },
+      'GET /api/v1/orgs/org_1/terms?limit=200': { body: { data: [], nextCursor: null } },
+    });
+    renderRoutes(routes, '/o/magic', as('front_desk'));
+    await userEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Family',
+      'Class',
+      'Payment',
+    ]);
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Payment' }));
+    expect(await screen.findByRole('dialog', { name: 'Record payment' })).toBeVisible();
+    expect(await screen.findByText('No family has an issued invoice to pay.')).toBeVisible();
+  });
+
+  it('isn’t there for roles that create nothing', () => {
+    for (const role of ['teacher', 'accountant'] as const) {
+      const view = renderRoutes(routes, '/o/magic', as(role));
+      expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
+      view.unmount();
+    }
   });
 });
