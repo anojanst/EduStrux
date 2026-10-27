@@ -331,7 +331,7 @@ function InvoiceRows({
         <div className={cn('w-full items-center gap-4', GRID)}>
           <span>{t('billing.col.family')}</span>
           <span>{t('billing.col.period')}</span>
-          <span>{t('billing.col.ref')}</span>
+          <span>{t('billing.col.number')}</span>
           <span>{t('billing.col.due')}</span>
           <span className="text-right">{t('billing.col.total')}</span>
           <span className="text-right">{t('billing.col.balance')}</span>
@@ -378,12 +378,17 @@ function InvoiceRows({
                   </small>
                   {/* On phones the period and due date are the meta line; the columns are hidden. */}
                   <small className="truncate text-meta text-muted md:hidden">
-                    {period} · {due}
+                    {[invoice.number, period, due].filter(Boolean).join(' · ')}
                   </small>
                 </span>
                 <span className="hidden truncate md:block">{period}</span>
-                <span className="hidden truncate text-muted md:block">
-                  {invoice.bankReference ? t('billing.ref', { ref: invoice.bankReference }) : '—'}
+                <span
+                  className={cn(
+                    'hidden truncate md:block',
+                    invoice.status === 'void' && 'text-muted line-through',
+                  )}
+                >
+                  {invoice.number ?? <span className="text-subtle">—</span>}
                 </span>
                 <span className="hidden md:block">
                   {invoice.dueDate ? format.date(invoice.dueDate) : '—'}

@@ -102,6 +102,7 @@ function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
   }
 
   const meta = [
+    data.number,
     periodLabel(data, terms.data?.data, format),
     t('billing.period.dates', {
       start: format.date(data.periodStart),

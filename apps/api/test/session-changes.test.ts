@@ -363,7 +363,7 @@ describe('issuing an invoice', () => {
     const [message] = await someSent();
     expect(message).toMatchObject({
       event: 'invoice_issued',
-      subject: 'Invoice from Bright Minds Tuition: $450.00',
+      subject: 'Invoice INV-0001 from Bright Minds Tuition: $450.00',
       recipientCount: 1,
     });
     expect(message!.body).toContain(invoice.bankReference);

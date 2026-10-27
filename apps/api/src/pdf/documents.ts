@@ -21,8 +21,12 @@ const escape = (text: string) =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-/** An invoice's short reference on paper: the end of its id, in capitals. */
+/** A short reference on paper: the end of an id, in capitals. A receipt's, or a draft's. */
 export const invoiceReference = (invoiceId: string) => invoiceId.slice(-8).toUpperCase();
+
+/** What names an invoice on paper and in file names: its number once issued (D-173). */
+export const invoiceLabel = (invoice: { id: string; number: string | null }) =>
+  invoice.number ?? invoiceReference(invoice.id);
 
 const STYLE = `
   * { box-sizing: border-box; }
@@ -69,7 +73,9 @@ export function invoiceHtml(org: Org, invoice: Invoice): string {
   const money = (m: { amount: number; currency: string }) => formatMoney(m, org.locale);
   const date = (d: string) => formatDate(d, org.dateFormat);
   const meta: [string, string][] = [
-    [t('pdf.invoice.reference'), invoiceReference(invoice.id)],
+    invoice.number
+      ? [t('pdf.invoice.number'), invoice.number]
+      : [t('pdf.invoice.reference'), invoiceReference(invoice.id)],
     [t('pdf.invoice.period'), `${date(invoice.periodStart)} – ${date(invoice.periodEnd)}`],
   ];
   if (invoice.issuedAt) {
@@ -129,7 +135,7 @@ ${taxRows}
 </table>
 ${invoice.bankReference ? `<p>${escape(t('pdf.invoice.payBy', { bankReference: invoice.bankReference }))}</p>` : ''}
 ${invoice.notes ? `<p>${escape(invoice.notes).replaceAll('\n', '<br>')}</p>` : ''}`;
-  return page(org, `${t('pdf.invoice.title')} ${invoiceReference(invoice.id)}`, body);
+  return page(org, `${t('pdf.invoice.title')} ${invoiceLabel(invoice)}`, body);
 }
 
 /** A payment's receipt as a printable page. */
@@ -143,7 +149,7 @@ export function receiptHtml(org: Org, payment: Payment): string {
   const towards = payment.allocations
     .map(
       (a) =>
-        `<tr><td>${escape(t('pdf.receipt.invoice', { reference: invoiceReference(a.invoiceId) }))}</td><td class="num">${escape(money(a.amount))}</td></tr>`,
+        `<tr><td>${escape(t('pdf.receipt.invoice', { reference: a.invoiceNumber ?? invoiceReference(a.invoiceId) }))}</td><td class="num">${escape(money(a.amount))}</td></tr>`,
     )
     .join('');
   const body = `${header(org, t('pdf.receipt.title'), meta)}

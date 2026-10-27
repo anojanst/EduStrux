@@ -8,7 +8,13 @@ import {
   priceRules,
   taxRates,
 } from '@edustrux/db';
-import { basesOverlap, PRICE_BASES, type InvoiceStatus, type PriceBasis } from '@edustrux/shared';
+import {
+  basesOverlap,
+  PRICE_BASES,
+  type InvoiceStatus,
+  type PaymentMethod,
+  type PriceBasis,
+} from '@edustrux/shared';
 import {
   and,
   asc,
@@ -24,6 +30,7 @@ import {
   or,
   sql,
   sum,
+  getTableColumns,
   type SQL,
 } from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
@@ -82,9 +89,12 @@ export type InvoiceReach = { familyIds?: Ids; issuedOnly?: boolean };
 
 export type PaymentRow = typeof payments.$inferSelect;
 export type NewPaymentRow = typeof payments.$inferInsert;
-export type AllocationRow = typeof paymentAllocations.$inferSelect;
+/** An allocation with its invoice's number (D-173), null while the invoice has none. */
+export type AllocationRow = typeof paymentAllocations.$inferSelect & {
+  invoiceNumber: number | null;
+};
 export type NewAllocationRow = typeof paymentAllocations.$inferInsert;
-export type PaymentFilter = { familyId?: string; invoiceId?: string };
+export type PaymentFilter = { familyId?: string; invoiceId?: string; method?: PaymentMethod };
 /** A payment goes with its family, as an invoice does: every one when empty, else `familyIds`'. */
 export type PaymentReach = { familyIds?: Ids };
 
@@ -747,12 +757,15 @@ export async function issueInvoice(
   before: InvoiceRow,
 ): Promise<InvoiceRow | undefined> {
   const after = { status: 'issued' as const, issuedAt: now() };
+  // The org's next number, worked out in the statement that issues it, so two invoices issued
+  // at once can't take the same one (D-173).
+  const number = sql`(select coalesce(max(${invoices.number}), 0) + 1 from ${invoices} where ${invoices.orgId} = ${ctx.orgId})`;
   const [, issued] = await writeWithAudit(
     ctx,
     [
       ctx.db
         .update(invoices)
-        .set(after)
+        .set({ ...after, number })
         .where(inOrg(ctx, invoices, eq(invoices.id, before.id), eq(invoices.status, 'draft')))
         .returning(),
     ],
@@ -835,6 +848,7 @@ const paymentFilter = (ctx: OrgCtx, filter: PaymentFilter) => [
       )
     : undefined,
   filter.familyId ? eq(payments.familyId, filter.familyId) : undefined,
+  filter.method ? eq(payments.method, filter.method) : undefined,
 ];
 
 /** Spread into `inOrg`: a parent's families are ids it goes to; a branch's are checked per row. */
@@ -936,8 +950,15 @@ export function paymentWithin(ctx: OrgCtx, id: string, reach: PaymentReach): IdQ
 /** The allocations of the given payments, each payment's oldest invoice first. */
 export function listAllocations(ctx: OrgCtx, paymentIds: Ids) {
   return ctx.db
-    .select()
+    .select({ ...getTableColumns(paymentAllocations), invoiceNumber: invoices.number })
     .from(paymentAllocations)
+    .leftJoin(
+      invoices,
+      and(
+        eq(invoices.orgId, paymentAllocations.orgId),
+        eq(invoices.id, paymentAllocations.invoiceId),
+      ),
+    )
     .where(inOrg(ctx, paymentAllocations, inIds(paymentAllocations.paymentId, paymentIds)))
     .orderBy(asc(paymentAllocations.paymentId), asc(paymentAllocations.invoiceId));
 }
@@ -1227,6 +1248,7 @@ export function overdue(ctx: OrgCtx, today: string) {
       dueDate: invoices.dueDate,
       total: invoices.totalAmount,
       paid: invoices.paidAmount,
+      number: invoices.number,
       bankReference: invoices.bankReference,
       remindedDays: invoices.remindedDays,
     })

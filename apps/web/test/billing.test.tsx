@@ -110,6 +110,7 @@ function invoice(overrides: Record<string, unknown> = {}) {
     familyName: 'Perera',
     branchId: 'brn_main',
     status: 'issued',
+    number: 'INV-0007',
     termId: 'trm_4',
     month: null,
     periodStart: term.startDate,
@@ -131,12 +132,18 @@ function invoice(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const overdue = invoice({ id: 'inv_old', dueDate: addDays(today, -6), bankReference: 'OLD12345' });
+const overdue = invoice({
+  id: 'inv_old',
+  number: 'INV-0003',
+  dueDate: addDays(today, -6),
+  bankReference: 'OLD12345',
+});
 const draft = invoice({
   id: 'inv_draft',
   familyId: 'fam_lee',
   familyName: 'Lee',
   status: 'draft',
+  number: null,
   bankReference: 'DRAFT001',
   issuedAt: null,
   lines: [line({ studentId: 'stu_ben', studentFirstName: 'Ben', studentLastName: 'Lee' })],
@@ -174,7 +181,7 @@ describe('the invoices list', () => {
     expect(row).toHaveAttribute('href', '/o/bright-minds/invoices/inv_old');
     expect(within(row).getByText('Overdue')).toBeVisible();
     expect(within(row).getAllByText('Term 4')[0]).toBeInTheDocument();
-    expect(within(row).getByText('Ref OLD12345')).toBeVisible();
+    expect(within(row).getByText('INV-0003')).toBeVisible();
     expect(within(screen.getByText('Ngata family').closest('a')!).getByText('Paid')).toBeVisible();
     expect(within(screen.getByText('Lee family').closest('a')!).getByText('Draft')).toBeVisible();
     expect(await screen.findByText('$8,420.00')).toBeVisible();
@@ -415,6 +422,7 @@ describe('recording a payment', () => {
   const open = invoice({ id: 'inv_1', balance: NZD(45200) });
   const older = invoice({
     id: 'inv_old',
+    number: 'INV-0003',
     bankReference: 'OLD12345',
     dueDate: addDays(today, -30),
     balance: NZD(32200),
@@ -438,8 +446,8 @@ describe('recording a payment', () => {
     const dialog = await openDialog();
     const amount = await within(dialog).findByLabelText('Amount (required)');
     expect(amount).toHaveValue('452.00');
-    const first = within(dialog).getByLabelText(/Amount for Term 4 · Ref.7K2M9QXA/);
-    const second = within(dialog).getByLabelText(/Amount for Term 4 · Ref.OLD12345/);
+    const first = within(dialog).getByLabelText('Amount for INV-0007 · Term 4');
+    const second = within(dialog).getByLabelText('Amount for INV-0003 · Term 4');
     expect(first).toHaveValue('452.00');
     expect(second).toHaveValue('');
 
@@ -466,7 +474,7 @@ describe('recording a payment', () => {
     const calls = stubApi(replies);
     renderRoutes(routes, '/o/bright-minds/invoices/inv_1', inOrg('owner'));
     const dialog = await openDialog();
-    const first = await within(dialog).findByLabelText(/Amount for Term 4 · Ref.7K2M9QXA/);
+    const first = await within(dialog).findByLabelText('Amount for INV-0007 · Term 4');
     await userEvent.clear(first);
     await userEvent.type(first, '100');
     expect(within(dialog).getByText(/\$352\.00 left to allocate/)).toBeVisible();
@@ -621,7 +629,7 @@ describe('the payments list', () => {
       receivedOn: addDays(today, -2),
       reference: 'PERERA-T4',
       notes: null,
-      allocations: [{ invoiceId: 'inv_1', amount: NZD(45000) }],
+      allocations: [{ invoiceId: 'inv_1', invoiceNumber: 'INV-0007', amount: NZD(45000) }],
       createdAt: at,
       updatedAt: at,
     },
@@ -636,8 +644,8 @@ describe('the payments list', () => {
       reference: null,
       notes: null,
       allocations: [
-        { invoiceId: 'inv_a', amount: NZD(40000) },
-        { invoiceId: 'inv_b', amount: NZD(33000) },
+        { invoiceId: 'inv_a', invoiceNumber: 'INV-0004', amount: NZD(40000) },
+        { invoiceId: 'inv_b', invoiceNumber: 'INV-0005', amount: NZD(33000) },
       ],
       createdAt: at,
       updatedAt: at,
@@ -645,8 +653,8 @@ describe('the payments list', () => {
   ];
   const replies = {
     ...lookups,
-    [`${API}/invoices?limit=200`]: page([invoice()]),
     [`${API}/payments?limit=50`]: page(payments),
+    [`${API}/payments?limit=50&method=cash`]: page([payments[1]]),
   };
 
   it('shows who paid, how, and what it paid towards', async () => {
@@ -655,16 +663,17 @@ describe('the payments list', () => {
     const row = (await screen.findByText('Perera family')).closest('li')!;
     expect(within(row).getByText('$450.00')).toBeVisible();
     expect(within(row).getByText('PERERA-T4')).toBeInTheDocument();
-    expect(await within(row).findByRole('link', { name: /Term 4 · Ref.7K2M9QXA/ })).toHaveAttribute(
+    expect(within(row).getByRole('link', { name: 'INV-0007' })).toHaveAttribute(
       'href',
       '/o/bright-minds/invoices/inv_1',
     );
-    expect(
-      within(screen.getByText('Chen family').closest('li')!).getByText('2 invoices'),
-    ).toBeInTheDocument();
+    const chen = screen.getByText('Chen family').closest('li')!;
+    expect(within(chen).getByRole('link', { name: 'INV-0004' })).toBeInTheDocument();
+    expect(within(chen).getByRole('link', { name: 'INV-0005' })).toBeInTheDocument();
 
+    // The method filter is the API's, so it covers every payment, not just the page loaded.
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Method' }), 'cash');
-    expect(screen.queryByText('Perera family')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Perera family')).toBeNull());
     expect(screen.getByText('Chen family')).toBeVisible();
   });
 

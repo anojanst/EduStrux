@@ -388,10 +388,7 @@ function PaymentForm({
           </div>
           <ul className="divide-y divide-border">
             {invoices.map((invoice) => {
-              const name = [
-                periodLabel(invoice, terms, format),
-                invoice.bankReference ? t('billing.ref', { ref: invoice.bankReference }) : null,
-              ]
+              const name = [invoice.number, periodLabel(invoice, terms, format)]
                 .filter(Boolean)
                 .join(' · ');
               const shown = invoiceStatus(invoice, format.today);

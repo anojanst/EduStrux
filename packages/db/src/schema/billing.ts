@@ -84,6 +84,9 @@ export const invoices = sqliteTable(
     notes: text('notes'),
     issuedAt: text('issued_at'),
     voidedAt: text('voided_at'),
+    // The org's next invoice number, given when the draft is issued (D-173): 1, 2, 3… shown as
+    // INV-0001. A draft has none; a voided issued invoice keeps its own.
+    number: integer('number'),
     // The days overdue (from the org's reminder days) the hourly cron has reminded the family
     // at, so it reminds once for each (TUI-67).
     remindedDays: text('reminded_days', { mode: 'json' }).$type<number[]>().notNull().default([]),
@@ -99,6 +102,7 @@ export const invoices = sqliteTable(
     index('invoices_org_term_idx').on(t.orgId, t.termId, t.id),
     index('invoices_org_month_idx').on(t.orgId, t.month, t.id),
     index('invoices_org_job_idx').on(t.orgId, t.jobId),
+    uniqueIndex('invoices_org_number_uq').on(t.orgId, t.number),
   ],
 );
 

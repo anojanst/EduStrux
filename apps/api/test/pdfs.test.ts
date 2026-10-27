@@ -139,6 +139,9 @@ describe('GET /invoices/{id}/pdf', () => {
     expect(page).toContain('$417.50');
     expect(page).toContain(pereraInvoice.bankReference);
     expect(page).not.toContain('Draft: not yet issued');
+    // An issued invoice is named by its number (D-173).
+    expect(page).toContain('Invoice number');
+    expect(page).toContain('<title>Invoice INV-0001</title>');
   });
 
   it('marks a draft as one, and is 503 for a PDF while Browser Rendering isn’t set up', async () => {
@@ -146,6 +149,7 @@ describe('GET /invoices/{id}/pdf', () => {
     const owner = await ownerToken(org.id);
     const draft = await raw('GET', `${base}/invoices/${ngataInvoice.id}/pdf?format=html`, owner);
     expect(html(draft)).toContain('Draft: not yet issued');
+    expect(html(draft)).not.toContain('Invoice number');
     const pdf = await call('GET', `${base}/invoices/${ngataInvoice.id}/pdf`, { token: owner });
     expect(pdf.status).toBe(503);
     expect(pdf.body.error.code).toBe('unavailable');
@@ -196,7 +200,7 @@ describe('GET /payments/{id}/receipt', () => {
     expect(page).toContain('Receipt');
     expect(page).toContain('Bank transfer');
     expect(page).toContain('$100.00');
-    expect(page).toContain(`Invoice ${pereraInvoice.id.slice(-8).toUpperCase()}`);
+    expect(page).toContain('Invoice INV-0001');
     expect(page).toContain('Term 1 part');
     expect(
       (await call('GET', `${base}/payments/pay_missing/receipt`, { token: owner })).status,

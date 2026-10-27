@@ -29,7 +29,7 @@ import { createRouter, errors, json, jsonBody } from '../../lib/openapi';
 import { byOrg, idempotent } from '../../middleware/idempotency';
 import { orgAccess } from '../../middleware/permission';
 import { OrgParams } from '../orgs/routes';
-import { invoiceHtml, invoiceReference, receiptHtml } from '../../pdf/documents';
+import { invoiceHtml, invoiceLabel, invoiceReference, receiptHtml } from '../../pdf/documents';
 import { DocumentQuery, documentResponse, sendDocument } from '../../pdf/respond';
 import * as orgs from '../orgs/service';
 import { startInvoiceRun } from './generation';
@@ -601,7 +601,7 @@ export const billingRoutes = router
       service.getInvoice(orgCtx(c), access(c), invoiceId),
       orgs.getOrg(orgCtx(c)),
     ]);
-    const name = `invoice-${invoiceReference(invoice.id)}`;
+    const name = `invoice-${invoiceLabel(invoice)}`;
     return sendDocument(c, invoiceHtml(org, invoice), name, c.req.valid('query').format);
   })
   .openapi(receiptRoute, async (c) => {

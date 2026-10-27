@@ -41,6 +41,7 @@ type Invoice = Row & {
   familyId: string;
   familyName: string;
   status: string;
+  number: string | null;
   termId: string | null;
   month: string | null;
   bankReference: string | null;
@@ -303,6 +304,7 @@ describe('generating a term’s invoices', () => {
       familyName: 'Perera',
       branchId: s.main.id,
       status: 'draft',
+      number: null,
       termId: s.term.id,
       month: null,
       periodStart: s.start,
@@ -832,6 +834,7 @@ describe('an invoice', () => {
     expect(issued.body).toEqual({
       ...invoice,
       status: 'issued',
+      number: 'INV-0001',
       issuedAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -924,6 +927,46 @@ describe('an invoice', () => {
       api('POST', '/terms/trm_nope/generate-invoices'),
     ]);
     expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404, 404]);
+  });
+});
+
+describe('invoice numbers (D-173)', () => {
+  it('numbers invoices in the order they are issued, never drafts, and keeps a voided one’s', async () => {
+    const s = await setup();
+    const klass = await s.addClass();
+    const families = [];
+    for (const name of ['Perera', 'Ngata', 'Chen']) {
+      families.push((await s.enrolled(klass.id, name)).family);
+    }
+    await s.runTerm();
+    const [perera, ngata, chen] = await Promise.all(families.map((f) => s.invoiceOf(f.id)));
+    expect([perera!.number, ngata!.number, chen!.number]).toEqual([null, null, null]);
+
+    const first = await s.api('POST', `/invoices/${ngata!.id}/issue`);
+    expect(first.body.number).toBe('INV-0001');
+    // A draft voided before it is issued takes no number, so it leaves no gap.
+    const voidedDraft = await s.api('POST', `/invoices/${chen!.id}/void`);
+    expect(voidedDraft.body).toMatchObject({ status: 'void', number: null });
+    const second = await s.api('POST', `/invoices/${perera!.id}/issue`);
+    expect(second.body.number).toBe('INV-0002');
+    // Voiding an issued invoice keeps its number.
+    const voided = await s.api('POST', `/invoices/${ngata!.id}/void`);
+    expect(voided.body).toMatchObject({ status: 'void', number: 'INV-0001' });
+
+    const listed = await s.invoices();
+    expect(listed.find((i) => i.id === perera!.id)!.number).toBe('INV-0002');
+  });
+
+  it('counts each org on its own', async () => {
+    const [a, b] = await Promise.all([setup(), setup()]);
+    for (const s of [a, b]) {
+      const klass = await s.addClass();
+      const { family } = await s.enrolled(klass.id);
+      await s.runTerm();
+      const invoice = await s.invoiceOf(family.id);
+      const issued = await s.api('POST', `/invoices/${invoice.id}/issue`);
+      expect(issued.body.number).toBe('INV-0001');
+    }
   });
 });
 

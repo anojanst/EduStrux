@@ -33,6 +33,10 @@ const Notes = z.string().trim().max(2000).nullable().openapi({
 export const PaymentAllocation = z
   .object({
     invoiceId: z.string().openapi({ example: 'inv_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
+    invoiceNumber: z.string().nullable().openapi({
+      example: 'INV-0042',
+      description: 'The invoice’s number (D-173).',
+    }),
     amount: Money.openapi({ description: 'What this payment pays towards the invoice.' }),
   })
   .openapi('PaymentAllocation');
@@ -118,4 +122,8 @@ export type CreatePayment = z.infer<typeof CreatePayment>;
 export const PaymentQuery = PageQuery.extend({
   familyId: z.string().optional().openapi({ description: 'Only this family’s payments' }),
   invoiceId: z.string().optional().openapi({ description: 'Only payments towards this invoice' }),
+  method: z
+    .enum(PAYMENT_METHODS)
+    .optional()
+    .openapi({ description: 'Only payments made this way' }),
 });

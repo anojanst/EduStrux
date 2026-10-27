@@ -435,7 +435,7 @@ export const en = {
   'billing.filter.allMethods': 'All methods',
   'billing.col.family': 'Family',
   'billing.col.period': 'Period',
-  'billing.col.ref': 'Ref',
+  'billing.col.number': 'Number',
   'billing.col.due': 'Due date',
   'billing.col.total': 'Total',
   'billing.col.balance': 'Balance',
@@ -509,8 +509,7 @@ export const en = {
   'billing.payments.partOf': 'Part of a {amount} payment',
   'billing.payments.empty': 'No payments recorded yet.',
   'billing.payments.emptyFiltered': 'No payments match these filters.',
-  'billing.payments.towardsOne': '1 invoice',
-  'billing.payments.towardsMany': '{n} invoices',
+  'billing.payments.anInvoice': 'An invoice',
   'billing.deletePayment.menu': 'Delete payment',
   'billing.deletePayment.title': 'Delete this payment?',
   'billing.deletePayment.body':

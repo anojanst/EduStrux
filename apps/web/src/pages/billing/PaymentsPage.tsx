@@ -1,4 +1,4 @@
-import type { Family, Invoice, Payment, PaymentMethod } from '@edustrux/shared';
+import type { Family, Payment, PaymentMethod } from '@edustrux/shared';
 import { PAYMENT_METHODS } from '@edustrux/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { CreditCard, Plus, Users, Wallet } from 'lucide-react';
@@ -12,8 +12,7 @@ import { OverflowMenu, type MenuItem } from '../../components/ui/Menu';
 import { useToast } from '../../components/ui/Toast';
 import { t } from '../../i18n';
 import { api, ApiError } from '../../lib/api';
-import { periodLabel, useBillingPaths } from '../../lib/billing';
-import { useTerms } from '../../lib/classes';
+import { useBillingPaths } from '../../lib/billing';
 import { cn } from '../../lib/cn';
 import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
@@ -51,18 +50,15 @@ function Payments() {
     enabled: can(membership.role, 'people:read'),
     staleTime: 60_000,
   });
-  // The newest invoices name what a payment paid; an older one shows as "1 invoice".
-  const recentInvoices = useQuery({
-    queryKey: ['invoices', membership.org.id, { recent: true }],
-    queryFn: ({ signal }) =>
-      api<Page<Invoice>>('GET', orgApiPath(membership, '/invoices?limit=200'), { signal }),
-  });
   const list = useInfiniteQuery({
-    queryKey: ['payments', membership.org.id, { familyId }],
+    queryKey: ['payments', membership.org.id, { familyId, method }],
     queryFn: ({ pageParam, signal }) =>
       api<Page<Payment>>(
         'GET',
-        orgApiPath(membership, `/payments${query({ limit: 50, familyId, cursor: pageParam })}`),
+        orgApiPath(
+          membership,
+          `/payments${query({ limit: 50, familyId, method, cursor: pageParam })}`,
+        ),
         { signal },
       ),
     initialPageParam: '',
@@ -78,10 +74,7 @@ function Payments() {
     setParams(updated, { replace: true });
   }
 
-  const rows = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
-  // The API filters by family; the method is picked out of the payments loaded.
-  const shown = method ? rows.filter((p) => p.method === method) : rows;
-  const invoices = new Map(recentInvoices.data?.data.map((i) => [i.id, i]));
+  const shown = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
 
   return (
     <>
@@ -137,11 +130,7 @@ function Payments() {
             }
           />
         ) : (
-          <PaymentRows
-            rows={shown}
-            invoices={invoices}
-            onDelete={canWrite ? setDeleting : undefined}
-          />
+          <PaymentRows rows={shown} onDelete={canWrite ? setDeleting : undefined} />
         )}
       </Card>
       {list.hasNextPage ? (
@@ -169,37 +158,27 @@ const GRID =
 
 function PaymentRows({
   rows,
-  invoices,
   onDelete,
 }: {
   rows: Payment[];
-  invoices: Map<string, Invoice>;
   onDelete?: (payment: Payment) => void;
 }) {
   const { membership } = useOrg();
   const format = useFormat();
   const toast = useToast();
   const paths = useBillingPaths();
-  const terms = useTerms().data?.data;
 
+  /** "INV-0042, INV-0043": each invoice it paid, by number, linked. */
   function towards(payment: Payment) {
-    const [only, ...more] = payment.allocations;
-    if (!only) return '—';
-    if (more.length) return t('billing.payments.towardsMany', { n: payment.allocations.length });
-    const invoice = invoices.get(only.invoiceId);
-    const text = invoice
-      ? [
-          periodLabel(invoice, terms, format),
-          invoice.bankReference ? t('billing.ref', { ref: invoice.bankReference }) : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : t('billing.payments.towardsOne');
-    return (
-      <Link to={paths.invoice(only.invoiceId)} className="text-brand hover:underline">
-        {text}
-      </Link>
-    );
+    if (payment.allocations.length === 0) return '—';
+    return payment.allocations.map((a, i) => (
+      <span key={a.invoiceId}>
+        {i > 0 ? ', ' : null}
+        <Link to={paths.invoice(a.invoiceId)} className="text-brand hover:underline">
+          {a.invoiceNumber ?? t('billing.payments.anInvoice')}
+        </Link>
+      </span>
+    ));
   }
 
   return (
