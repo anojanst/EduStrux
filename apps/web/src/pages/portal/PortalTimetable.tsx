@@ -94,7 +94,7 @@ export function PortalTimetable() {
   );
 
   return (
-    <div className="max-w-[880px]">
+    <div>
       <PortalHeading
         overline={t('portal.timetable.overline')}
         title={t('nav.timetable')}

@@ -126,7 +126,7 @@ export function StaffHome({ overline, greeting }: { overline: string; greeting: 
   const starting = data?.classes === 0 && can(role, 'classes:write');
 
   return (
-    <div className="max-w-[1280px]">
+    <div>
       <PageHeader overline={overline} title={greeting} subtitle={subtitle} />
 
       {dashboard.isError ? (

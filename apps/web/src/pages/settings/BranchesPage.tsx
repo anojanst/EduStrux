@@ -84,7 +84,7 @@ function Branches() {
   }
 
   return (
-    <div className="max-w-[1050px]">
+    <div>
       <PageHeader
         overline={t('courses.overline')}
         title={t('branches.title')}

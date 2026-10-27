@@ -35,7 +35,7 @@ export function PortalInvoices() {
   );
 
   return (
-    <div className="max-w-[880px]">
+    <div>
       <PortalHeading overline={t('portal.invoices.overline')} title={t('nav.invoices')} />
 
       {invoices.isError ? (

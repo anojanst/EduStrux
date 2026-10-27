@@ -101,7 +101,7 @@ export function TeacherToday({ greeting, overline }: { greeting: string; overlin
     .join(' · ');
 
   return (
-    <div className="max-w-[1180px]">
+    <div>
       <header className="mb-6">
         <p className="mb-1 text-meta font-semibold tracking-[0.05em] text-brand uppercase">
           {overline}

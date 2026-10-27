@@ -183,7 +183,7 @@ function TermsAndHolidays() {
   ) : null;
 
   return (
-    <div className="max-w-[1050px]">
+    <div>
       <PageHeader
         overline={t('courses.overline')}
         title={t('terms.title')}

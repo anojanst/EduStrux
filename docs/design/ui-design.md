@@ -148,6 +148,9 @@ widths; the app doesn't).
 - **Content**: the full width beside the sidebar, edge to edge, with 32px padding (16px on
   phones). The profile page too, beside its section menu (tried on 2026-10-22; revert to a
   720px column if wide forms read badly).
+  - **Rule (D-182):** every page, staff and parent portal alike, fills the content area. A
+    page's outer wrapper never has a max width, even when a Figma design shows a narrower
+    column. Only a paragraph of running text (an explainer) and dialogs get a max width.
 - **Collapsing:** a button at the top of the sidebar turns it into a 72px icon rail (logo mark,
   org avatar, nav icons, profile avatar and sign out), with each label shown beside its icon on
   hover and keyboard focus. The choice is remembered on that browser.
