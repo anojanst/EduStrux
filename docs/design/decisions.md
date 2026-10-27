@@ -5159,3 +5159,44 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details were settled during the build from the design, without
     asking the owner.
 - **Tasks:** TUI-124 (split from TUI-40).
+
+## D-179 · 2026-10-27 · The staff Home dashboard
+
+- **Context:** Staff other than teachers still saw a placeholder greeting at `/o/:slug`. TUI-125,
+  split from TUI-40, builds the Home dashboard of ui-design.md §9, the first Figma Make design.
+  That design is no longer on the Figma Make site (it now shows the latest screen), so the build
+  follows §9 and the components in §6.
+- **Decision:**
+  - **Who sees it:** the owner, branch managers, front desk and accountants. Teachers keep Today
+    (D-177) and parents the portal home. No new endpoints: it reads `GET /reports/dashboard`
+    (roles with `reports:read`) and today's `GET /sessions` (roles with `classes:read`).
+  - **Header:** the org's day, the greeting, then "Bright Minds Tuition · 3 lessons today · 1 to
+    mark" (cancelled lessons not counted; "to mark" is lessons that have started).
+  - **Stat cards:** the money cards shared with Invoices (owing, overdue, received this month,
+    drafts) for roles with `reports:money`. Front desk, who has no money, gets the centre's
+    counts instead of an empty row: families, students enrolled, classes running and lessons
+    today with how many are marked, each card linking to its list.
+  - **Today's lessons:** the Today lesson row (D-177), with "Room · Teacher" as its meta line.
+    "Mark" opens the same quick attendance dialog for roles with `attendance:write`; others see
+    "Not marked" only. "View timetable →" in the heading.
+  - **Needs attention:** earlier lessons not marked (the dashboard's two-week count less
+    today's unmarked lessons, which it also counts), students away today, make-up credits to
+    book and overdue invoices with the amount (money roles), each with its count. The unmarked
+    row opens the oldest such lesson in quick attendance, found on the first page of the last
+    two weeks' lessons (they come oldest first); quick attendance names the day for a lesson
+    before today. Overdue links to Invoices (there's no overdue filter). Away and make-up rows
+    don't link: there's no list to send them to yet. "All caught up" when nothing is due.
+  - **Quick actions:** tiles opening the same dialogs as "+ New" and the Invoices page: Add
+    family (`people:write`), Add class (`classes:write`), Record payment and Run invoices
+    (`billing:write`). An accountant, who has no dashboard (403), gets Invoices and Payments
+    links. The design's "Send message" waits for the messages screen.
+  - **Recent activity is left out.** `GET /audit-log` is owner only, pages oldest first and
+    carries ids rather than names, so it can't make a "Payment received from Ngata family"
+    feed. It needs a feed endpoint of its own.
+  - **A new centre** (no classes yet, for roles that add classes) gets "Getting started" above
+    the panels: add courses, add the first class, add families, invite the team.
+  - **Layout:** two columns from 1024px, lessons and quick actions on the left, Needs attention
+    on the right; on phones Needs attention comes straight after today's lessons.
+- **Consequences:** Home can show a recent activity feed once an endpoint gives one per role. An
+  overdue filter on invoices, an absence list and a make-up booking screen would let the other
+  attention rows link somewhere.

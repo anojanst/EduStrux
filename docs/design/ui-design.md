@@ -337,8 +337,13 @@ The first screen, as designed. What each part reads:
 | Quick actions                                                          | Static, filtered by the role's permissions                                                                                                                                              |
 | Recent activity                                                        | **No endpoint yet.** `GET /audit-log` is owner only; other roles need a new feed, or leave the panel out for them                                                                       |
 
-Changes from the Figma source:
+Built in TUI-125 (D-179). Changes from the Figma source:
 
+- Front desk, who doesn't see money, gets the centre's counts (families, students, classes,
+  lessons today) in place of the money cards.
+- Recent activity is left out until there is a feed endpoint; Quick actions sit under today's
+  lessons instead. "Send message" waits for the messages screen.
+- A centre with no classes yet gets "Getting started" above the panels.
 - "Send message" describes **email or portal**: SMS and WhatsApp are paid add-ons, not in the
   base app.
 - On phones the stat cards are a 2 × 2 grid and "+ New" is an icon button, so nothing is cut off.

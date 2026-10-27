@@ -1,16 +1,14 @@
 import { useUser } from '@clerk/react';
 import type { PortalChild } from '@edustrux/shared';
 import { useQuery } from '@tanstack/react-query';
-import { CircleCheck, ChevronRight, GraduationCap, UsersRound } from 'lucide-react';
-import { Link } from 'react-router';
+import { GraduationCap } from 'lucide-react';
 import { PageError, PageHeader } from '../components/PageState';
 import { Avatar } from '../components/ui/Avatar';
 import { Card } from '../components/ui/Card';
 import { t } from '../i18n';
 import { api } from '../lib/api';
 import { orgApiPath, useOrg } from '../lib/org';
-import { can, roleLabel } from '../lib/roles';
-import { orgPath } from '../lib/session';
+import { StaffHome } from './home/StaffHome';
 import { TeacherToday } from './today/TeacherToday';
 
 /** The day and part of the day in the org's time zone (UTC until the org has loaded). */
@@ -43,7 +41,7 @@ export function HomePage() {
   const { membership } = useOrg();
   if (membership.role === 'parent') return <PortalHome />;
   if (membership.role === 'teacher') return <TeacherHome />;
-  return <StaffHome />;
+  return <StaffHomePage />;
 }
 
 function TeacherHome() {
@@ -58,57 +56,15 @@ function TeacherHome() {
   );
 }
 
-/**
- * The staff home until the dashboard is built (ui-design.md §9, TUI-40): the greeting, and for
- * whoever can invite staff, the next step after creating the centre.
- */
-function StaffHome() {
-  const { org, membership } = useOrg();
+function StaffHomePage() {
+  const { org } = useOrg();
   const firstName = useFirstName();
   const { overline, greeting } = todayIn(org?.timezone, org?.locale);
-  const invites = can(membership.role, 'staff:write');
   return (
-    <>
-      <PageHeader
-        overline={overline}
-        title={firstName ? t(`${greeting}Name`, { name: firstName }) : t(greeting)}
-        subtitle={t('home.subtitle', {
-          org: membership.org.name,
-          role: roleLabel(membership.role),
-        })}
-      />
-      <Card>
-        <h2 className="text-section font-medium text-text">{t('home.setup.title')}</h2>
-        <ul className="mt-4 divide-y divide-border">
-          <li className="flex items-center gap-3 py-3">
-            <CircleCheck className="size-5 text-success" aria-hidden />
-            <span className="flex-1 text-body text-text">
-              {t('home.setup.signedIn', { org: membership.org.name })}
-            </span>
-          </li>
-          {invites ? (
-            <li>
-              <Link
-                to={`${orgPath(membership.org.slug)}/settings/team`}
-                className="flex items-center gap-3 py-3 hover:bg-canvas"
-              >
-                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-brand-soft text-brand">
-                  <UsersRound className="size-4" aria-hidden />
-                </span>
-                <span className="flex-1">
-                  <span className="block text-body font-semibold text-text">
-                    {t('home.setup.inviteTitle')}
-                  </span>
-                  <span className="block text-meta text-muted">{t('home.setup.inviteBody')}</span>
-                </span>
-                <ChevronRight className="size-4 text-subtle" aria-hidden />
-              </Link>
-            </li>
-          ) : null}
-        </ul>
-        <p className="mt-2 text-meta text-muted">{t('home.setup.more')}</p>
-      </Card>
-    </>
+    <StaffHome
+      overline={overline}
+      greeting={firstName ? t(`${greeting}Name`, { name: firstName }) : t(greeting)}
+    />
   );
 }
 
