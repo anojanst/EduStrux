@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-57-teacher-today
-pr:
+pr: 66
 ---
 
 # TUI-57 Teacher today view (mobile)
