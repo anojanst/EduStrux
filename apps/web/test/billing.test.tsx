@@ -488,6 +488,7 @@ describe('recording a payment', () => {
   it('records it once, with what goes to each invoice', async () => {
     const calls = stubApi({
       ...replies,
+      [`${API}/payments/pay_new/receipt`]: { body: {} },
       'POST /api/v1/orgs/org_1/payments': {
         status: 201,
         body: {
@@ -517,6 +518,12 @@ describe('recording a payment', () => {
     expect(
       await screen.findByText('Payment of $600.00 recorded for the Perera family'),
     ).toBeVisible();
+    // The toast offers the receipt.
+    const tab = { close: vi.fn(), location: { href: '' } };
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:receipt' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Download receipt' }));
+    await waitFor(() => expect(tab.location.href).toBe('blob:receipt'));
     const sent = calls.find((c) => c.key === 'POST /api/v1/orgs/org_1/payments')!;
     expect(sent.body).toEqual({
       familyId: 'fam_perera',

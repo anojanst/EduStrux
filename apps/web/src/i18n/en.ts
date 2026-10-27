@@ -128,6 +128,10 @@ export const en = {
   'shell.expand': 'Expand sidebar',
   'shell.switchOrg': '{org}: switch organisation',
 
+  'shell.new': 'New',
+  'shell.new.family': 'Family',
+  'shell.new.class': 'Class',
+  'shell.new.payment': 'Payment',
   'nav.home': 'Home',
   'nav.classes': 'Classes',
   'nav.team': 'Team',

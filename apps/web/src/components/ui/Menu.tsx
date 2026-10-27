@@ -1,18 +1,42 @@
-import { MoreHorizontal } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { MoreHorizontal, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 
-export type MenuItem = { label: string; onSelect: () => void; danger?: boolean };
+export type MenuItem = { label: string; onSelect: () => void; danger?: boolean; Icon?: LucideIcon };
 
 /** Room a menu item takes, to tell whether the menu fits below its button. */
 const ITEM_HEIGHT = 44;
 
-/**
- * The "…" button with a small menu of row actions. Closes on Escape, a click outside, scrolling
- * or resizing. The menu is placed against the window, not its row, so a card that clips its
- * rounded corners can't cut it off; it opens upwards when there's no room below.
- */
+/** The "…" button with a small menu of row actions. */
 export function OverflowMenu({ label, items }: { label: string; items: MenuItem[] }) {
+  return (
+    <Menu
+      label={label}
+      items={items}
+      className="grid size-11 place-items-center rounded-lg text-muted hover:bg-canvas md:size-10"
+    >
+      <MoreHorizontal className="size-5" aria-hidden />
+    </Menu>
+  );
+}
+
+/**
+ * A button with a small menu. Closes on Escape, a click outside, scrolling or resizing. The menu
+ * is placed against the window, not its row, so a card that clips its rounded corners can't cut
+ * it off; it opens upwards when there's no room below. `label` names the button when its content
+ * is only an icon.
+ */
+export function Menu({
+  label,
+  items,
+  className,
+  children,
+}: {
+  label?: string;
+  items: MenuItem[];
+  className: string;
+  children: ReactNode;
+}) {
   const [place, setPlace] = useState<CSSProperties | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -62,9 +86,9 @@ export function OverflowMenu({ label, items }: { label: string; items: MenuItem[
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={toggle}
-        className="grid size-11 place-items-center rounded-lg text-muted hover:bg-canvas md:size-10"
+        className={className}
       >
-        <MoreHorizontal className="size-5" aria-hidden />
+        {children}
       </button>
       {place ? (
         <div
@@ -82,10 +106,11 @@ export function OverflowMenu({ label, items }: { label: string; items: MenuItem[
                 item.onSelect();
               }}
               className={cn(
-                'flex h-11 w-full items-center rounded-md px-2.5 text-left text-body hover:bg-canvas md:h-9',
+                'flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-body hover:bg-canvas md:h-9',
                 item.danger ? 'text-danger' : 'text-text',
               )}
             >
+              {item.Icon ? <item.Icon className="size-4 shrink-0 text-muted" aria-hidden /> : null}
               {item.label}
             </button>
           ))}

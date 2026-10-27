@@ -23,7 +23,7 @@ import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
 import { query, type Page } from '../../lib/people';
 import { useRefreshPeople, StaleOrError } from '../people/dialogs';
-import { InvoiceBadge } from './parts';
+import { InvoiceBadge, openPdf } from './parts';
 
 /**
  * Record a payment (TUI-119): who paid, how much and how, and which of their issued invoices it
@@ -198,14 +198,20 @@ function PaymentForm({
         },
       }),
     onSuccess: async (payment) => {
-      await Promise.all([refreshBilling(), refreshPeople()]);
+      // Closed first, so the form doesn't show the lists reloading under it.
+      onClose();
       toast(
         t('billing.pay.done', {
           amount: format.money(payment.amount),
           family: payment.familyName,
         }),
+        {
+          label: t('billing.receipt'),
+          onClick: () =>
+            void openPdf(orgApiPath(membership, `/payments/${payment.id}/receipt`), toast),
+        },
       );
-      onClose();
+      await Promise.all([refreshBilling(), refreshPeople()]);
     },
   });
   const apiErrors = fieldErrors(save.error);

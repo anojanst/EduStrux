@@ -300,8 +300,9 @@ function Invoices() {
   );
 }
 
+// Due date and total join the columns only on wide screens, so the row fits beside the sidebar.
 const GRID =
-  'md:grid md:grid-cols-[minmax(180px,1.5fr)_minmax(120px,1fr)_minmax(110px,0.8fr)_minmax(96px,0.7fr)_minmax(90px,0.7fr)_minmax(90px,0.7fr)_96px_16px]';
+  'md:grid md:grid-cols-[minmax(150px,1.5fr)_minmax(100px,1fr)_minmax(84px,0.8fr)_minmax(84px,0.7fr)_84px_16px] xl:grid-cols-[minmax(180px,1.5fr)_minmax(120px,1fr)_minmax(96px,0.8fr)_minmax(96px,0.7fr)_minmax(90px,0.7fr)_minmax(90px,0.7fr)_96px_16px]';
 
 function InvoiceRows({
   rows,
@@ -332,8 +333,8 @@ function InvoiceRows({
           <span>{t('billing.col.family')}</span>
           <span>{t('billing.col.period')}</span>
           <span>{t('billing.col.number')}</span>
-          <span>{t('billing.col.due')}</span>
-          <span className="text-right">{t('billing.col.total')}</span>
+          <span className="hidden xl:block">{t('billing.col.due')}</span>
+          <span className="hidden text-right xl:block">{t('billing.col.total')}</span>
           <span className="text-right">{t('billing.col.balance')}</span>
           <span>{t('billing.col.status')}</span>
           <span />
@@ -376,6 +377,10 @@ function InvoiceRows({
                   <small className="truncate text-meta text-muted max-md:hidden">
                     {studentNames(invoice)}
                   </small>
+                  {/* Without the due date column, the due date is a meta line. */}
+                  <small className="hidden truncate text-meta text-muted md:block xl:hidden">
+                    {due}
+                  </small>
                   {/* On phones the period and due date are the meta line; the columns are hidden. */}
                   <small className="truncate text-meta text-muted md:hidden">
                     {[invoice.number, period, due].filter(Boolean).join(' · ')}
@@ -390,10 +395,10 @@ function InvoiceRows({
                 >
                   {invoice.number ?? <span className="text-subtle">—</span>}
                 </span>
-                <span className="hidden md:block">
+                <span className="hidden xl:block">
                   {invoice.dueDate ? format.date(invoice.dueDate) : '—'}
                 </span>
-                <span className="hidden text-right tabular-nums md:block">
+                <span className="hidden text-right tabular-nums xl:block">
                   {format.money(invoice.total)}
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1 md:contents">
