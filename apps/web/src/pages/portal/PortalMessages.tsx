@@ -38,7 +38,7 @@ export function PortalMessages() {
   const list = messages.data?.data ?? [];
 
   return (
-    <div className="max-w-[880px]">
+    <div>
       <PortalHeading overline={t('portal.messages.overline')} title={t('nav.messages')} />
       {messages.isError ? (
         <PageError error={messages.error} onRetry={() => void messages.refetch()} />
@@ -109,7 +109,7 @@ export function PortalMore() {
   const families = [...new Set(kids.map((k) => k.familyName))];
 
   return (
-    <div className="max-w-[880px]">
+    <div>
       <PortalHeading overline={t('portal.more.overline')} title={t('nav.more')} />
       <div className="flex flex-col gap-2.5">
         <MoreRow

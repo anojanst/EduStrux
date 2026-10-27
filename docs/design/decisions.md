@@ -5297,3 +5297,18 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details were settled during the build from the design, without
     asking the owner.
 - **Tasks:** TUI-127.
+
+## D-182 · 2026-10-28 · Every page is edge to edge
+
+- **Context:** The layout rule already said content fills the width beside the sidebar
+  (ui-design.md §5), but pages built from Figma designs with a narrower column had kept it:
+  Home (staff, teacher and parent), Settings › Branches & rooms, Settings › Terms & holidays,
+  and the portal's Timetable, Invoices, Messages and More. The owner asked for all of them to be
+  edge to edge, and for that to stay the rule.
+- **Decision:** No page's outer wrapper has a max width. Every page, staff and parent portal
+  alike, fills the content area, with only the page padding around it. A Figma design's
+  narrower column is not copied. Only a paragraph of running text (an explainer) and dialogs
+  keep a max width, for line length.
+- **Consequences:** On wide screens, lists and cards stretch; grids on Home already spread their
+  columns. A new screen checks this before its PR.
+- **Tasks:** none (owner request, `chore/full-width-pages`).

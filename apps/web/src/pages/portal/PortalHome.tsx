@@ -52,7 +52,7 @@ export function PortalHome({ greeting }: { greeting: string }) {
   );
 
   return (
-    <div className="max-w-[1120px]">
+    <div>
       <PortalHeading
         overline={membership.org.name}
         title={greeting}
