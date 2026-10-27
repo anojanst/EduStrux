@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Courses for roles that change classes (D-170), and Theme for owners (D-165). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -384,6 +384,13 @@ Settled when TUI-23 was built (D-158):
   the attendance sheet, a page of its own per lesson with a sticky Save. Changes from the
   source are in D-169. The list filters are a shared `FilterSelect`, used by Families & students
   too.
+- **Timetable** (D-176), from the owner's Figma Make design: Day, Week and Month calendars
+  with View by (branch, room, teacher, student) and filters kept in the URL. Lesson blocks take
+  the class colour with one flag (Cancelled, Clash, Moved, Marked or Not marked), overlapping
+  lessons share a day in lanes, holidays are hatched, and a clash banner counts room and teacher
+  clashes. A lesson opens in the shared dialog (not the design's floating popover), with Move
+  lesson and Cancel lesson. On phones: a Filters sheet, Today and ‹ › beside it, a 7-day strip
+  and the day's lessons as rows. Drag-and-drop waits for v1.1 (TUI-52).
 - **Settings › Courses** (D-170), from the owner's Figma Make design, for roles that change
   classes: tabs Courses (grouped by grade level, with classes, lesson length and price),
   Subjects and Grade levels (moved with up and down buttons), the Add/edit course dialog (also
