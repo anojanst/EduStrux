@@ -90,7 +90,7 @@ function ThemeSettings({ org }: { org: Org }) {
           <div
             className={cn(
               'flex items-center justify-end gap-2',
-              'max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-30 max-md:min-h-16 max-md:border-t max-md:border-border max-md:bg-surface max-md:px-4 max-md:py-2.5',
+              'max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-sm:bottom-[calc(66px+env(safe-area-inset-bottom))] max-md:z-30 max-md:min-h-16 max-md:border-t max-md:border-border max-md:bg-surface max-md:px-4 max-md:py-2.5',
               'md:mt-3 md:min-h-[68px] md:py-3',
             )}
           >

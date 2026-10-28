@@ -135,6 +135,8 @@ export const en = {
   'shell.new.payment': 'Payment',
   'shell.new.announcement': 'Announcement',
   'nav.home': 'Home',
+  'nav.today': 'Today',
+  'nav.families': 'Families',
   'nav.classes': 'Classes',
   'nav.timetable': 'Timetable',
   'nav.team': 'Team',
@@ -149,6 +151,7 @@ export const en = {
   'nav.messages': 'Messages',
   'nav.more': 'More',
 
+  'banner.offline': 'You’re offline. Nothing can be loaded or saved until you’re back online.',
   'banner.trial': 'Your free trial ends in {days} days.',
   'banner.trialOne': 'Your free trial has 1 day left.',
   'banner.readOnly':

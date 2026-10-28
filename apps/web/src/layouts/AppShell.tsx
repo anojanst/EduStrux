@@ -2,6 +2,7 @@ import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
   Check,
@@ -11,7 +12,6 @@ import {
   LogOut,
   MapPin,
   Megaphone,
-  Menu,
   MessageSquare,
   Palette,
   PanelLeftClose,
@@ -25,10 +25,18 @@ import {
   Users,
   UsersRound,
   Wallet,
+  WifiOff,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { Logo } from '../components/Logo';
 import { SearchPalette } from '../components/SearchPalette';
@@ -94,6 +102,33 @@ const PORTAL_NAV: NavItem[] = [
   { to: 'more', label: 'nav.more', Icon: Ellipsis },
 ];
 
+/**
+ * The tab bar on phones (ui-design.md §5): four areas for the role, then More. A parent's More is
+ * the portal's More page; anyone else's opens the full menu as a drawer (D-185).
+ */
+function tabsFor(role: Role): NavItem[] {
+  const nav = navFor(role);
+  if (role === 'parent') return nav;
+  const named = (to: string) => {
+    const item = nav.find((i) => i.to === to);
+    if (!item) return [];
+    return [to === 'families' ? { ...item, label: 'nav.families' as const } : item];
+  };
+  if (role === 'teacher') {
+    return [
+      { ...nav[0]!, label: 'nav.today', Icon: CalendarCheck },
+      ...named('timetable'),
+      ...named('messages'),
+    ];
+  }
+  const picked = [nav[0]!, ...['timetable', 'families', 'invoices'].flatMap(named)];
+  // A role without one of those gets its next main areas (not settings), up to four tabs.
+  const rest = nav.filter(
+    (item) => !item.to.startsWith('settings/') && !picked.some((p) => p.to === item.to),
+  );
+  return [...picked, ...rest].slice(0, 4);
+}
+
 /** Staff who read families get the people area and the search; parents use the portal. */
 function canSearchPeople(role: Role) {
   return can(role, 'people:read') && role !== 'parent';
@@ -119,6 +154,35 @@ const SHORTCUT =
     ? '⌘ K'
     : 'Ctrl K';
 
+/** Whether a media query matches, kept up to date; false where the browser can't tell (tests). */
+function useMedia(query: string) {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia?.(query);
+      list?.addEventListener('change', onChange);
+      return () => list?.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia?.(query).matches ?? false,
+    () => false,
+  );
+}
+
+/** Whether the browser is online, for the offline banner (ui-design.md §6 Banners). */
+function useOnline() {
+  return useSyncExternalStore(
+    (onChange) => {
+      window.addEventListener('online', onChange);
+      window.addEventListener('offline', onChange);
+      return () => {
+        window.removeEventListener('online', onChange);
+        window.removeEventListener('offline', onChange);
+      };
+    },
+    () => navigator.onLine,
+    () => true,
+  );
+}
+
 const COLLAPSED = 'edustrux.sidebarCollapsed';
 
 /** Whether the desktop sidebar is the narrow icon rail, remembered on this browser. */
@@ -143,9 +207,10 @@ function useCollapsed() {
 }
 
 /**
- * The app shell (ui-design.md §5): a sidebar in the org's theme on desktop that collapses to a 72px icon rail,
- * a top bar with a drawer on smaller screens, and the org's banner above the page. The page fills
- * the width beside the sidebar, edge to edge.
+ * The app shell (ui-design.md §5): a sidebar in the org's theme on desktop that collapses to a
+ * 72px icon rail; the rail on tablets, opening the full sidebar as a drawer; and on phones a top
+ * bar and a tab bar whose More opens that drawer (D-185). The org's banner sits above the page,
+ * which fills the width beside the sidebar, edge to edge.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -155,8 +220,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { membership } = useOrg();
   const canSearch = canSearchPeople(membership.role);
   const canCreate = newItemsFor(membership.role).length > 0;
-  // Parents get a tab bar on phones in place of the menu (ui-design.md §5, TUI-126).
-  const parent = membership.role === 'parent';
+  // Between 640 and 1023px the sidebar is always the rail, and its button opens the drawer.
+  const tablet = useMedia('(min-width: 640px) and (max-width: 1023px)');
   useEffect(() => setDrawerOpen(false), [location.pathname]);
   useSearchShortcut(
     canSearch,
@@ -164,14 +229,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-dvh bg-canvas lg:flex">
+    <div className="min-h-dvh bg-canvas sm:flex">
       <aside
         className={cn(
-          'sticky top-0 z-20 hidden h-dvh shrink-0 transition-[width] duration-150 ease-out lg:block',
-          collapsed ? 'w-[72px]' : 'w-[248px]',
+          'sticky top-0 z-20 hidden h-dvh w-[72px] shrink-0 transition-[width] duration-150 ease-out sm:block',
+          !collapsed && 'lg:w-[248px]',
         )}
       >
-        <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+        {tablet ? (
+          <Sidebar collapsed opensMenu onToggle={() => setDrawerOpen(true)} />
+        ) : (
+          <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+        )}
       </aside>
 
       {drawerOpen ? (
@@ -191,19 +260,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header
           className={cn(
-            'sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-surface px-2 lg:px-8',
-            canSearch || canCreate ? null : 'lg:hidden',
+            // Under an installed app's status bar on iPhones the bar grows by the safe area.
+            'sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] sm:px-8',
+            canSearch || canCreate ? null : 'sm:hidden',
           )}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn('lg:hidden', parent && 'max-sm:hidden')}
-            aria-label={t('shell.openMenu')}
-            onClick={() => setDrawerOpen(true)}
-            icon={<Menu className="size-5 text-text" />}
-          />
-          <span className="lg:hidden">
+          <span className="sm:hidden">
             <Logo />
           </span>
           {canSearch ? (
@@ -211,7 +273,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setSearching(true)}
-                className="hidden h-10 w-full max-w-[520px] items-center gap-2.5 rounded-lg border border-border bg-canvas px-3 text-left text-body text-subtle hover:border-border-strong lg:flex"
+                className="hidden h-10 w-full max-w-[520px] items-center gap-2.5 rounded-lg border border-border bg-canvas px-3 text-left text-body text-subtle hover:border-border-strong sm:flex"
               >
                 <Search className="size-4" aria-hidden />
                 <span className="flex-1">{t('search.placeholder')}</span>
@@ -222,7 +284,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="ml-auto lg:hidden"
+                className="ml-auto sm:hidden"
                 aria-label={t('search.title')}
                 onClick={() => setSearching(true)}
                 icon={<Search className="size-5 text-text" />}
@@ -232,43 +294,66 @@ export function AppShell({ children }: { children: ReactNode }) {
           {canCreate ? <NewMenu pushRight={!canSearch} /> : null}
         </header>
         {searching ? <SearchPalette onClose={() => setSearching(false)} /> : null}
+        <OfflineBanner />
         <OrgBanner />
-        <main
-          className={cn('w-full flex-1 px-4 py-6 sm:px-8 sm:py-8', parent && 'max-sm:pb-[90px]')}
-        >
+        {/* On phones the page ends above the tab bar. */}
+        <main className="w-full flex-1 px-4 py-6 max-sm:pb-[calc(90px+env(safe-area-inset-bottom))] sm:px-8 sm:py-8">
           {children}
         </main>
       </div>
-      {parent ? <TabBar /> : null}
+      <TabBar onMore={() => setDrawerOpen(true)} moreOpen={drawerOpen} />
     </div>
   );
 }
 
-/** The parent's areas as a tab bar fixed to the foot of a phone screen. */
-function TabBar() {
+const TAB =
+  'flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-meta [&>span]:max-w-full [&>span]:truncate';
+
+/**
+ * The role's tabs fixed to the foot of a phone screen. Staff's More opens the menu drawer.
+ */
+function TabBar({ onMore, moreOpen }: { onMore: () => void; moreOpen: boolean }) {
   const { membership } = useOrg();
+  const { pathname } = useLocation();
   const base = orgPath(membership.org.slug);
+  const tabs = tabsFor(membership.role);
+  const href = (to: string) => (to ? `${base}/${to}` : base);
+  const at = ({ to, end }: NavItem) =>
+    end ? pathname === href(to) : pathname.startsWith(href(to));
+  // More is lit for an area of the menu that isn't a tab (Team, Classes), not for a page
+  // reached from inside one (a lesson, a student).
+  const inMore = navFor(membership.role).some(
+    (item) => !tabs.some((tab) => tab.to === item.to) && at(item),
+  );
   return (
     <nav
       aria-label={t('shell.tabs')}
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
     >
-      {navFor(membership.role).map(({ to, label, Icon, end }) => (
+      {tabs.map(({ to, label, Icon, end }) => (
         <NavLink
           key={to}
-          to={to ? `${base}/${to}` : base}
+          to={href(to)}
           end={end}
           className={({ isActive }) =>
-            cn(
-              'flex h-[66px] flex-col items-center justify-center gap-[3px] text-meta',
-              isActive ? 'font-semibold text-brand' : 'text-muted',
-            )
+            cn(TAB, isActive ? 'font-semibold text-brand' : 'text-muted')
           }
         >
-          <Icon className="size-5" aria-hidden />
-          {t(label)}
+          <Icon className="size-5 shrink-0" aria-hidden />
+          <span>{t(label)}</span>
         </NavLink>
       ))}
+      {membership.role === 'parent' ? null : (
+        <button
+          type="button"
+          onClick={onMore}
+          aria-expanded={moreOpen}
+          className={cn(TAB, moreOpen || inMore ? 'font-semibold text-brand' : 'text-muted')}
+        >
+          <Ellipsis className="size-5 shrink-0" aria-hidden />
+          <span>{t('nav.more')}</span>
+        </button>
+      )}
     </nav>
   );
 }
@@ -307,14 +392,14 @@ function NewMenu({ pushRight }: { pushRight: boolean }) {
   }));
   const close = () => setOpen(null);
   return (
-    <div className={cn('lg:ml-auto', pushRight && 'max-lg:ml-auto')}>
+    <div className={cn('sm:ml-auto', pushRight && 'max-sm:ml-auto')}>
       <ActionMenu
         label={t('shell.new')}
         items={items}
-        className="inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand text-label font-semibold text-white transition-colors duration-150 hover:bg-brand-hover lg:h-10 lg:w-auto lg:px-4"
+        className="inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand text-label font-semibold text-white transition-colors duration-150 hover:bg-brand-hover sm:h-10 sm:w-auto sm:px-4"
       >
-        <Plus className="size-5 lg:size-4" aria-hidden />
-        <span className="max-lg:sr-only">{t('shell.new')}</span>
+        <Plus className="size-5 sm:size-4" aria-hidden />
+        <span className="max-sm:sr-only">{t('shell.new')}</span>
       </ActionMenu>
       <AddFamilyDialog open={open === 'family'} onClose={close} />
       <ClassDialog open={open === 'class'} onClose={close} />
@@ -338,10 +423,13 @@ function RailTip({ label }: { label: string }) {
 
 function Sidebar({
   collapsed,
+  opensMenu = false,
   onToggle,
   onClose,
 }: {
   collapsed: boolean;
+  /** On tablets the rail's button opens the full sidebar as a drawer. */
+  opensMenu?: boolean;
   onToggle?: () => void;
   onClose?: () => void;
 }) {
@@ -372,8 +460,10 @@ function Sidebar({
           <button
             type="button"
             onClick={onToggle}
-            aria-label={collapsed ? t('shell.expand') : t('shell.collapse')}
-            aria-expanded={!collapsed}
+            aria-label={
+              opensMenu ? t('shell.openMenu') : collapsed ? t('shell.expand') : t('shell.collapse')
+            }
+            aria-expanded={opensMenu ? false : !collapsed}
             className="group relative inline-flex size-9 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-sidebar-strong"
           >
             {collapsed ? (
@@ -381,7 +471,9 @@ function Sidebar({
             ) : (
               <PanelLeftClose className="size-5" aria-hidden />
             )}
-            {collapsed ? <RailTip label={t('shell.expand')} /> : null}
+            {collapsed ? (
+              <RailTip label={opensMenu ? t('shell.openMenu') : t('shell.expand')} />
+            ) : null}
           </button>
         ) : null}
       </div>
@@ -575,6 +667,21 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
         <LogOut className="size-5" aria-hidden />
         {collapsed ? <RailTip label={t('common.signOut')} /> : null}
       </button>
+    </div>
+  );
+}
+
+/** Offline: nothing can be loaded or saved until the connection is back (ui-design.md §6). */
+function OfflineBanner() {
+  const online = useOnline();
+  if (online) return null;
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2.5 text-body text-text sm:px-8"
+    >
+      <WifiOff className="size-4 shrink-0 text-muted" aria-hidden />
+      <p className="flex-1">{t('banner.offline')}</p>
     </div>
   );
 }

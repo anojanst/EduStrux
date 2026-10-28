@@ -488,10 +488,10 @@ export function PhoneAgenda({
               <button
                 type="button"
                 onClick={() => onOpen(s)}
-                className="grid min-h-[78px] w-full grid-cols-[66px_1fr_auto_20px] items-center gap-2.5 px-3 py-2.5 text-left"
+                className="grid min-h-[78px] w-full grid-cols-[78px_1fr_auto_20px] items-center gap-2.5 px-3 py-2.5 text-left"
               >
                 <span
-                  className="flex flex-col border-l-[3px] pl-2"
+                  className="flex flex-col border-l-[3px] pl-2 whitespace-nowrap"
                   style={{ borderColor: classColour(s.classId) }}
                 >
                   <b className="text-label font-semibold tabular-nums">

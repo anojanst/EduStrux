@@ -158,17 +158,25 @@ widths; the app doesn't).
 
 ### Tablet (640–1023px)
 
-The sidebar collapses to a 72px icon rail; labels show on hover and in a slide-out drawer from a
-menu button.
+The sidebar is always the 72px icon rail; labels show on hover. Its top button ("Open menu")
+opens the full sidebar as a slide-out drawer. The top bar keeps the full search field and "New"
+with its label. The remembered collapse choice applies only from 1024px (D-185).
 
 ### Phone (< 640px)
 
-- Top bar: menu button (opens the sidebar as a drawer), search, and **+ New** as a 44px brand
-  icon button. Nothing may overflow the screen width.
-- **Bottom tab bar** with the four most used areas for the role. Staff: Home, Timetable,
-  Families, Invoices, More. Teacher: Today, Timetable, Messages, More. Parent: Home, Timetable,
-  Invoices, Messages, More. Built for parents, under 640px, in place of the menu button
-  (D-180); staff and teachers follow in TUI-84.
+- Top bar: logo, search icon and **+ New** as a 44px brand icon button; no menu button (the tab
+  bar's More replaces it). It grows by the top safe area in an installed iPhone app. Nothing may
+  overflow the screen width.
+- **Bottom tab bar** for every role (D-180, D-185). Staff (owner, branch manager, front desk):
+  Home, Timetable, Families, Invoices, More. Teacher: Today, Timetable, Messages, More. Parent:
+  Home, Timetable, Invoices, Messages, More. Other roles get Home, whichever of Timetable,
+  Families and Invoices they have, then their next main (not settings) areas up to four tabs
+  (accountant: Home, Invoices, Payments, More).
+- **More**: for staff it opens the full menu drawer; for parents it's the portal More page. It's
+  lit while the drawer is open or on a menu area that isn't a tab (Team, Classes, Theme), not on
+  a page reached from inside one (a lesson, a student).
+- **Clear of the tab bar:** pages end 90px above the bottom (plus the safe area); sticky save and
+  action bars sit above the tab bar, and so do toasts.
 - Stat cards sit in a **2 × 2 grid**, not a sideways scroller.
 - Tables become stacked rows (title, meta line, status badge, chevron).
 
@@ -282,11 +290,13 @@ button and a close button where it can be dismissed.
 | Offline                                                            | neutral | no           |
 
 The trial countdown is for the owner and branch managers only. The read-only and payment
-banners show to everyone, since saving fails for every role.
+banners show to everyone, since saving fails for every role. The offline banner shows while the
+browser reports no connection: "You're offline. Nothing can be loaded or saved until you're back
+online." (D-185).
 
 ### Feedback
 
-- **Toasts** bottom right (bottom centre on phones) for completed actions, 4s, with Undo where
+- **Toasts** bottom right (bottom centre on phones, above the tab bar) for completed actions, 4s, with Undo where
   the API allows it. A toast can carry one action button ("Download receipt" after "Payment of
   $120.00 recorded for the Perera family"); one with a button stays 8s, so there's time to
   reach it (D-174). Long toasts wrap on phones.
@@ -374,7 +384,11 @@ Settled when TUI-23 was built (D-158):
   auth layout: the teal brand panel beside the form (D-160).
 - **Built so far** (D-161): the desktop sidebar of §5 (logo, org switcher, nav by role, user
   footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
-  past due. Not yet: the bell, the tablet icon rail and the phone tab bar (TUI-40, TUI-84).
+  past due. Not yet: the bell (TUI-40).
+- **Phone and tablet** (D-185): the tablet icon rail with its drawer, the phone tab bar for
+  every role, the offline banner, and an installable app (manifest with PNG and maskable icons,
+  Apple touch icon, white theme colour to match the top bar). No service worker yet: offline
+  use waits for offline attendance (v1.1).
 - **Top-bar search** (D-164): built without Radix. A command palette over the page, full screen on
   phones, opened from the top bar or with Ctrl/⌘ K. The top bar shows on desktop too for roles
   that can search (staff with `people:read`).

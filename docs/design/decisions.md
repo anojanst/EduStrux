@@ -5385,3 +5385,46 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   notifications endpoint).
   - Assumption: the screen details were settled during the build, without asking the owner.
 - **Tasks:** TUI-129, TUI-40.
+
+## D-185 · 2026-10-28 · Phone and tablet layout for every role, and the installable app
+
+- **Context:** The phone tab bar was built for parents only (D-180), the tablet icon rail wasn't
+  built, and the app had a manifest with one SVG icon. TUI-84 finishes the PWA and the mobile
+  layout, and checks the parent and teacher flows at phone width.
+- **Decision:**
+  - **Tablet (640–1023px):** the sidebar is always the 72px icon rail. Its top button ("Open
+    menu") opens the full sidebar as the slide-out drawer. The top bar shows the full search
+    field and "New" with its label. The remembered collapse choice applies only from 1024px.
+  - **Phone (under 640px):** every role gets the bottom tab bar (D-180 extended to staff), and
+    the top bar's menu button is gone for all roles: the logo, a search icon and the + New icon.
+    The logo shows in the top bar only on phones.
+    - Owner, branch manager, front desk: Home, Timetable, Families, Invoices, More.
+    - Teacher: Today (their Home), Timetable, Messages, More.
+    - Other roles: Home, then whichever of Timetable, Families and Invoices they have, filled up
+      to four with their next main (not settings) areas. Accountant: Home, Invoices, Payments,
+      More.
+    - Staff's More opens the full menu drawer; the parent's More stays the portal More page. More
+      is lit while the drawer is open or on a menu area that isn't a tab (Team, Classes, Theme),
+      not on a page reached from inside one (a lesson, a student).
+  - **Clearing the tab bar:** toasts sit 84px up on phones, and the sticky bars (attendance save,
+    the staff invoice action bar, Theme's save bar) sit above the tab bar. Pages end 90px above
+    the bottom, plus the safe area. The top bar grows by the top safe area for an installed
+    iPhone app.
+  - **Offline banner** (ui-design §6): "You're offline. Nothing can be loaded or saved until
+    you're back online.", neutral, not dismissable, while the browser reports no connection.
+  - **Install:** the manifest has id, scope, description, orientation and PNG icons (192, 512 and
+    a maskable 512 with a full-bleed background), plus a 180px Apple touch icon and the iOS
+    web-app meta tags. The theme colour is white, the top bar's colour, so the phone's status
+    bar runs into it (it was the dark teal #123f43).
+  - **No service worker:** Chrome and Safari install from the manifest alone, and offline
+    attendance is v1.1 (handoff §8), so nothing is cached for offline use yet.
+  - **Mobile QA fix:** the parent timetable and the staff timetable's day list widen their time
+    column and don't wrap "10:00 am" onto two lines.
+- **Consequences:** Checked at 375px with stubbed data (parent Home, Timetable, Invoices,
+  Messages, More, Report absence; teacher Today, Timetable, Messages and attendance; owner
+  Theme; the profile page's three sections) and at 768px (timetable and drawer), with no
+  sideways scrolling. Not checked: an install on a real iPhone and Android phone. A service
+  worker comes with offline attendance (v1.1).
+  - Assumption: the tab rules for roles other than staff, teacher and parent, and the More
+    lighting rule, were settled during the build without asking the owner.
+- **Tasks:** TUI-84.
