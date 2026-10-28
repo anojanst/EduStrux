@@ -11,7 +11,7 @@ endpoints:
   - POST /api/v1/orgs/{orgId}/makeup-bookings
   - DELETE /api/v1/orgs/{orgId}/makeup-bookings/{bookingId}
 branch: task/tui-129-book-makeup
-pr:
+pr: 73
 ---
 
 # TUI-129 Book make-up from the student page
