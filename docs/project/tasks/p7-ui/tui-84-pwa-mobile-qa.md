@@ -8,7 +8,7 @@ priority: P0
 size: M
 endpoints: []
 branch: task/tui-84-pwa-mobile
-pr:
+pr: 74
 ---
 
 # TUI-84 PWA polish + mobile QA (parent & teacher flows)
