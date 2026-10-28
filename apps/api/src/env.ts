@@ -42,15 +42,18 @@ export type Bindings = {
   CLERK_WEBHOOK_SECRET?: string;
   RESEND_WEBHOOK_SECRET?: string;
   /**
-   * Paddle Billing (TUI-73): an API key, the webhook's secret key, `sandbox` (the default) or
-   * `production`, and the price ids as JSON by `{plan}_{interval}`:
-   * `{"solo_month":"pri_…","solo_year":"pri_…","small_month":"pri_…","small_year":"pri_…"}`.
-   * Without them, checkout and the portal are 503 and the webhook refuses.
+   * Stripe Billing (TUI-106): the secret key (`sk_test_…` or `sk_live_…`, which picks test or
+   * live mode), the webhook endpoint's signing secret (`whsec_…`), and the price ids as JSON by
+   * `{plan}_{interval}`:
+   * `{"solo_month":"price_…","solo_year":"price_…","small_month":"price_…","small_year":"price_…"}`.
+   * Without them (or APP_URL, where Stripe sends the owner back), checkout and the portal are
+   * 503 and the webhook refuses.
    */
-  PADDLE_API_KEY?: string;
-  PADDLE_WEBHOOK_SECRET?: string;
-  PADDLE_ENVIRONMENT?: string;
-  PADDLE_PRICE_IDS?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_IDS?: string;
+  /** `true` turns on Stripe Tax in checkout (it charges a fee per transaction). Off by default. */
+  STRIPE_AUTOMATIC_TAX?: string;
   /**
    * The Clerk user ids of the super-admins (TUI-75), comma-separated. Only they reach
    * `/api/v1/admin/*`; with none set, nobody does.

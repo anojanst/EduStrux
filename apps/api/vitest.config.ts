@@ -29,14 +29,13 @@ export default defineConfig(async () => ({
           // Never call Clerk's Backend API from tests (impersonation), even with a key in .dev.vars.
           CLERK_SECRET_KEY: '',
           SUPER_ADMIN_CLERK_USER_IDS: 'user_super_admin, user_super_admin_2',
-          PADDLE_API_KEY: '',
-          PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_test_secret',
-          PADDLE_ENVIRONMENT: 'sandbox',
-          PADDLE_PRICE_IDS: JSON.stringify({
-            solo_month: 'pri_solo_month',
-            solo_year: 'pri_solo_year',
-            small_month: 'pri_small_month',
-            small_year: 'pri_small_year',
+          STRIPE_SECRET_KEY: '',
+          STRIPE_WEBHOOK_SECRET: 'whsec_test_secret',
+          STRIPE_PRICE_IDS: JSON.stringify({
+            solo_month: 'price_solo_month',
+            solo_year: 'price_solo_year',
+            small_month: 'price_small_month',
+            small_year: 'price_small_year',
           }),
           CLERK_JWT_KEY: publicKey,
           TEST_JWT_PRIVATE_KEY: privateKey,

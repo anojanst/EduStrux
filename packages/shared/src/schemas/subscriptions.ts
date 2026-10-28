@@ -2,19 +2,23 @@ import { z } from '../zod';
 import { Timestamp } from './common';
 import { OrgPlan, OrgStatus } from './orgs';
 
-// The org's own subscription to EduStrux, through Paddle (TUI-73), and its plan's limits (TUI-74).
+// The org's own subscription to EduStrux, through Stripe (TUI-106; Paddle in TUI-73), and its
+// plan's limits (TUI-74).
 
 export const PAID_PLANS = ['solo', 'small'] as const;
 export type PaidPlan = (typeof PAID_PLANS)[number];
 export const BILLING_INTERVALS = ['month', 'year'] as const;
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
-/** Paddle's subscription statuses. */
+/** Stripe's subscription statuses. */
 export const SUBSCRIPTION_STATUSES = [
   'active',
   'trialing',
   'past_due',
+  'unpaid',
   'paused',
   'canceled',
+  'incomplete',
+  'incomplete_expired',
 ] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
@@ -32,7 +36,7 @@ export const PLAN_STUDENT_LIMITS: Record<z.infer<typeof OrgPlan>, number | null>
 /**
  * Whether the org can change anything: not once a trial has ended with no subscription, nor
  * while it is suspended or cancelled. Reading, exporting and subscribing still work (TUI-74).
- * A payment that is late (`past_due`) doesn't stop it while Paddle retries.
+ * A payment that is late (`past_due`) doesn't stop it while Stripe retries.
  */
 export function orgCanWrite(
   org: { status: z.infer<typeof OrgStatus>; trialEndsAt: string | null },
@@ -85,8 +89,10 @@ export type CreateCheckout = z.infer<typeof CreateCheckout>;
 
 export const Checkout = z
   .object({
-    transactionId: z.string().openapi({ description: 'Open it with Paddle.js.' }),
-    checkoutUrl: z.string().nullable(),
+    sessionId: z.string(),
+    url: z
+      .string()
+      .openapi({ description: 'Stripe’s hosted checkout page: send the owner there.' }),
   })
   .openapi('Checkout');
 

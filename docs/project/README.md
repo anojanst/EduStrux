@@ -23,7 +23,7 @@ The build is tracked here, in git, as one markdown file per task (D-029). This f
 | P2 Vertical slice     | `tasks/p2-vertical-slice/`   | Onboarding → setup → classes → sessions → families → enrolment → attendance → invoices → payment → portal |
 | P3 Core modules       | `tasks/p3-core-modules/`     | The rest of the MVP, module by module                                                                     |
 | P4 Background & comms | `tasks/p4-background-comms/` | Queues, Resend, cron, webhooks                                                                            |
-| P5 SaaS layer         | `tasks/p5-saas-layer/`       | Paddle billing, plan limits, super-admin                                                                  |
+| P5 SaaS layer         | `tasks/p5-saas-layer/`       | Stripe billing, plan limits, super-admin                                                                  |
 | P6 Launch hardening   | `tasks/p6-launch-hardening/` | Security, export, privacy, E2E tests, deploy                                                              |
 | P7 UI                 | `tasks/p7-ui/`               | The web app, built on the finished API (API-first, D-001)                                                 |
 

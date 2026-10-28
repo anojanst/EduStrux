@@ -4,10 +4,11 @@ import { env, exports } from 'cloudflare:workers';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/lib/errors';
-import { createCheckout, createPortalSession, signPaddle, verifyPaddle } from '../src/lib/paddle';
+import { createCheckout, createPortalSession, signStripe, verifyStripe } from '../src/lib/stripe';
 import { call, db, newOrg, newUser } from './helpers';
 
-// The org's subscription through Paddle (TUI-73), and what its plan allows (TUI-74).
+// The org's subscription through Stripe (TUI-106; Paddle in TUI-73), and what its plan allows
+// (TUI-74).
 
 const TZ = 'Pacific/Auckland';
 const today = () => localNow(TZ).date;
@@ -47,8 +48,9 @@ async function setup() {
 }
 
 let events = 0;
+const seconds = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 
-/** A Paddle `subscription.*` event for the org, as Paddle sends it. */
+/** A Stripe `customer.subscription.*` event for the org, as Stripe sends it. */
 function subscriptionEvent(
   orgId: string,
   overrides: {
@@ -58,45 +60,49 @@ function subscriptionEvent(
     priceId?: string;
     occurredAt?: string;
     eventId?: string;
-    scheduledCancel?: string;
+    cancelAt?: string;
   } = {},
 ) {
   return {
-    event_id: overrides.eventId ?? `evt_${++events}_${crypto.randomUUID()}`,
-    event_type: overrides.type ?? 'subscription.created',
-    occurred_at: overrides.occurredAt ?? new Date().toISOString(),
+    id: overrides.eventId ?? `evt_${++events}_${crypto.randomUUID()}`,
+    object: 'event',
+    type: overrides.type ?? 'customer.subscription.created',
+    created: seconds(overrides.occurredAt ?? new Date().toISOString()),
     data: {
-      id: overrides.id ?? `sub_${orgId}`,
-      status: overrides.status ?? 'active',
-      customer_id: 'ctm_1',
-      items: [
-        {
-          price: {
-            id: overrides.priceId ?? 'pri_solo_month',
-            billing_cycle: { interval: 'month' },
-          },
+      object: {
+        id: overrides.id ?? `sub_${orgId}`,
+        object: 'subscription',
+        status: overrides.status ?? 'active',
+        customer: 'cus_1',
+        items: {
+          object: 'list',
+          data: [
+            {
+              price: {
+                id: overrides.priceId ?? 'price_solo_month',
+                recurring: { interval: 'month' },
+              },
+              current_period_end: seconds('2026-11-01T00:00:00Z'),
+            },
+          ],
         },
-      ],
-      custom_data: { org_id: orgId },
-      current_billing_period: {
-        starts_at: '2026-10-01T00:00:00Z',
-        ends_at: '2026-11-01T00:00:00Z',
+        metadata: { org_id: orgId },
+        cancel_at: overrides.cancelAt ? seconds(overrides.cancelAt) : null,
+        cancel_at_period_end: false,
+        canceled_at: null,
       },
-      scheduled_change: overrides.scheduledCancel
-        ? { action: 'cancel', effective_at: overrides.scheduledCancel }
-        : null,
     },
   };
 }
 
-async function paddleDeliver(payload: unknown, secret = env.PADDLE_WEBHOOK_SECRET!) {
+async function stripeDeliver(payload: unknown, secret = env.STRIPE_WEBHOOK_SECRET!) {
   const body = JSON.stringify(payload);
   const res = await exports.default.fetch(
-    new Request('http://api.test/api/v1/webhooks/paddle', {
+    new Request('http://api.test/api/v1/webhooks/stripe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Paddle-Signature': await signPaddle(secret, Math.floor(Date.now() / 1000), body),
+        'Stripe-Signature': await signStripe(secret, Math.floor(Date.now() / 1000), body),
       },
       body,
     }),
@@ -128,17 +134,25 @@ describe('GET /billing/subscription', () => {
       expect((await (await member(role)).as('GET', '/billing/subscription')).status).toBe(403);
     }
   });
+
+  it('is 404 for another org', async () => {
+    const { base } = await setup();
+    const other = await newUser('owner');
+    await newOrg(other.token);
+    const res = await call('GET', `${base}/billing/subscription`, { token: other.token });
+    expect(res.status).toBe(404);
+  });
 });
 
-describe('the Paddle webhook', () => {
+describe('the Stripe webhook', () => {
   it('records a new subscription and sets the org’s plan, once per event', async () => {
     const { org, api } = await setup();
     const event = subscriptionEvent(org.id);
-    expect(await paddleDeliver(event)).toEqual({
+    expect(await stripeDeliver(event)).toEqual({
       status: 200,
       body: { received: true, duplicate: false },
     });
-    expect((await paddleDeliver(event)).body.duplicate).toBe(true);
+    expect((await stripeDeliver(event)).body.duplicate).toBe(true);
     const overview = (await api('GET', '/billing/subscription')).body;
     expect(overview).toMatchObject({
       plan: 'solo',
@@ -149,7 +163,7 @@ describe('the Paddle webhook', () => {
         plan: 'solo',
         interval: 'month',
         status: 'active',
-        currentPeriodEnd: '2026-11-01T00:00:00Z',
+        currentPeriodEnd: '2026-11-01T00:00:00.000Z',
         cancelAt: null,
       },
     });
@@ -157,22 +171,26 @@ describe('the Paddle webhook', () => {
     expect(audit).toMatchObject({ action: 'subscription.created', actorUserId: null });
 
     // Upgraded to Small yearly, and the owner asks to cancel at the period's end.
-    await paddleDeliver(
+    await stripeDeliver(
       subscriptionEvent(org.id, {
-        type: 'subscription.updated',
-        priceId: 'pri_small_year',
-        scheduledCancel: '2027-10-01T00:00:00Z',
+        type: 'customer.subscription.updated',
+        priceId: 'price_small_year',
+        cancelAt: '2027-10-01T00:00:00Z',
       }),
     );
     expect((await api('GET', '/billing/subscription')).body).toMatchObject({
       plan: 'small',
-      subscription: { plan: 'small', cancelAt: '2027-10-01T00:00:00Z' },
+      subscription: { plan: 'small', cancelAt: '2027-10-01T00:00:00.000Z' },
+    });
+    expect((await api('GET', '/audit-log?limit=1')).body.data[0]).toMatchObject({
+      action: 'subscription.updated',
+      actorUserId: null,
     });
 
     // An older event arriving late changes nothing.
-    await paddleDeliver(
+    await stripeDeliver(
       subscriptionEvent(org.id, {
-        type: 'subscription.updated',
+        type: 'customer.subscription.updated',
         status: 'past_due',
         occurredAt: '2020-01-01T00:00:00Z',
       }),
@@ -181,13 +199,49 @@ describe('the Paddle webhook', () => {
       plan: 'small',
       status: 'active',
     });
+
+    // A price not in STRIPE_PRICE_IDS is the custom plan.
+    await stripeDeliver(
+      subscriptionEvent(org.id, { type: 'customer.subscription.updated', priceId: 'price_deal' }),
+    );
+    expect((await api('GET', '/billing/subscription')).body.plan).toBe('custom');
+  });
+
+  it('keeps the trial while the first payment is incomplete', async () => {
+    const { org, api } = await setup();
+    await stripeDeliver(subscriptionEvent(org.id, { status: 'incomplete' }));
+    expect((await api('GET', '/billing/subscription')).body).toMatchObject({
+      plan: 'trial',
+      status: 'trialing',
+      subscription: { status: 'incomplete' },
+    });
+    // Not live: the owner may start another checkout (503 here: no secret key).
+    expect((await api('POST', '/billing/checkout', { plan: 'solo' })).status).toBe(503);
+    await stripeDeliver(subscriptionEvent(org.id, { type: 'customer.subscription.updated' }));
+    expect((await api('GET', '/billing/subscription')).body).toMatchObject({
+      plan: 'solo',
+      status: 'active',
+    });
+  });
+
+  it('suspends an unpaid org', async () => {
+    const { org, api } = await setup();
+    await stripeDeliver(subscriptionEvent(org.id));
+    await stripeDeliver(
+      subscriptionEvent(org.id, { type: 'customer.subscription.updated', status: 'unpaid' }),
+    );
+    expect((await api('GET', '/billing/subscription')).body).toMatchObject({
+      status: 'suspended',
+      canWrite: false,
+    });
+    expect((await api('POST', '/subjects', { name: 'Science' })).status).toBe(402);
   });
 
   it('makes a cancelled org read-only, but it can still read, export and subscribe', async () => {
     const { org, api, make } = await setup();
-    await paddleDeliver(subscriptionEvent(org.id));
-    await paddleDeliver(
-      subscriptionEvent(org.id, { type: 'subscription.canceled', status: 'canceled' }),
+    await stripeDeliver(subscriptionEvent(org.id));
+    await stripeDeliver(
+      subscriptionEvent(org.id, { type: 'customer.subscription.deleted', status: 'canceled' }),
     );
     const overview = (await api('GET', '/billing/subscription')).body;
     expect(overview).toMatchObject({ status: 'cancelled', canWrite: false });
@@ -197,104 +251,151 @@ describe('the Paddle webhook', () => {
     expect(write.body.error.code).toBe('subscription_required');
     expect((await api('GET', '/subjects')).status).toBe(200);
     expect((await api('POST', '/exports')).status).toBe(202);
-    // A cancelled subscription isn't live, so a new checkout may start (503 here: no API key).
+    // A cancelled subscription isn't live, so a new checkout may start (503 here: no secret key).
     const again = await api('POST', '/billing/checkout', { plan: 'small', interval: 'year' });
     expect(again.status).toBe(503);
 
     // Subscribing again: a new subscription becomes the org's.
-    await paddleDeliver(subscriptionEvent(org.id, { id: `sub_new_${org.id}` }));
+    await stripeDeliver(subscriptionEvent(org.id, { id: `sub_new_${org.id}` }));
     expect((await api('GET', '/billing/subscription')).body).toMatchObject({
       status: 'active',
       canWrite: true,
     });
     // A late event for the old one leaves the org alone.
-    await paddleDeliver(
-      subscriptionEvent(org.id, { type: 'subscription.updated', status: 'canceled' }),
+    await stripeDeliver(
+      subscriptionEvent(org.id, { type: 'customer.subscription.updated', status: 'canceled' }),
     );
     expect((await api('GET', '/billing/subscription')).body.status).toBe('active');
     expect((await make('/subjects', { name: 'Science' })).id).toMatch(/^sbj_/);
   });
 
-  it('refuses a bad signature, and ignores a subscription with no org', async () => {
-    const { org } = await setup();
-    expect((await paddleDeliver(subscriptionEvent(org.id), 'wrong-secret')).status).toBe(401);
+  it('refuses a bad signature, and ignores a subscription with no org or other events', async () => {
+    const { org, api } = await setup();
+    expect((await stripeDeliver(subscriptionEvent(org.id), 'wrong-secret')).status).toBe(401);
     const orphan = subscriptionEvent('org_missing', { id: 'sub_orphan' });
-    expect((await paddleDeliver(orphan)).status).toBe(200);
-    expect((await paddleDeliver({ event_id: 'evt_x' })).status).toBe(400);
+    expect((await stripeDeliver(orphan)).status).toBe(200);
+    expect((await stripeDeliver({ id: 'evt_x' })).status).toBe(400);
+    const invoice = {
+      id: `evt_invoice_${crypto.randomUUID()}`,
+      type: 'invoice.paid',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: 'in_1' } },
+    };
+    expect((await stripeDeliver(invoice)).status).toBe(200);
+    expect((await api('GET', '/billing/subscription')).body.subscription).toBeNull();
   });
 });
 
 describe('POST /billing/checkout and /billing/portal', () => {
   it('refuse a second subscription, and need one for the portal', async () => {
-    const { org, api } = await setup();
+    const { org, api, member } = await setup();
     expect((await api('POST', '/billing/portal')).status).toBe(422);
     expect((await api('POST', '/billing/checkout', { plan: 'solo' })).status).toBe(503);
     expect((await api('POST', '/billing/checkout', { plan: 'gold' })).status).toBe(400);
-    await paddleDeliver(subscriptionEvent(org.id));
+    await stripeDeliver(subscriptionEvent(org.id));
     const second = await api('POST', '/billing/checkout', { plan: 'small' });
     expect(second.status).toBe(422);
     expect(second.body.error.fields).toEqual({ plan: ['Already subscribed'] });
     expect((await api('POST', '/billing/portal')).status).toBe(503);
+    const manager = await member('branch_manager');
+    expect((await manager.as('POST', '/billing/checkout', { plan: 'solo' })).status).toBe(403);
+    expect((await manager.as('POST', '/billing/portal')).status).toBe(403);
   });
 
-  it('call Paddle’s API with the org’s id and the subscription', async () => {
-    const configured = { ...env, PADDLE_API_KEY: 'pdl_key' };
+  it('are 404 for another org', async () => {
+    const { base } = await setup();
+    const other = await newUser('owner');
+    await newOrg(other.token);
+    const as = (path: string, body?: unknown) =>
+      call('POST', `${base}${path}`, { token: other.token, body });
+    expect((await as('/billing/checkout', { plan: 'solo' })).status).toBe(404);
+    expect((await as('/billing/portal')).status).toBe(404);
+  });
+
+  it('call Stripe’s API with the org’s id, and send the owner back to the app', async () => {
+    const configured = { ...env, STRIPE_SECRET_KEY: 'sk_test_1', APP_URL: 'https://app.test/' };
     const fetchFn = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ data: { id: 'txn_1', checkout: { url: 'https://pay/x' } } })),
+      async () => new Response(JSON.stringify({ id: 'cs_1', url: 'https://checkout.stripe/x' })),
     );
     const out = await createCheckout(
       configured,
-      { priceId: 'pri_solo_month', orgId: 'org_1', customerId: 'ctm_1' },
+      { priceId: 'price_solo_month', orgId: 'org_1', orgSlug: 'kiwi', customerId: 'cus_1' },
       fetchFn as unknown as typeof fetch,
     );
-    expect(out).toEqual({ transactionId: 'txn_1', checkoutUrl: 'https://pay/x' });
+    expect(out).toEqual({ sessionId: 'cs_1', url: 'https://checkout.stripe/x' });
     const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://sandbox-api.paddle.com/transactions');
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer pdl_key');
-    expect(JSON.parse(init.body as string)).toEqual({
-      items: [{ price_id: 'pri_solo_month', quantity: 1 }],
-      custom_data: { org_id: 'org_1' },
-      customer_id: 'ctm_1',
+    expect(url).toBe('https://api.stripe.com/v1/checkout/sessions');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk_test_1');
+    expect(Object.fromEntries(new URLSearchParams(init.body as string))).toEqual({
+      mode: 'subscription',
+      'line_items[0][price]': 'price_solo_month',
+      'line_items[0][quantity]': '1',
+      client_reference_id: 'org_1',
+      'subscription_data[metadata][org_id]': 'org_1',
+      customer: 'cus_1',
+      success_url: 'https://app.test/o/kiwi/settings/billing?checkout=success',
+      cancel_url: 'https://app.test/o/kiwi/settings/billing?checkout=cancelled',
     });
 
+    // With Stripe Tax on, checkout asks Stripe to add tax.
+    const taxed = vi.fn(async () => new Response(JSON.stringify({ id: 'cs_2', url: 'u' })));
+    await createCheckout(
+      { ...configured, STRIPE_AUTOMATIC_TAX: 'true' },
+      { priceId: 'price_solo_month', orgId: 'org_1', orgSlug: 'kiwi', customerId: null },
+      taxed as unknown as typeof fetch,
+    );
+    const taxBody = new URLSearchParams(
+      (taxed.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(taxBody.get('automatic_tax[enabled]')).toBe('true');
+    expect(taxBody.has('customer')).toBe(false);
+
     const portal = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({ data: { urls: { general: { overview: 'https://portal/x' } } } }),
-        ),
+      async () => new Response(JSON.stringify({ url: 'https://billing.stripe/p' })),
     );
     expect(
       await createPortalSession(
-        { ...configured, PADDLE_ENVIRONMENT: 'production' },
-        { customerId: 'ctm_1', subscriptionId: 'sub_1' },
+        configured,
+        { customerId: 'cus_1', orgSlug: 'kiwi' },
         portal as unknown as typeof fetch,
       ),
-    ).toEqual({ url: 'https://portal/x' });
-    expect((portal.mock.calls[0] as unknown as [string])[0]).toBe(
-      'https://api.paddle.com/customers/ctm_1/portal-sessions',
-    );
+    ).toEqual({ url: 'https://billing.stripe/p' });
+    const [portalUrl, portalInit] = portal.mock.calls[0] as unknown as [string, RequestInit];
+    expect(portalUrl).toBe('https://api.stripe.com/v1/billing_portal/sessions');
+    expect(Object.fromEntries(new URLSearchParams(portalInit.body as string))).toEqual({
+      customer: 'cus_1',
+      return_url: 'https://app.test/o/kiwi/settings/billing',
+    });
+
     const failing = vi.fn(async () => new Response('no', { status: 500 }));
     await expect(
       createCheckout(
         configured,
-        { priceId: 'p', orgId: 'o', customerId: null },
+        { priceId: 'p', orgId: 'o', orgSlug: 's', customerId: null },
         failing as unknown as typeof fetch,
       ),
     ).rejects.toBeInstanceOf(ApiError);
+    // Without APP_URL there is nowhere to send the owner back to.
+    await expect(
+      createCheckout(
+        { ...configured, APP_URL: undefined },
+        { priceId: 'p', orgId: 'o', orgSlug: 's', customerId: null },
+        failing as unknown as typeof fetch,
+      ),
+    ).rejects.toMatchObject({ status: 503 });
   });
 });
 
-describe('verifyPaddle', () => {
+describe('verifyStripe', () => {
   it('takes a right, recent signature and refuses a wrong or stale one', async () => {
     const now = 1_800_000_000;
-    const header = await signPaddle('secret', now, '{"a":1}');
-    expect(await verifyPaddle('secret', header, '{"a":1}', now)).toBe(true);
-    expect(await verifyPaddle('secret', `${header};h1=00`, '{"a":1}', now)).toBe(true);
-    expect(await verifyPaddle('secret', header, '{"a":2}', now)).toBe(false);
-    expect(await verifyPaddle('other', header, '{"a":1}', now)).toBe(false);
-    expect(await verifyPaddle('secret', header, '{"a":1}', now + 301)).toBe(false);
-    expect(await verifyPaddle('secret', null, '{"a":1}', now)).toBe(false);
+    const header = await signStripe('secret', now, '{"a":1}');
+    expect(await verifyStripe('secret', header, '{"a":1}', now)).toBe(true);
+    expect(await verifyStripe('secret', `${header},v1=00`, '{"a":1}', now)).toBe(true);
+    expect(await verifyStripe('secret', header, '{"a":2}', now)).toBe(false);
+    expect(await verifyStripe('other', header, '{"a":1}', now)).toBe(false);
+    expect(await verifyStripe('secret', header, '{"a":1}', now + 301)).toBe(false);
+    expect(await verifyStripe('secret', null, '{"a":1}', now)).toBe(false);
   });
 });
 

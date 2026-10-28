@@ -102,7 +102,7 @@ export const webhookEvents = sqliteTable(
   {
     id: text('id').primaryKey(),
     source: text('source').notNull(),
-    // The sender's own id for the delivery (`svix-id`, Paddle's notification id).
+    // The sender's own id for the delivery (`svix-id`, Stripe's event id).
     eventId: text('event_id').notNull(),
     type: text('type').notNull(),
     createdAt: text('created_at').notNull().$defaultFn(now),
