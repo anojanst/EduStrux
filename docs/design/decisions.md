@@ -5358,3 +5358,30 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the screen details were settled during the build from the design, without
     asking the owner.
 - **Tasks:** TUI-128.
+
+## D-184 · 2026-10-28 · Booking make-ups from the student page
+
+- **Context:** Staff make-up booking had an API (TUI-55, D-139) but no screen; the student page
+  only summed up the credits, and "Book make-up" waited on TUI-40 (D-164). TUI-129 builds it on
+  the student page. No new endpoints.
+- **Decision:**
+  - **Make-up credits card:** lists each available credit (class name, "Missed <day> · use by
+    <date>") with Book, and each make-up booked and still to come ("Make-up <day> <time>") with
+    Cancel, which asks first. The "{n} available, the first expires …" summary is gone. Roles
+    without `classes:write` (a teacher) see the same rows with Available / Booked badges and no
+    actions.
+  - **Book dialog:** scheduled lessons still to start in the student's home branch, from today
+    to the credit's last day and at most 4 weeks ahead (one page of 200, with a note when
+    there may be more). It leaves out the student's own lessons and lessons they already have a
+    make-up in. When the policy says same course only, only that course's lessons show;
+    otherwise the same course by default, with a "Show other courses' lessons too" checkbox.
+  - **What the browser can't know:** whether a lesson is full isn't returned with the lessons,
+    so the API's 409 or 422 message shows in the dialog.
+  - **After a booking or cancel:** make-up credits, lessons (timetable and rosters) and the
+    Home count are refreshed.
+- **Consequences:** Home's "Make-up credits to book" row still has no link, since its credits
+  span students; a list of make-up credits across students could serve it. The bell is all
+  that's left of TUI-40's "still to build", and needs a decision on what feeds it (there's no
+  notifications endpoint).
+  - Assumption: the screen details were settled during the build, without asking the owner.
+- **Tasks:** TUI-129, TUI-40.
