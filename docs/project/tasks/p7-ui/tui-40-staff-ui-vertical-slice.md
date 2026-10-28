@@ -17,9 +17,9 @@ Onboarding wizard (basic), setup screens, class + schedule, families/students, e
 
 Mostly built through split tasks (board sync 2026-10-27): onboarding (TUI-23), families and students (TUI-109), classes, enrol, transfer, withdraw and attendance (TUI-112), courses (TUI-113), invoices and record payment (TUI-119), "+ New" (TUI-122), pricing (TUI-123), timetable (TUI-51).
 
+Also split out and built: the staff Home dashboard (TUI-125), branches and rooms (TUI-124) and
+booking make-ups from the student page (TUI-129).
+
 Still to build:
 
-- The staff Home dashboard (TUI-125).
-- Setup screens for branches and rooms (TUI-124).
-- "Book make-up" (the student page only lists make-up credits).
-- The bell in the top bar.
+- The bell in the top bar. Nothing feeds it yet: it needs a decision on what it shows.

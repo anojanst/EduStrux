@@ -4,7 +4,6 @@ import type {
   ConsentType,
   Enrolment,
   Family,
-  MakeupCredit,
   Session,
   Student,
   StudentConsents,
@@ -40,6 +39,7 @@ import {
 } from '../../lib/people';
 import { can } from '../../lib/roles';
 import { ConfirmDialog, StudentDialog, useRefreshPeople } from './dialogs';
+import { MakeupCard } from './makeups';
 import { CardEmpty, DetailHeader, SectionCard } from './parts';
 
 export function StudentPage() {
@@ -127,7 +127,7 @@ function StudentDetail({ studentId }: { studentId: string }) {
           ) : null}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          {canClasses ? <MakeupCard studentId={data.id} /> : null}
+          {canClasses ? <MakeupCard student={data} /> : null}
           <GradesCard student={data} />
           <ConsentsCard
             student={data}
@@ -327,46 +327,6 @@ function LessonsCard({ studentId }: { studentId: string }) {
             );
           })}
         </ul>
-      )}
-    </SectionCard>
-  );
-}
-
-function MakeupCard({ studentId }: { studentId: string }) {
-  const { membership } = useOrg();
-  const format = useFormat();
-  const credits = useQuery({
-    queryKey: ['makeup-credits', membership.org.id, { studentId }],
-    queryFn: ({ signal }) =>
-      api<Page<MakeupCredit>>(
-        'GET',
-        orgApiPath(
-          membership,
-          `/makeup-credits${query({ studentId, status: 'available', limit: 200 })}`,
-        ),
-        { signal },
-      ),
-  });
-  const list = credits.data?.data ?? [];
-  const expiries = list.flatMap((c) => (c.expiresOn ? [c.expiresOn] : [])).sort();
-
-  return (
-    <SectionCard title={t('people.makeups')}>
-      {credits.isPending ? (
-        <div className="h-16 animate-pulse bg-canvas/60" aria-hidden />
-      ) : credits.isError ? (
-        <CardEmpty>{errorMessage(credits.error)}</CardEmpty>
-      ) : (
-        <div className="px-4 py-3.5">
-          <strong className="text-section font-semibold text-text">
-            {t('people.makeups.available', { n: list.length })}
-          </strong>
-          {expiries[0] ? (
-            <p className="mt-0.5 text-meta text-muted">
-              {t('people.makeups.expires', { date: format.date(expiries[0]) })}
-            </p>
-          ) : null}
-        </div>
       )}
     </SectionCard>
   );

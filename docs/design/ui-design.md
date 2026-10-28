@@ -383,6 +383,8 @@ Settled when TUI-23 was built (D-158):
 - **Families & students** (D-164), from the Figma Make people design: the list with families and
   students tabs, the family page, the student page and the Add family dialog. Dialogs take a
   `wide` size (640px) for forms with sections, and focus their first field when they open.
+  The student page's Make-up credits card lists each available credit with Book and each
+  booked make-up still to come with Cancel; Book opens a dialog of lessons to pick from (D-184).
 - **Settings › Theme** (D-165), from the owner's Figma Make design, owner only: a radio grid of
   the 12 themes (D-166: the 4 light ones last) (a mini app mock-up on each, a check on the chosen one), a live preview of the
   staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with

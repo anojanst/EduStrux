@@ -118,6 +118,20 @@ const aria = {
   createdAt: at,
   updatedAt: at,
 };
+const credit = (id: string, expiresOn: string | null) => ({
+  id,
+  studentId: 'stu_aria',
+  studentFirstName: 'Aria',
+  studentLastName: 'Perera',
+  sessionId: 'ses_missed',
+  classId: 'cls_maths',
+  courseId: 'crs_maths',
+  missedOn: '2026-10-01',
+  expiresOn,
+  status: 'available',
+  booking: null,
+  createdAt: at,
+});
 const perera = {
   id: 'fam_perera',
   name: 'Perera',
@@ -571,10 +585,14 @@ describe('the student page', () => {
         },
       },
       [`${API}/classes/cls_maths`]: {
-        body: { id: 'cls_maths', schedule: [{ weekday: 1, startTime: '16:00', endTime: '17:00' }] },
+        body: {
+          id: 'cls_maths',
+          name: 'Year 7 Mathematics',
+          schedule: [{ weekday: 1, startTime: '16:00', endTime: '17:00' }],
+        },
       },
-      [`${API}/makeup-credits?studentId=stu_aria&status=available&limit=200`]: {
-        body: { data: [{ id: 'mkc_1', expiresOn: '2026-12-12' }], nextCursor: null },
+      [`${API}/makeup-credits?studentId=stu_aria&limit=200`]: {
+        body: { data: [credit('mkc_1', '2026-12-12')], nextCursor: null },
       },
       // The next six weeks from today, in the browser's timezone until the org loads.
       [`${API}/sessions?studentId=stu_aria&from=${today}&to=${addDays(today, 41)}&limit=5`]: {
@@ -628,12 +646,204 @@ describe('the student page', () => {
     expect(await screen.findByText('Year 7 Mathematics', { selector: 'b' })).toBeVisible();
     expect(await screen.findByText('Mon 4:00 pm–5:00 pm')).toBeVisible();
     expect(await screen.findByText('Cancelled')).toBeVisible();
-    expect(await screen.findByText('1 available')).toBeVisible();
-    expect(screen.getByText('The first expires 12/12/2026')).toBeVisible();
+    expect(await screen.findByText('Missed Thu, 1 Oct · use by 12/12/2026')).toBeVisible();
     expect(screen.getByText('2026')).toBeVisible();
     expect(await screen.findByText('Granted')).toBeVisible();
     expect(screen.getByText('Not asked')).toBeVisible();
     expect(screen.getByText('Works best near the front.')).toBeVisible();
+  });
+});
+
+describe('make-ups on the student page', () => {
+  const today = localNow(Intl.DateTimeFormat().resolvedOptions().timeZone).date;
+  const lesson = (id: string, courseId: string, className: string, date: string) => ({
+    id,
+    classId: `cls_${id}`,
+    className,
+    courseId,
+    branchId: 'brn_albany',
+    roomId: null,
+    roomName: 'Room 2',
+    teacherId: null,
+    teacherName: 'Sam Lee',
+    date,
+    startTime: '16:00',
+    endTime: '17:00',
+    startsAt: '2099-01-05T03:00:00.000Z',
+    endsAt: '2099-01-05T04:00:00.000Z',
+    status: 'scheduled',
+    movedFrom: null,
+    createdAt: at,
+    updatedAt: at,
+  });
+  const booking = {
+    id: 'mkb_1',
+    creditId: 'mkc_2',
+    studentId: 'stu_aria',
+    sessionId: 'ses_booked',
+    date: addDays(today, 7),
+    startTime: '15:30',
+    classId: 'cls_science',
+    className: 'Year 7 Science',
+    createdAt: at,
+  };
+  const page = {
+    ...lookups,
+    [`${API}/students/stu_aria`]: { body: aria },
+    [`${API}/enrolments?studentId=stu_aria&limit=200`]: { body: { data: [], nextCursor: null } },
+    [`${API}/sessions?studentId=stu_aria&from=${today}&to=${addDays(today, 41)}&limit=5`]: {
+      body: { data: [], nextCursor: null },
+    },
+    [`${API}/students/stu_aria/consents`]: { body: { studentId: 'stu_aria', consents: [] } },
+    [`${API}/classes/cls_maths`]: { body: { id: 'cls_maths', name: 'Year 7 Mathematics' } },
+    [`${API}/makeup-credits?studentId=stu_aria&limit=200`]: {
+      body: {
+        data: [
+          credit('mkc_1', null),
+          { ...credit('mkc_2', null), status: 'used', booking },
+          { ...credit('mkc_3', null), status: 'expired' },
+        ],
+        nextCursor: null,
+      },
+    },
+  };
+
+  it('books a credit into a lesson of the same course, leaving out the student’s own', async () => {
+    const to = addDays(today, 27);
+    const calls = stubApi({
+      ...page,
+      [`${API}/makeup-policy`]: {
+        body: {
+          enabled: true,
+          creditForExcused: true,
+          creditForAbsent: false,
+          requireNotice: true,
+          expiryDays: null,
+          sameCourseOnly: true,
+          updatedAt: at,
+        },
+      },
+      [`${API}/sessions?branchId=brn_albany&from=${today}&to=${to}&limit=200`]: {
+        body: {
+          data: [
+            lesson('ses_own', 'crs_maths', 'Year 7 Mathematics A', addDays(today, 1)),
+            lesson('ses_free', 'crs_maths', 'Year 7 Mathematics B', addDays(today, 2)),
+            lesson('ses_other', 'crs_english', 'Year 7 English', addDays(today, 2)),
+            lesson('ses_booked', 'crs_maths', 'Year 7 Mathematics C', addDays(today, 3)),
+            {
+              ...lesson('ses_off', 'crs_maths', 'Year 7 Mathematics D', addDays(today, 4)),
+              status: 'cancelled',
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+      [`${API}/sessions?studentId=stu_aria&from=${today}&to=${to}&limit=200`]: {
+        body: { data: [{ id: 'ses_own' }], nextCursor: null },
+      },
+      'POST /api/v1/orgs/org_1/makeup-bookings': {
+        status: 201,
+        body: { ...booking, id: 'mkb_2', creditId: 'mkc_1', sessionId: 'ses_free' },
+      },
+    });
+    const user = userEvent.setup();
+    renderRoutes(routes, '/o/bright-minds/students/stu_aria', inOrg('owner'));
+
+    expect(await screen.findByText('Year 7 Science')).toBeVisible();
+    expect(screen.getAllByText('Missed Thu, 1 Oct · doesn’t expire')).toHaveLength(1);
+    await user.click(
+      await screen.findByRole('button', { name: /Book a make-up for the lesson missed/ }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Book a make-up for Aria' });
+    expect(within(dialog).getByText('Missed Year 7 Mathematics on Thu, 1 Oct')).toBeVisible();
+    const options = await within(dialog).findAllByRole('radio');
+    expect(options).toHaveLength(1);
+    expect(within(dialog).getByText(/Year 7 Mathematics B · Sam Lee · Room 2/)).toBeVisible();
+    expect(within(dialog).queryByText(/Show other courses/)).toBeNull();
+
+    await user.click(options[0]!);
+    await user.click(within(dialog).getByRole('button', { name: 'Book' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.key.startsWith('POST'))?.body).toEqual({
+        creditId: 'mkc_1',
+        sessionId: 'ses_free',
+      }),
+    );
+    expect(await screen.findByText(/Aria is booked in for/)).toBeVisible();
+  });
+
+  it('offers other courses when the policy allows, and shows why a booking is refused', async () => {
+    const to = addDays(today, 27);
+    stubApi({
+      ...page,
+      [`${API}/makeup-policy`]: {
+        body: {
+          enabled: true,
+          creditForExcused: true,
+          creditForAbsent: false,
+          requireNotice: true,
+          expiryDays: null,
+          sameCourseOnly: false,
+          updatedAt: at,
+        },
+      },
+      [`${API}/sessions?branchId=brn_albany&from=${today}&to=${to}&limit=200`]: {
+        body: {
+          data: [lesson('ses_other', 'crs_english', 'Year 7 English', addDays(today, 2))],
+          nextCursor: null,
+        },
+      },
+      [`${API}/sessions?studentId=stu_aria&from=${today}&to=${to}&limit=200`]: {
+        body: { data: [], nextCursor: null },
+      },
+      'POST /api/v1/orgs/org_1/makeup-bookings': {
+        status: 422,
+        body: { error: { code: 'unprocessable', message: 'That lesson is full.' } },
+      },
+    });
+    const user = userEvent.setup();
+    renderRoutes(routes, '/o/bright-minds/students/stu_aria', inOrg('owner'));
+
+    await user.click(
+      await screen.findByRole('button', { name: /Book a make-up for the lesson missed/ }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Book a make-up for Aria' });
+    expect(await within(dialog).findByText(/No lessons with a place/)).toBeVisible();
+    await user.click(within(dialog).getByLabelText('Show other courses’ lessons too'));
+    await user.click(within(dialog).getByRole('radio'));
+    await user.click(within(dialog).getByRole('button', { name: 'Book' }));
+    expect(await within(dialog).findByText('That lesson is full.')).toBeVisible();
+  });
+
+  it('cancels a booked make-up', async () => {
+    const calls = stubApi({
+      ...page,
+      'DELETE /api/v1/orgs/org_1/makeup-bookings/mkb_1': { status: 204 },
+    });
+    const user = userEvent.setup();
+    renderRoutes(routes, '/o/bright-minds/students/stu_aria', inOrg('owner'));
+
+    await user.click(await screen.findByRole('button', { name: /Cancel the make-up on/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cancel this make-up?' });
+    expect(within(dialog).getByText(/Aria comes off Year 7 Science on/)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel make-up' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.key === 'DELETE /api/v1/orgs/org_1/makeup-bookings/mkb_1')).toBe(
+        true,
+      ),
+    );
+    expect(await screen.findByText('Make-up cancelled')).toBeVisible();
+  });
+
+  it('shows a teacher the credits without booking or cancelling', async () => {
+    stubApi(page);
+    renderRoutes(routes, '/o/bright-minds/students/stu_aria', inOrg('teacher'));
+
+    expect(await screen.findByText('Year 7 Science')).toBeVisible();
+    expect(screen.getByText('Available')).toBeVisible();
+    expect(screen.getByText('Booked')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Book a make-up/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Cancel the make-up/ })).toBeNull();
   });
 });
 
