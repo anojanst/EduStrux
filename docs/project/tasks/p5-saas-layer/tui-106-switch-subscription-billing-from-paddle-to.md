@@ -11,7 +11,7 @@ endpoints:
   - POST /api/v1/orgs/{orgId}/billing/portal
   - POST /api/v1/webhooks/stripe
 branch: task/tui-106-stripe-billing
-pr:
+pr: 75
 ---
 
 # TUI-106 Switch subscription billing from Paddle to Stripe
