@@ -5422,9 +5422,9 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
     column and don't wrap "10:00 am" onto two lines.
 - **Consequences:** Checked at 375px with stubbed data (parent Home, Timetable, Invoices,
   Messages, More, Report absence; teacher Today, Timetable, Messages and attendance; owner
-  Theme) and at 768px (timetable and drawer), with no sideways scrolling. Not checked: the
-  profile page (needs Clerk's user data) and an install on a real iPhone and Android phone. A
-  service worker comes with offline attendance (v1.1).
+  Theme; the profile page's three sections) and at 768px (timetable and drawer), with no
+  sideways scrolling. Not checked: an install on a real iPhone and Android phone. A service
+  worker comes with offline attendance (v1.1).
   - Assumption: the tab rules for roles other than staff, teacher and parent, and the More
     lighting rule, were settled during the build without asking the owner.
 - **Tasks:** TUI-84.
