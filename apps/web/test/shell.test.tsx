@@ -132,17 +132,23 @@ describe('the + New menu', () => {
       'Family',
       'Class',
       'Payment',
+      'Announcement',
     ]);
     await userEvent.click(screen.getByRole('menuitem', { name: 'Payment' }));
     expect(await screen.findByRole('dialog', { name: 'Record payment' })).toBeVisible();
     expect(await screen.findByText('No family has an issued invoice to pay.')).toBeVisible();
   });
 
+  it('offers a teacher only an announcement', async () => {
+    renderRoutes(routes, '/o/magic', as('teacher'));
+    await userEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Announcement',
+    ]);
+  });
+
   it('isn’t there for roles that create nothing', () => {
-    for (const role of ['teacher', 'accountant'] as const) {
-      const view = renderRoutes(routes, '/o/magic', as(role));
-      expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
-      view.unmount();
-    }
+    renderRoutes(routes, '/o/magic', as('accountant'));
+    expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
   });
 });

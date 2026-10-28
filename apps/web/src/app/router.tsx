@@ -25,6 +25,7 @@ import { PortalInvoices } from '../pages/portal/PortalInvoices';
 import { PortalMessages, PortalMore } from '../pages/portal/PortalMessages';
 import { PortalTimetable } from '../pages/portal/PortalTimetable';
 import { PricingPage } from '../pages/settings/PricingPage';
+import { MessagesPage } from '../pages/messages/MessagesPage';
 import { TermsPage } from '../pages/settings/TermsPage';
 import { ThemePage } from '../pages/settings/ThemePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
@@ -124,7 +125,10 @@ export const routes = [
                 path: 'invoices',
                 element: <ForParent portal={<PortalInvoices />} staff={<InvoicesPage />} />,
               },
-              { path: 'messages', element: <ForParent portal={<PortalMessages />} /> },
+              {
+                path: 'messages',
+                element: <ForParent portal={<PortalMessages />} staff={<MessagesPage />} />,
+              },
               { path: 'more', element: <ForParent portal={<PortalMore />} /> },
               { path: 'invoices/:invoiceId', element: <InvoicePage /> },
               { path: 'payments', element: <PaymentsPage /> },

@@ -408,7 +408,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Attendance and make-ups:** one-tap attendance on phone, where the mark shows at once and the app then syncs with the roster the API returns (D-109), parent absence notices, make-up policy, automatic make-up credits, staff make-up booking.
 - **Learning:** lesson notes (typed).
 - **Fees:** automatic term/monthly invoices (a term run and a monthly run that staff start, D-089), pro-rata by lessons (D-086), tax on invoices, recording payments (partial, receipts), unique bank transfer references (one per family, D-097), overdue reminders **by email** (D-148), invoice and receipt PDFs (D-142).
-- **Communication:** announcements (all, branch, grade, subject, class, teacher's students, custom list), email and portal channels, automatic messages, message templates.
+- **Communication:** announcements (all, branch, grade, subject, class, teacher's students, custom list), email and portal channels, automatic messages, message templates (the web Messages screen, D-183).
 - **Parent portal (PWA):** passwordless sign-in through Clerk (email code or link, D-021), timetable and changes, invoices and balance, reporting absences.
 - **Teacher:** a today view (a teacher's Home, with quick attendance and homework, D-177), plus attendance and notes on phone.
 - **Reports:** home dashboard, money reports (invoiced vs received, aged debt, tax collected).
