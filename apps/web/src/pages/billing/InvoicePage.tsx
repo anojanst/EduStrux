@@ -190,7 +190,7 @@ function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
       </div>
 
       {/* On phones the main action, or the PDF when there's none, sits in a bar at the bottom. */}
-      <div className="sticky bottom-0 z-10 -mx-4 mt-5 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+      <div className="sticky bottom-0 z-10 max-sm:bottom-[calc(66px+env(safe-area-inset-bottom))] max-sm:pb-3 -mx-4 mt-5 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
         {main ? (
           <Button className="w-full" icon={<main.Icon className="size-4" />} onClick={main.onClick}>
             {main.label}

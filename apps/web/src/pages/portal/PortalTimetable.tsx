@@ -196,9 +196,9 @@ function LessonButton({ session, onOpen }: { session: PortalSession; onOpen: () 
     <button
       type="button"
       onClick={onOpen}
-      className="grid min-h-[70px] w-full grid-cols-[58px_1fr_auto] items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-canvas sm:grid-cols-[75px_1fr_auto]"
+      className="grid min-h-[70px] w-full grid-cols-[68px_1fr_auto] items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-canvas sm:grid-cols-[75px_1fr_auto]"
     >
-      <time className="text-label font-semibold text-text tabular-nums">
+      <time className="text-label font-semibold whitespace-nowrap text-text tabular-nums">
         {format.time(session.startTime)}
       </time>
       <span className="flex min-w-0 flex-col">

@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,22 +36,24 @@ beforeEach(() => resetAccount());
 describe('the sidebar', () => {
   it('collapses to an icon rail that keeps every link named, and remembers it', async () => {
     const first = renderRoutes(routes, '/o/magic', inOrg);
-    expect(sidebar()).toHaveClass('w-[248px]');
+    expect(sidebar()).toHaveClass('lg:w-[248px]');
     expect(screen.getByText('Ethan Nojan')).toBeVisible();
 
     await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(sidebar()).not.toHaveClass('lg:w-[248px]');
     expect(sidebar()).toHaveClass('w-[72px]');
     expect(screen.queryByText('Ethan Nojan')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Home' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Team' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Your profile' })).toBeVisible();
+    const nav = within(screen.getByRole('navigation', { name: 'Main' }));
+    expect(nav.getByRole('link', { name: 'Home' })).toBeVisible();
+    expect(nav.getByRole('link', { name: 'Team' })).toBeVisible();
+    expect(nav.getByRole('link', { name: 'Your profile' })).toBeVisible();
     expect(localStorage.getItem('edustrux.sidebarCollapsed')).toBe('1');
     first.unmount();
 
     renderRoutes(routes, '/o/magic', inOrg);
-    expect(sidebar()).toHaveClass('w-[72px]');
+    expect(sidebar()).not.toHaveClass('lg:w-[248px]');
     await userEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
-    expect(sidebar()).toHaveClass('w-[248px]');
+    expect(sidebar()).toHaveClass('lg:w-[248px]');
     expect(localStorage.getItem('edustrux.sidebarCollapsed')).toBe('0');
   });
 });
@@ -150,5 +152,93 @@ describe('the + New menu', () => {
   it('isn’t there for roles that create nothing', () => {
     renderRoutes(routes, '/o/magic', as('accountant'));
     expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
+  });
+});
+
+describe('the tab bar on phones', () => {
+  const as = (role: Role) => (tree: ReactNode) => (
+    <OrgContext.Provider
+      value={{
+        me: { id: 'usr_1', email: 'ethan@example.com', name: 'Ethan Nojan', memberships: [] },
+        membership: { id: 'mem_1', role, branchIds: null, org },
+        org: undefined,
+      }}
+    >
+      {tree}
+    </OrgContext.Provider>
+  );
+  const tabs = () => within(screen.getByRole('navigation', { name: 'Sections' }));
+  const names = () =>
+    [...screen.getByRole('navigation', { name: 'Sections' }).children].map((el) => el.textContent);
+
+  it('gives staff four areas, then More, which opens the full menu', async () => {
+    renderRoutes(routes, '/o/magic/settings/team', as('owner'));
+    expect(names()).toEqual(['Home', 'Timetable', 'Families', 'Invoices', 'More']);
+    expect(tabs().getByRole('link', { name: 'Families' })).toHaveAttribute(
+      'href',
+      '/o/magic/families',
+    );
+    // Team isn't a tab, so More is lit.
+    const more = tabs().getByRole('button', { name: 'More' });
+    expect(more).toHaveClass('text-brand');
+
+    await userEvent.click(more);
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByRole('link', { name: 'Team' })).toBeVisible();
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('leaves More unlit on a tab’s page', () => {
+    renderRoutes(routes, '/o/magic/invoices', as('owner'));
+    expect(tabs().getByRole('button', { name: 'More' })).not.toHaveClass('text-brand');
+    expect(tabs().getByRole('link', { name: 'Invoices' })).toHaveClass('text-brand');
+  });
+
+  it('gives a teacher Today, Timetable and Messages', () => {
+    renderRoutes(routes, '/o/magic', as('teacher'));
+    expect(names()).toEqual(['Today', 'Timetable', 'Messages', 'More']);
+    expect(tabs().getByRole('link', { name: 'Today' })).toHaveAttribute('href', '/o/magic');
+  });
+
+  it('fills in from the menu for a role without some of the areas', () => {
+    renderRoutes(routes, '/o/magic', as('accountant'));
+    expect(names()).toEqual(['Home', 'Invoices', 'Payments', 'More']);
+  });
+
+  it('keeps the parent portal’s own More page', () => {
+    renderRoutes(routes, '/o/magic', as('parent'));
+    expect(names()).toEqual(['Home', 'Timetable', 'Invoices', 'Messages', 'More']);
+    expect(tabs().getByRole('link', { name: 'More' })).toHaveAttribute('href', '/o/magic/more');
+  });
+});
+
+describe('the offline banner', () => {
+  it('shows while the browser is offline', () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    renderRoutes(routes, '/o/magic', inOrg);
+    expect(screen.getByText(/You’re offline/)).toBeVisible();
+
+    online.mockReturnValue(true);
+    act(() => window.dispatchEvent(new Event('online')));
+    expect(screen.queryByText(/You’re offline/)).toBeNull();
+    online.mockRestore();
+  });
+});
+
+describe('the sidebar on a tablet', () => {
+  it('stays a rail whose button opens the full menu as a drawer', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 1023px'),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    renderRoutes(routes, '/o/magic', inOrg);
+    expect(screen.queryByText('Ethan Nojan')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText('Ethan Nojan')).toBeVisible();
+    expect(within(drawer).getByRole('link', { name: 'Team' })).toBeVisible();
   });
 });

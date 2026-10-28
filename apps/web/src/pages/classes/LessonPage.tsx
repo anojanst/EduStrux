@@ -220,7 +220,7 @@ function Sheet({
           </div>
 
           {canMark ? (
-            <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] backdrop-blur sm:-mx-8 sm:px-8">
+            <div className="sticky bottom-0 z-10 max-sm:bottom-[calc(66px+env(safe-area-inset-bottom))] max-sm:pb-3 -mx-4 mt-4 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] backdrop-blur sm:-mx-8 sm:px-8">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                 {save.error ? (
                   <p className="text-meta text-danger sm:mr-auto">{errorMessage(save.error)}</p>

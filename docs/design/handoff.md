@@ -2,7 +2,7 @@
 
 Handoff notes for continuing this project in Claude Code. They cover the decisions already made, the MVP scope, the architecture, the data model and the API.
 
-Last updated: 2026-10-27 · Owner: Anojan (Auckland, NZ)
+Last updated: 2026-10-28 · Owner: Anojan (Auckland, NZ)
 
 > This is the living design spec, kept up to date by `/update-design-docs`. Decisions made during
 > the build are logged in [decisions.md](decisions.md) and referenced here as D-xxx.
@@ -412,7 +412,7 @@ All tables except `users` include `org_id`, `created_at`, `updated_at` and `dele
 - **Parent portal (PWA):** passwordless sign-in through Clerk (email code or link, D-021), timetable and changes, invoices and balance, reporting absences.
 - **Teacher:** a today view (a teacher's Home, with quick attendance and homework, D-177), plus attendance and notes on phone.
 - **Reports:** home dashboard, money reports (invoiced vs received, aged debt, tax collected).
-- **Data and platform:** org data isolation (a sweep over every route, D-156), login security (passwordless parents, 2FA for staff), audit log, mobile-first PWA, full data export as one JSON file (D-147), nightly per-org backups (D-149), privacy controls (consents, retention, erasing a family, D-155).
+- **Data and platform:** org data isolation (a sweep over every route, D-156), login security (passwordless parents, 2FA for staff), audit log, mobile-first PWA (installable from its manifest, a tab bar on phones for every role; no service worker until offline attendance, D-185), full data export as one JSON file (D-147), nightly per-org backups (D-149), privacy controls (consents, retention, erasing a family, D-155).
 - **SaaS layer:** sign-up and trial, onboarding wizard, plans and limits, Paddle subscription billing, super-admin console.
 - **Import:** spreadsheet import with **manual** column mapping (kept in the MVP: centres won't retype 100 students, D-022), from CSV, one student per row (D-146). AI mapping is part of the AI add-on.
 
