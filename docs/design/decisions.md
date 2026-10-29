@@ -5543,3 +5543,35 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   the audit scrub as well.
 - **Supersedes:** in part D-112, D-126, D-128, D-129 and D-146 (see the notes under each).
 - **Tasks:** TUI-115, TUI-116.
+
+## D-188 · 2026-10-29 · The deployed Worker serves the web app
+
+- **Context:** the web app had no production home: the Worker served only the API, and
+  `CLERK_AUTHORIZED_PARTIES` was empty until the app had an origin, so the token's `azp` claim
+  wasn't checked (D-066, D-158).
+- **Decision:**
+  - **Static assets under `env.production` only.** The deployed Worker serves the web build:
+    `/api/*` always reaches the Worker's code; any other path is a file from the build, or
+    `index.html` so the app's own router handles it. The top level of the wrangler config (local
+    dev and tests) has no assets: locally Vite serves the app and sends `/api` to the API (D-158),
+    and the tests need no web build.
+  - **The deploy builds the web app first.** `pnpm deploy:production` builds it, then deploys the
+    Worker with it.
+  - **The build refuses to run without a Clerk publishable key**, so a deploy never ships an app
+    that only shows the setup page. The dev server and the web tests don't need it.
+  - **The publishable key comes from a repository variable** (`VITE_CLERK_PUBLISHABLE_KEY`, a
+    variable, not a secret: the value is public and goes into the build). It must belong to the
+    same Clerk instance as the Worker's `CLERK_SECRET_KEY`. From a machine, the key comes from the
+    shell, else the web app's `.env.production.local`, else its `.env.local`.
+  - **`azp` is checked in production.** `CLERK_AUTHORIZED_PARTIES` is the Worker's own origin
+    (its workers.dev address), where the app is now served. A token minted on any other origin is
+    refused; each new origin the app is served from must be added.
+  - **Caching:** files under `/assets/` (content-hashed by Vite) are cached for a year as
+    immutable. `index.html` keeps the Workers default: revalidated on every load.
+- **Consequences:**
+  - Until the owner sets the repository variable, the deploy after a merge stops at the web build
+    and nothing deploys.
+  - A web app on another origin pointed at the production API (a local Vite app, say) is refused.
+  - Cloudflare Access (D-069) still covers all traffic, so the app is behind it too until launch.
+  - Implementation decisions reported by the build, not stated by the owner.
+- **Tasks:** TUI-107.

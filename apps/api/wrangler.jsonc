@@ -7,8 +7,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // The React build will be served from here once apps/web exists:
-  // "assets": { "directory": "../web/dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  // No static assets here: locally the web app runs on Vite (:5173), which sends /api to this
+  // Worker (D-158). The deployed Worker serves the web build, under `env.production`.
 
   "vars": {
     "ENVIRONMENT": "development",
@@ -52,12 +52,21 @@
   "env": {
     "production": {
       "name": "edustrux",
+      // The web app's build (`pnpm deploy:production` builds it first). /api/* always reaches the
+      // Worker; any other path is a file from the build, or index.html so the app's own router
+      // handles it.
+      "assets": {
+        "directory": "../web/dist",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"],
+      },
       "vars": {
         "ENVIRONMENT": "production",
         // On until launch, while production is the only deployed environment (D-068).
         "ENABLE_DOCS": "true",
-        // Set to the web app's origins once it has one. Empty = the azp claim isn't checked.
-        "CLERK_AUTHORIZED_PARTIES": "",
+        // The origins the web app is served from (this Worker). A token minted on any other
+        // origin is refused. Add each new origin here when the app gets one.
+        "CLERK_AUTHORIZED_PARTIES": "https://edustrux.edustrux-api.workers.dev",
       },
       "d1_databases": [
         {

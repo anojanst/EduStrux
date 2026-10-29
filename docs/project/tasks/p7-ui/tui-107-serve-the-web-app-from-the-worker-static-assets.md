@@ -1,13 +1,13 @@
 ---
 id: TUI-107
 title: Serve the web app from the Worker (static assets, SPA fallback, CLERK_AUTHORIZED_PARTIES)
-status: todo
+status: done
 phase: P7
 module: web
 priority: P0
 size: S
 endpoints: []
-branch:
+branch: task/tui-107-serve-web-from-worker
 pr:
 ---
 

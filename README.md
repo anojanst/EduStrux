@@ -177,8 +177,13 @@ and tests.
 
 Merging to `main` deploys it. The workflow
 [.github/workflows/deploy-production.yml](.github/workflows/deploy-production.yml) runs
-`pnpm typecheck` and `pnpm test`, applies new migrations to the production D1, then deploys the
-Worker. A failed check or migration stops it before the deploy.
+`pnpm typecheck` and `pnpm test`, applies new migrations to the production D1, then builds the
+web app and deploys the Worker with it. A failed check, migration or build stops it before the
+deploy.
+
+The Worker serves the web app too: `/api/*` reaches the API, and every other path is a file from
+`apps/web/dist` or, for the app's own pages, its `index.html`. Locally nothing changes: Vite
+serves the app and sends `/api` to `wrangler dev`.
 
 - Merges that only change `docs/`, Markdown files or `.claude/` don't start it.
 - It can be started by hand from the repository's Actions tab ("Run workflow"). Only `main` is
@@ -188,6 +193,10 @@ Worker. A failed check or migration stops it before the deploy.
   account only with three account permissions: Workers Scripts: Edit (the deploy), D1: Edit (the
   migrations) and Queues: Edit (a deploy rewrites the queue consumer settings). A custom domain
   will add Zone → Workers Routes: Edit for its zone.
+- It needs one repository variable, `VITE_CLERK_PUBLISHABLE_KEY`
+  (`gh variable set VITE_CLERK_PUBLISHABLE_KEY`): the publishable key of the Clerk instance whose
+  secret key is on the Worker. It's public and goes into the web build. Without it the build stops
+  and nothing is deployed.
 
 To deploy from your own machine instead:
 
@@ -197,7 +206,11 @@ pnpm db:migrate:production                         # apply new migrations to the
 pnpm deploy:production
 ```
 
-- `deploy:production` turns off wrangler's automatic resource creation, so a binding to
+- `deploy:production` builds the web app first. On a machine the key comes from
+  `VITE_CLERK_PUBLISHABLE_KEY` in the shell, else `apps/web/.env.production.local`, else
+  `apps/web/.env.local`, which holds the development instance's key. Make sure it's the instance
+  whose secret key is on the Worker.
+- `deploy:production` also turns off wrangler's automatic resource creation, so a binding to
   something that doesn't exist fails the deploy instead of creating it. Create new resources on
   purpose (`wrangler r2 bucket create`, `wrangler queues create`).
 - Secrets are set once, by the owner:
@@ -208,5 +221,6 @@ pnpm deploy:production
 - The whole deployed API is behind Cloudflare Access until the app is finalised (D-069). A
   browser signs in through Access first; curl and other non-browser clients need an Access
   service token. Access is set up in the Cloudflare dashboard, not in this repo.
-- Before launch: remove or narrow Access, set `ENABLE_DOCS` back to `false` under
-  `env.production`, and set `CLERK_AUTHORIZED_PARTIES` to the web app's origins.
+- Before launch: remove or narrow Access, and set `ENABLE_DOCS` back to `false` under
+  `env.production`. `CLERK_AUTHORIZED_PARTIES` there lists the origins the app is served from;
+  add each new one.

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy:production": "wrangler deploy --env production --no-x-provision --no-x-auto-create",
+    "deploy:production": "pnpm --filter @edustrux/web build && wrangler deploy --env production --no-x-provision --no-x-auto-create",
     "typecheck": "tsc -p tsconfig.json && tsc -p scripts/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
