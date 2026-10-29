@@ -1,4 +1,5 @@
 import {
+  addMonths,
   CONSENT_TYPES,
   localNow,
   newId,
@@ -12,6 +13,7 @@ import { notFound, unprocessable, validationFailed } from '../../lib/errors';
 import * as admissions from '../admissions/service';
 import * as attendance from '../attendance/service';
 import * as billing from '../billing/service';
+import * as classes from '../classes/service';
 import * as comms from '../comms/service';
 import * as enrolment from '../enrolment/service';
 import * as learning from '../learning/service';
@@ -21,7 +23,18 @@ import * as platform from '../platform/service';
 import * as staff from '../staff/service';
 
 // Privacy controls (TUI-79): consents per student, and erasing a family. Each module builds its
-// own part of an erasure; this puts them in one batch with one audit row.
+// own part of an erasure; this puts them in one batch with one audit row. The daily cron erases
+// inactive families, and deletes erased ones for good once the org's retention has passed
+// (TUI-118).
+
+/** A family is erased this many months after it goes inactive (D-171). Fixed, not a setting. */
+export const INACTIVE_MONTHS = 6;
+
+/**
+ * The most families the daily cron erases, and the most it deletes, in one org in one night. The
+ * rest wait for the next night, so one org's backlog can't use up the cron's D1 calls.
+ */
+export const FAMILIES_PER_NIGHT = 20;
 
 type ConsentRow = Awaited<ReturnType<typeof people.consentsOf>>['consents'][number];
 
@@ -94,7 +107,10 @@ export async function setConsent(
  */
 export async function eraseFamily(ctx: OrgCtx, id: string): Promise<FamilyErased> {
   const org = await orgs.getOrg(ctx);
-  const today = localNow(org.timezone).date;
+  return erase(ctx, id, localNow(org.timezone).date, false);
+}
+
+async function erase(ctx: OrgCtx, id: string, today: string, auto: boolean): Promise<FamilyErased> {
   const [family, who, owed] = await Promise.all([
     people.familyToErase(ctx, id),
     people.peopleOfFamily(ctx, id),
@@ -126,7 +142,90 @@ export async function eraseFamily(ctx: OrgCtx, id: string): Promise<FamilyErased
       ...admissions.eraseStatements(ctx, id),
       ...platform.eraseAuditStatements(ctx, [id, ...who.guardianIds, ...who.studentIds]),
     ],
-    { action: 'family.erased', entityType: 'family', entityId: id, after: counts },
+    {
+      action: 'family.erased',
+      entityType: 'family',
+      entityId: id,
+      after: auto ? { ...counts, auto: true } : counts,
+    },
   );
   return { familyId: id, erasedAt: at, ...counts };
+}
+
+/**
+ * Erases the org's inactive families, as `POST /families/{id}/erase` does, with `auto: true` on
+ * each audit row (TUI-118, D-171). Inactive: made more than 6 months ago, no enrolment running or
+ * ending in the last 6 months, no lesson marked in them, nothing owed, and no invoice or payment
+ * in them. Deleted families count too. Returns how many were erased.
+ */
+export async function eraseInactive(ctx: OrgCtx, today: string): Promise<number> {
+  const since = addMonths(today, -INACTIVE_MONTHS);
+  const ids = await people.inactiveFamilies(
+    ctx,
+    since,
+    [
+      enrolment.studentsEnrolledSince(ctx, since),
+      attendance.studentsMarkedIn(ctx, classes.sessionsSince(ctx, since)),
+    ],
+    billing.familiesWithMoneySince(ctx, since),
+    FAMILIES_PER_NIGHT,
+  );
+  let erased = 0;
+  for (const id of ids) {
+    try {
+      await erase(ctx, id, today, true);
+      erased++;
+    } catch (err) {
+      console.error(`daily cron: erasing family ${id} failed`, err);
+    }
+  }
+  return erased;
+}
+
+/**
+ * Deletes for good the erased families whose money is older than the org's retention (TUI-118,
+ * D-171): no invoice made or ending, and no payment, in the last `years` years, and nothing owed.
+ * Everything of the family goes in one batch: its invoices, payments and their allocations, its
+ * guardians and students, their enrolments, attendance, make-ups, grades and message rows, and the
+ * family row; the audit log's copies of its invoices and payments are cleared. One
+ * `family.purged` audit row each. Returns how many families were deleted.
+ */
+export async function purgeExpired(ctx: OrgCtx, years: number, today: string): Promise<number> {
+  const since = addMonths(today, -12 * years);
+  const ids = await people.erasedFamiliesExcept(
+    ctx,
+    billing.familiesWithMoneySince(ctx, since),
+    FAMILIES_PER_NIGHT,
+  );
+  for (const id of ids) {
+    const [who, money] = await Promise.all([
+      people.peopleOfFamily(ctx, id),
+      billing.moneyOf(ctx, id),
+    ]);
+    await writeWithAudit(
+      ctx,
+      [
+        ...billing.purgeStatements(ctx, money),
+        ...enrolment.purgeStatements(ctx, who.studentIds),
+        ...attendance.purgeStatements(ctx, who.studentIds),
+        ...learning.eraseStatements(ctx, who.studentIds),
+        ...comms.purgeStatements(ctx, id),
+        ...staff.eraseStatements(ctx, who.guardianIds),
+        ...platform.eraseAuditStatements(ctx, [...money.invoiceIds, ...money.paymentIds]),
+        ...people.purgeStatements(ctx, id, who.studentIds),
+      ],
+      {
+        action: 'family.purged',
+        entityType: 'family',
+        entityId: id,
+        after: {
+          guardians: who.guardianIds.length,
+          students: who.studentIds.length,
+          invoices: money.invoiceIds.length,
+          payments: money.paymentIds.length,
+        },
+      },
+    );
+  }
+  return ids.length;
 }

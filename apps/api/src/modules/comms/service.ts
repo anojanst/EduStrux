@@ -482,3 +482,7 @@ export function setEmailStatus(...args: Parameters<typeof repo.setEmailStatus>) 
 export function eraseStatements(ctx: OrgCtx, guardianIds: string[]) {
   return repo.eraseStatements(ctx, guardianIds);
 }
+
+export function purgeStatements(ctx: OrgCtx, familyId: string) {
+  return repo.purgeStatements(ctx, familyId);
+}

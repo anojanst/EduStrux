@@ -1292,3 +1292,16 @@ export async function getPayment(ctx: OrgCtx, access: Access, id: string): Promi
 export function owedBy(ctx: OrgCtx, familyId: string) {
   return repo.owedBy(ctx, familyId);
 }
+
+/** Families with money on or after `date`, as queries another statement filters by (D-104). */
+export function familiesWithMoneySince(ctx: OrgCtx, date: string) {
+  return repo.familiesWithMoneySince(ctx, date);
+}
+
+export function moneyOf(ctx: OrgCtx, familyId: string) {
+  return repo.moneyOf(ctx, familyId);
+}
+
+export function purgeStatements(...args: Parameters<typeof repo.purgeStatements>) {
+  return repo.purgeStatements(...args);
+}

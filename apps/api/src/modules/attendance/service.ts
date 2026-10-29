@@ -17,7 +17,7 @@ import {
   type MarkAttendance,
   type SessionAttendance,
 } from '@edustrux/shared';
-import type { Access, Ids, OrgCtx } from '../../db/scope';
+import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
 import { conflict, forbidden, notFound, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import { classOfSession, dateOfSession } from '../classes/for-attendance';
@@ -670,4 +670,13 @@ export async function dashboardAttendance(
 /** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
 export function eraseStatements(ctx: OrgCtx, studentIds: string[]) {
   return repo.eraseStatements(ctx, studentIds);
+}
+
+/** Students marked on any of the sessions, as a query another statement filters by (D-104). */
+export function studentsMarkedIn(ctx: OrgCtx, sessionIds: IdQuery) {
+  return repo.studentsMarkedIn(ctx, sessionIds);
+}
+
+export function purgeStatements(ctx: OrgCtx, studentIds: string[]) {
+  return repo.purgeStatements(ctx, studentIds);
 }

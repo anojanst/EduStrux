@@ -15,6 +15,7 @@ import {
   idsFrom,
   inIds,
   inOrg,
+  wide,
   writeWithAudit,
   type IdQuery,
   type Ids,
@@ -545,4 +546,22 @@ export function eraseStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'s
       .set({ reason: null })
       .where(and(eq(absenceNotices.orgId, ctx.orgId), inIds(absenceNotices.studentId, studentIds))),
   ];
+}
+
+/** Students marked on any of the sessions, as a wide query (D-104). */
+export function studentsMarkedIn(ctx: OrgCtx, sessionIds: IdQuery): IdQuery {
+  return wide(
+    idsFrom(ctx, attendance, attendance.studentId, inIds(attendance.sessionId, sessionIds)),
+  );
+}
+
+/**
+ * Deletes for good what attendance holds on the students, deleted rows too: marks, absence
+ * notices, make-up credits and bookings (TUI-118).
+ */
+export function purgeStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'sqlite'>[] {
+  if (studentIds.length === 0) return [];
+  return [attendance, absenceNotices, makeupBookings, makeupCredits].map((table) =>
+    ctx.db.delete(table).where(and(eq(table.orgId, ctx.orgId), inIds(table.studentId, studentIds))),
+  );
 }

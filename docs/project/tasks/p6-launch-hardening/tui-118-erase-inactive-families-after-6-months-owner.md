@@ -1,14 +1,14 @@
 ---
 id: TUI-118
 title: Erase inactive families after 6 months; owner sets money-record retention
-status: todo
+status: done
 phase: P6
 module: platform
 priority: P0
 size: M
 endpoints:
   - PATCH /orgs/{id}
-branch:
+branch: task/tui-118-auto-erase-retention
 pr:
 ---
 

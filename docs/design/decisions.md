@@ -4428,8 +4428,9 @@ fields are gone; mapping one is 400). The rest is unchanged.
 
 ## D-155 · 2026-10-22 · Student consents, erasing a family, and retention
 
-**Retention superseded in part by D-171** (an inactive family is erased automatically after 6
-months; the owner sets how long invoices and payments are kept).
+**Retention superseded in part by D-171 and D-189** (an inactive family is erased automatically
+after 6 months; the owner sets how long its money records are kept, then everything of the family
+is deleted).
 
 - **Context:** TUI-79 builds privacy controls. D-052 left which consents exist to it. Built in the
   session of 2026-10-21 (Q-64 to Q-66).
@@ -4845,6 +4846,9 @@ months; the owner sets how long invoices and payments are kept).
 - **Tasks:** TUI-113, TUI-112, TUI-64.
 
 ## D-171 · 2026-10-25 · Least data: store only what the product can't work without
+
+**Superseded in part by D-189** (once the retention period has passed, everything of the erased
+family is deleted, not only its invoices and payments).
 
 - **Context:** TUI-114. In the AI era any system can face brute-force attacks at scale, so every
   stored field is a liability, and most of what EduStrux holds is about children. The owner
@@ -5575,3 +5579,49 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Cloudflare Access (D-069) still covers all traffic, so the app is behind it too until launch.
   - Implementation decisions reported by the build, not stated by the owner.
 - **Tasks:** TUI-107.
+
+## D-189 · 2026-10-29 · Automatic erase of inactive families, and deleting them after the retention period
+
+- **Context:** TUI-118 builds two parts of D-171: erasing an inactive family after 6 months, and
+  the owner's retention period for money records. D-171 said only the invoices and payments go
+  once the period has passed; the build asked what else goes with them.
+- **Decision:**
+  - **Everything of the family goes** (stated by the owner, 2026-10-29). Once the period has
+    passed, the erased family is deleted for good: its guardians, students, enrolments,
+    attendance marks, absence notices, make-up credits and bookings, lesson notes, message
+    recipient rows, invitations, grades, consents, invoices, invoice lines, payments and
+    allocations, and the family row. The audit log's before/after for its invoices and payments
+    is cleared. Old class attendance figures lose those rows.
+  - **The setting:** `financialRetentionYears` on the org, 1 to 10 or null, set by the owner
+    (`PATCH /orgs/{orgId}`, `org:write`) on Settings › Privacy & data. Null means not set: nothing
+    is deleted, and the page says so.
+  - **The daily cron** runs both steps for every org that isn't suspended or cancelled,
+    **read-only orgs included** (a lapsed trial still holds families), which the cron's other
+    work skips (D-153):
+    1. **Erase:** a family not yet erased (soft-deleted ones included), added more than 6 months
+       ago, is erased when, in the last 6 months, none of its students had an enrolment running
+       (an end date on or after the cutoff, or none) or was marked in attendance, and it had no
+       invoice made or whose period ends in that time, and no payment received; and it owes
+       nothing (no issued or part-paid invoice with a balance). Same erase as
+       `POST /families/{id}/erase` (D-155), with a `family.erased` audit row marked `auto` and no
+       actor.
+    2. **Delete:** only when the org's period is set. An erased family is deleted when it has no
+       invoice made or ending, and no payment received, within the period (counted in months:
+       12 × years), and owes nothing. One `family.purged` audit row per family with the counts of
+       guardians, students, invoices and payments, no actor.
+  - Implementation choices reported by the build, not stated by the owner:
+    - The whole family is deleted at once, when its newest money record is past the period (not
+      invoice by invoice), so every record is kept at least the full period.
+    - A family with no money records is deleted the first night after it is erased, once the
+      period is set.
+    - "A lesson in the last 6 months" means an enrolment overlapping the window or an attendance
+      mark in it.
+    - At most 20 families are erased and 20 deleted per org per night, to bound D1 calls; the
+      rest follow on later nights. A family that fails is logged and the rest carry on.
+- **Consequences:**
+  - Deleting is irreversible and leaves no copy beyond the nightly backups (14 nights, D-149).
+  - Suspended and cancelled orgs are skipped by the crons, so their families are never erased
+    automatically; that needs a policy for deleting an org's data.
+  - Discount rules' family and student lists and enrolment request results may still name a
+    deleted family's or student's id (ids only, no personal data).
+- **Tasks:** TUI-118.

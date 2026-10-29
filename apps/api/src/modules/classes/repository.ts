@@ -942,3 +942,8 @@ export function runningClassIds(ctx: OrgCtx, date: string, terms: IdQuery): IdQu
     ),
   );
 }
+
+/** The org's sessions on or after `date`, as a wide query (D-104). */
+export function sessionsSince(ctx: OrgCtx, date: string): IdQuery {
+  return wide(idsFrom(ctx, sessions, sessions.id, gte(sessions.date, date)));
+}
