@@ -4335,7 +4335,7 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-152 · 2026-10-22 · Paddle subscriptions and their webhook
 
-> **Superseded by D-157** once TUI-106 is built: billing moves to Stripe.
+> **Superseded by D-186** (TUI-106): billing moved to Stripe, as chosen in D-157.
 
 - **Context:** TUI-73 builds Paddle subscription billing. Built in the session of 2026-10-21 (Q-55
   to Q-57), with no Paddle account changes.
@@ -5428,3 +5428,57 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Assumption: the tab rules for roles other than staff, teacher and parent, and the More
     lighting rule, were settled during the build without asking the owner.
 - **Tasks:** TUI-84.
+
+## D-186 · 2026-10-29 · Stripe subscriptions and their webhook
+
+- **Context:** The owner chose Stripe over Paddle (D-157). TUI-106 swaps the Paddle billing built
+  in TUI-73 (D-152), keeping the plan limits and read-only rules (D-153).
+- **Decision:**
+  - **Client:** plain fetch to Stripe's API, form-encoded, no SDK, and no pinned Stripe API
+    version (the account's default applies).
+  - **Endpoints** (all owner only, `org:write`, as before): `GET /billing/subscription` is
+    unchanged. `POST /billing/checkout { plan, interval }` creates a hosted Checkout Session
+    (`mode=subscription`, the org id in `client_reference_id` and `subscription_data.metadata.org_id`)
+    and returns `{ sessionId, url }` (was `{ transactionId, checkoutUrl }` for Paddle.js); the web
+    app sends the owner to `url`. It reuses the org's Stripe customer if the org had a
+    subscription before. `POST /billing/portal` returns a Stripe Billing Portal session link.
+  - **Return URLs:** Checkout success and cancel go to
+    `{APP_URL}/o/{slug}/settings/billing?checkout=success|cancelled`; the portal returns to
+    `{APP_URL}/o/{slug}/settings/billing`. `APP_URL` is now required for billing.
+  - **Statuses** are Stripe's: `active`, `trialing`, `past_due`, `unpaid`, `paused`, `canceled`,
+    `incomplete`, `incomplete_expired`. The org's status follows its newest subscription: active
+    or trialing → `active`; past_due → `past_due`; unpaid (Stripe stopped retrying) and paused →
+    `suspended`; canceled → `cancelled`; incomplete and incomplete_expired leave the org as it is
+    (it keeps its trial), though the row is still stored. A **live** subscription (active,
+    trialing, past_due, unpaid, paused) blocks a second checkout (422); an incomplete one doesn't,
+    so the owner can try again.
+  - **Webhook:** `POST /api/v1/webhooks/stripe` replaces `/webhooks/paddle`. The `Stripe-Signature`
+    check is HMAC-SHA256 of `{t}.{body}`, accepting any of several `v1` signatures while a secret
+    rotates, with a 5-minute tolerance. It handles `customer.subscription.*`; any other event is
+    recorded in `webhook_events` and ignored. Deduplicated by Stripe's event `id`; the event's time
+    is its `created`, and an event older than the last applied is ignored. The period end is read
+    from the subscription item (Stripe API 2025-03-31 and later) or the subscription (older). The
+    scheduled cancellation is `cancel_at`, else the period end when `cancel_at_period_end`, else
+    `canceled_at`. An unknown org is logged and ignored; audit rows are by no one, as before.
+  - **Kept:** owner only; 503 when not set up; a price not in `STRIPE_PRICE_IDS` is `custom`.
+  - **Configuration:** `STRIPE_SECRET_KEY` (`sk_test_…` or `sk_live_…` picks the mode, so there's
+    no environment setting), `STRIPE_WEBHOOK_SECRET` (`whsec_…`), `STRIPE_PRICE_IDS` as JSON
+    (`solo_month`, `solo_year`, `small_month`, `small_year`) and `STRIPE_AUTOMATIC_TAX` (`true`
+    turns on Stripe Tax in Checkout; off by default). Billing is 503 without the key, the price ids
+    or `APP_URL`; the webhook is 503 without its secret. `PADDLE_*` are removed.
+  - **Data:** `org_subscriptions.paddle_subscription_id` → `stripe_subscription_id`,
+    `paddle_customer_id` → `stripe_customer_id`, unique index `org_subscriptions_stripe_uq`.
+    Migration `0035_stripe_subscriptions` renames them and keeps the rows.
+- **Consequences:**
+  - The Access bypass (D-069) now needs `/api/v1/webhooks/stripe` instead of `/paddle`. The
+    Stripe dashboard's webhook endpoint should send the `customer.subscription.*` events.
+  - D-027's hand-set NZD, AUD and GBP prices are set on the Stripe prices when the owner sets up
+    Stripe.
+  - Sales tax stays the owner's decision (Stripe Tax and its fee, where to register; handoff §11).
+    The code leaves it behind `STRIPE_AUTOMATIC_TAX`, so turning it on needs no code change.
+  - The web billing page at `/o/{slug}/settings/billing` doesn't exist yet; a later UI task builds
+    it. The web app doesn't call billing yet, so nothing else changed there.
+  - Assumption: the status mapping (unpaid → suspended, incomplete leaves the trial alone) and the
+    return URLs were settled during the build, not stated by the owner.
+- **Supersedes:** D-152.
+- **Tasks:** TUI-106.

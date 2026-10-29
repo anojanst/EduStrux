@@ -2,7 +2,7 @@ import type { Db } from '@edustrux/db';
 import { z } from '@hono/zod-openapi';
 import type { Bindings } from '../../env';
 import { unauthenticated, unavailable, validationFailed } from '../../lib/errors';
-import * as paddle from '../../lib/paddle';
+import * as stripe from '../../lib/stripe';
 import { verifySvix } from '../../lib/svix';
 import * as comms from '../comms/service';
 import * as staff from '../staff/service';
@@ -10,9 +10,10 @@ import * as subscriptions from '../subscriptions/service';
 import * as users from '../users/repository';
 import * as repo from './repository';
 
-// Webhooks from Clerk and Resend (TUI-71), and Paddle (TUI-73). Both sign the Svix way. A delivery is checked, handled
-// and then recorded by its `svix-id`, so one sent again is answered without being handled twice;
-// two at once may both be handled, which is harmless as each step is idempotent.
+// Webhooks from Clerk and Resend (TUI-71), which sign the Svix way, and Stripe (TUI-106). A
+// delivery is checked, handled and then recorded by the sender's id for it, so one sent again is
+// answered without being handled twice; two at once may both be handled, which is harmless as
+// each step is idempotent.
 
 export type WebhookAnswer = { received: true; duplicate: boolean };
 
@@ -154,29 +155,29 @@ export async function resendWebhook(
   return { received: true, duplicate: false };
 }
 
-// ── Paddle ──────────────────────────────────────────────────────────────────
+// ── Stripe ──────────────────────────────────────────────────────────────────
 
-const PaddleEvent = z.object({
-  event_id: z.string(),
-  event_type: z.string(),
-  occurred_at: z.string(),
-  data: z.record(z.string(), z.unknown()),
+const StripeEvent = z.object({
+  id: z.string(),
+  type: z.string(),
+  created: z.number(),
+  data: z.object({ object: z.record(z.string(), z.unknown()) }),
 });
 
 /**
- * Keeps the org's subscription, plan and status in step with Paddle (TUI-73): every
- * `subscription.*` event carries the whole subscription, which is stored. Paddle signs with its
- * own scheme (`Paddle-Signature: ts=…;h1=…`) and names each delivery by `event_id`.
+ * Keeps the org's subscription, plan and status in step with Stripe (TUI-106): every
+ * `customer.subscription.*` event carries the whole subscription, which is stored. Stripe signs
+ * with its own scheme (`Stripe-Signature: t=…,v1=…`) and names each event by `id`.
  */
-export async function paddleWebhook(
+export async function stripeWebhook(
   db: Db,
   env: Bindings,
   headers: Headers,
   body: string,
 ): Promise<WebhookAnswer> {
-  if (!env.PADDLE_WEBHOOK_SECRET) throw unavailable('The paddle webhook isn’t set up.');
+  if (!env.STRIPE_WEBHOOK_SECRET) throw unavailable('The stripe webhook isn’t set up.');
   if (
-    !(await paddle.verifyPaddle(env.PADDLE_WEBHOOK_SECRET, headers.get('paddle-signature'), body))
+    !(await stripe.verifyStripe(env.STRIPE_WEBHOOK_SECRET, headers.get('stripe-signature'), body))
   ) {
     throw unauthenticated('Bad or stale webhook signature');
   }
@@ -186,25 +187,25 @@ export async function paddleWebhook(
   } catch {
     throw validationFailed({ body: ['Not JSON'] });
   }
-  const parsed = PaddleEvent.safeParse(json);
-  if (!parsed.success) throw validationFailed({ body: ['Not a Paddle event'] });
+  const parsed = StripeEvent.safeParse(json);
+  if (!parsed.success) throw validationFailed({ body: ['Not a Stripe event'] });
   const event = parsed.data;
-  if (await repo.seen(db, 'paddle', event.event_id)) return { received: true, duplicate: true };
+  if (await repo.seen(db, 'stripe', event.id)) return { received: true, duplicate: true };
 
-  if (event.event_type.startsWith('subscription.')) {
-    const subscription = subscriptions.PaddleSubscription.safeParse(event.data);
-    if (!subscription.success) throw validationFailed({ data: ['Not a Paddle subscription'] });
-    const outcome = await subscriptions.applyPaddleSubscription(
+  if (event.type.startsWith('customer.subscription.')) {
+    const subscription = subscriptions.StripeSubscription.safeParse(event.data.object);
+    if (!subscription.success) throw validationFailed({ data: ['Not a Stripe subscription'] });
+    const outcome = await subscriptions.applyStripeSubscription(
       db,
       env,
       subscription.data,
-      event.occurred_at,
+      new Date(event.created * 1000).toISOString(),
     );
     if (outcome === 'no_org') {
-      console.warn(`paddle ${event.event_id}: subscription ${subscription.data.id} has no org`);
+      console.warn(`stripe ${event.id}: subscription ${subscription.data.id} has no org`);
     }
   }
-  await repo.record(db, 'paddle', event.event_id, event.event_type);
+  await repo.record(db, 'stripe', event.id, event.type);
   return { received: true, duplicate: false };
 }
 

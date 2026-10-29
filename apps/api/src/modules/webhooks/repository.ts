@@ -5,7 +5,7 @@ import { and, eq, lt } from 'drizzle-orm';
 // The deliveries the webhooks have handled, by the sender's own id, so a delivery sent again is
 // handled once (TUI-71). Not org data: a delivery may concern no org, or several.
 
-export type WebhookSource = 'clerk' | 'resend' | 'paddle';
+export type WebhookSource = 'clerk' | 'resend' | 'stripe';
 
 export async function seen(db: Db, source: WebhookSource, eventId: string) {
   const row = await db

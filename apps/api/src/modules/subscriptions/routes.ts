@@ -17,7 +17,7 @@ const getSubscriptionRoute = createRoute({
   description:
     'The plan, the org’s status, whether it can change anything (`canWrite`: false once a trial ' +
     'ends with no subscription, or while suspended or cancelled), the plan’s cap of active ' +
-    'students and how many there are, and the Paddle subscription if any. Owner only.',
+    'students and how many there are, and the Stripe subscription if any. Owner only.',
   middleware: orgAccess('org:write', { whileReadOnly: true }),
   request: { params: OrgParams },
   responses: { 200: json(BillingOverview, 'The plan'), ...errors(401, 403, 404) },
@@ -27,12 +27,13 @@ const checkoutRoute = createRoute({
   method: 'post',
   path: '/api/v1/orgs/{orgId}/billing/checkout',
   tags: ['Subscription'],
-  summary: 'Start a Paddle checkout for a plan',
+  summary: 'Start a Stripe checkout for a plan',
   description:
-    'Answers with a Paddle transaction for the plan and interval (monthly or yearly), for the ' +
-    'web app to open with Paddle.js. Paying starts the subscription, which Paddle’s webhook ' +
+    'Answers with a Stripe Checkout Session for the plan and interval (monthly or yearly): the ' +
+    'web app sends the owner to its `url`, and Stripe sends them back to the org’s billing ' +
+    'settings. Paying starts the subscription, which Stripe’s webhook ' +
     'records. An org with a live subscription changes it in the portal instead (422). 503 ' +
-    'while Paddle isn’t set up or the plan has no price. Owner only.',
+    'while Stripe isn’t set up or the plan has no price. Owner only.',
   middleware: orgAccess('org:write', { whileReadOnly: true }),
   request: { params: OrgParams, body: jsonBody(CreateCheckout) },
   responses: {
@@ -45,10 +46,10 @@ const portalRoute = createRoute({
   method: 'post',
   path: '/api/v1/orgs/{orgId}/billing/portal',
   tags: ['Subscription'],
-  summary: 'A link to Paddle’s customer portal',
+  summary: 'A link to Stripe’s Billing Portal',
   description:
     'Where the owner changes plan or card, sees receipts, or cancels. 422 with no subscription; ' +
-    '503 while Paddle isn’t set up. Owner only.',
+    '503 while Stripe isn’t set up. Owner only.',
   middleware: orgAccess('org:write', { whileReadOnly: true }),
   request: { params: OrgParams },
   responses: { 200: json(BillingPortal, 'The link'), ...errors(401, 403, 404, 422, 503) },

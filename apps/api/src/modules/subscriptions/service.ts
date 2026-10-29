@@ -5,6 +5,7 @@ import {
   newId,
   orgCanWrite,
   type BillingInterval,
+  SUBSCRIPTION_STATUSES,
   type BillingOverview,
   type CreateCheckout,
   type Subscription,
@@ -14,17 +15,20 @@ import { z } from '@hono/zod-openapi';
 import type { OrgCtx } from '../../db/scope';
 import type { Bindings } from '../../env';
 import { unavailable, unprocessable } from '../../lib/errors';
-import * as paddle from '../../lib/paddle';
+import * as stripe from '../../lib/stripe';
 import * as enrolment from '../enrolment/service';
 import * as orgs from '../orgs/service';
 import * as repo from './repository';
 
-// The org's subscription to EduStrux through Paddle (TUI-73). The owner subscribes through a
-// Paddle checkout and manages it in Paddle's customer portal; Paddle's webhook keeps the
-// subscription, and with it the org's plan and status, in step.
+// The org's subscription to EduStrux through Stripe (TUI-106; built on Paddle in TUI-73). The
+// owner subscribes through a Stripe Checkout Session and manages it in Stripe's Billing Portal;
+// Stripe's webhook keeps the subscription, and with it the org's plan and status, in step.
 
-/** Subscriptions that are still the org's: a new checkout would start a second. */
-const LIVE: SubscriptionStatus[] = ['active', 'trialing', 'past_due', 'paused'];
+/**
+ * Subscriptions that are still the org's: a new checkout would start a second. One stuck
+ * `incomplete` isn't: it lapses on its own, and the owner may try again.
+ */
+const LIVE: SubscriptionStatus[] = ['active', 'trialing', 'past_due', 'unpaid', 'paused'];
 
 function toSubscription(row: repo.SubscriptionRow): Subscription {
   return {
@@ -54,9 +58,9 @@ export async function overview(ctx: OrgCtx): Promise<BillingOverview> {
   };
 }
 
-/** Starts a Paddle checkout for a plan. An org with a live subscription changes it in the portal. */
+/** Starts a Stripe checkout for a plan. An org with a live subscription changes it in the portal. */
 export async function checkout(ctx: OrgCtx, env: Bindings, input: CreateCheckout) {
-  const priceId = paddle.priceIds(env)[`${input.plan}_${input.interval}`];
+  const priceId = stripe.priceIds(env)[`${input.plan}_${input.interval}`];
   if (!priceId) throw unavailable('This plan isn’t on sale yet.');
   const row = await repo.latest(ctx);
   if (row && LIVE.includes(row.status)) {
@@ -64,109 +68,117 @@ export async function checkout(ctx: OrgCtx, env: Bindings, input: CreateCheckout
       plan: ['Already subscribed'],
     });
   }
-  return paddle.createCheckout(env, {
+  const org = await orgs.getOrg(ctx);
+  return stripe.createCheckout(env, {
     priceId,
     orgId: ctx.orgId,
-    customerId: row?.paddleCustomerId ?? null,
+    orgSlug: org.slug,
+    customerId: row?.stripeCustomerId ?? null,
   });
 }
 
-/** A link into Paddle's portal for the org's subscription. */
+/** A link into Stripe's Billing Portal for the org's Stripe customer. */
 export async function portal(ctx: OrgCtx, env: Bindings) {
   const row = await repo.latest(ctx);
   if (!row) throw unprocessable('The organisation has no subscription yet.');
-  return paddle.createPortalSession(env, {
-    customerId: row.paddleCustomerId,
-    subscriptionId: row.paddleSubscriptionId,
-  });
+  const org = await orgs.getOrg(ctx);
+  return stripe.createPortalSession(env, { customerId: row.stripeCustomerId, orgSlug: org.slug });
 }
 
-// ── Paddle's webhook ────────────────────────────────────────────────────────
+// ── Stripe's webhook ────────────────────────────────────────────────────────
 
-export const PaddleSubscription = z.object({
-  id: z.string(),
-  status: z.enum(['active', 'trialing', 'past_due', 'paused', 'canceled']),
-  customer_id: z.string(),
-  items: z
-    .array(
-      z.object({
-        price: z.object({
-          id: z.string(),
-          billing_cycle: z.object({ interval: z.string() }).nullable().optional(),
-        }),
-      }),
-    )
-    .min(1),
-  custom_data: z.record(z.string(), z.unknown()).nullable().optional(),
-  current_billing_period: z.object({ ends_at: z.string() }).nullable().optional(),
-  scheduled_change: z
-    .object({ action: z.string(), effective_at: z.string() })
-    .nullable()
-    .optional(),
-  canceled_at: z.string().nullable().optional(),
+/** A Unix time in seconds, as Stripe sends times, as ISO UTC. */
+const iso = (seconds: number | null | undefined) =>
+  seconds == null ? null : new Date(seconds * 1000).toISOString();
+
+const StripeItem = z.object({
+  price: z.object({
+    id: z.string(),
+    recurring: z.object({ interval: z.string() }).nullable().optional(),
+  }),
+  // Where API versions from 2025-03-31 put the period; older ones put it on the subscription.
+  current_period_end: z.number().optional(),
 });
-export type PaddleSubscription = z.infer<typeof PaddleSubscription>;
 
-/** The org's status while its subscription is in Paddle's. */
+export const StripeSubscription = z.object({
+  id: z.string(),
+  status: z.enum(SUBSCRIPTION_STATUSES),
+  customer: z.string(),
+  items: z.object({ data: z.array(StripeItem).min(1) }),
+  metadata: z.record(z.string(), z.string()).nullable().optional(),
+  current_period_end: z.number().optional(),
+  cancel_at: z.number().nullable().optional(),
+  cancel_at_period_end: z.boolean().optional(),
+  canceled_at: z.number().nullable().optional(),
+});
+export type StripeSubscription = z.infer<typeof StripeSubscription>;
+
+/**
+ * The org's status while its subscription is in Stripe's. `unpaid` (Stripe has stopped retrying
+ * a failed payment) makes the org read-only, as `paused` does. While the first payment is
+ * `incomplete`, or after it never came (`incomplete_expired`), the org keeps its trial: null.
+ */
 const ORG_STATUS = {
   active: 'active',
   trialing: 'active',
   past_due: 'past_due',
+  unpaid: 'suspended',
   paused: 'suspended',
   canceled: 'cancelled',
+  incomplete: null,
+  incomplete_expired: null,
 } as const;
 
 /**
- * Applies a `subscription.*` event. The org is the one the subscription is stored for, or for a
- * new one the `org_id` its checkout carried. An event older than the last one applied is ignored,
- * as Paddle doesn't promise order. The org's plan and status follow its newest subscription only.
+ * Applies a `customer.subscription.*` event. The org is the one the subscription is stored for,
+ * or for a new one the `org_id` its checkout put in the subscription's metadata. An event older
+ * than the last one applied is ignored, as Stripe doesn't promise order. The org's plan and status
+ * follow its newest subscription only, once its first payment has gone through.
  * Returns what it did, for the log.
  */
-export async function applyPaddleSubscription(
+export async function applyStripeSubscription(
   db: Db,
   env: Bindings,
-  data: PaddleSubscription,
+  data: StripeSubscription,
   occurredAt: string,
 ): Promise<'saved' | 'stale' | 'no_org'> {
-  const before = await repo.findByPaddleId(db, data.id);
-  const orgId =
-    before?.orgId ??
-    (typeof data.custom_data?.org_id === 'string' ? data.custom_data.org_id : null);
+  const before = await repo.findByStripeId(db, data.id);
+  const orgId = before?.orgId ?? data.metadata?.org_id ?? null;
   if (!orgId) return 'no_org';
   const org = await orgs.findOrgById(db, orgId);
   if (!org || org.deletedAt) return 'no_org';
   if (before && before.eventAt > occurredAt) return 'stale';
 
   const ctx: OrgCtx = { db, orgId, actorUserId: null };
-  const price = data.items[0]!.price;
+  const item = data.items.data[0]!;
   const plan: 'solo' | 'small' | 'custom' =
-    (Object.entries(paddle.priceIds(env))
-      .find(([, id]) => id === price.id)?.[0]
+    (Object.entries(stripe.priceIds(env))
+      .find(([, id]) => id === item.price.id)?.[0]
       .split('_')[0] as 'solo' | 'small' | undefined) ?? 'custom';
-  const interval = price.billing_cycle?.interval;
+  const interval = item.price.recurring?.interval;
   const newest = await repo.latest(ctx);
   // A new subscription's id sorts after every one the org had, so it is the newest.
   const isNewest = !before || !newest || newest.id === before.id;
+  const status = ORG_STATUS[data.status];
+  const periodEnd = item.current_period_end ?? data.current_period_end;
   const row = {
     id: before?.id ?? newId('orgSubscription'),
     orgId,
-    paddleSubscriptionId: data.id,
-    paddleCustomerId: data.customer_id,
+    stripeSubscriptionId: data.id,
+    stripeCustomerId: data.customer,
     plan,
     interval: interval === 'month' || interval === 'year' ? (interval as BillingInterval) : null,
     status: data.status,
-    currentPeriodEnd: data.current_billing_period?.ends_at ?? null,
-    cancelAt:
-      data.scheduled_change?.action === 'cancel'
-        ? data.scheduled_change.effective_at
-        : (data.canceled_at ?? null),
+    currentPeriodEnd: iso(periodEnd),
+    // Older API versions only flag a cancellation at the period's end, without `cancel_at`.
+    cancelAt: iso(data.cancel_at ?? (data.cancel_at_period_end ? periodEnd : data.canceled_at)),
     eventAt: occurredAt,
   };
   await repo.save(
     ctx,
     before,
     row,
-    isNewest ? [orgs.setPlanStatement(db, orgId, { plan, status: ORG_STATUS[data.status] })] : [],
+    isNewest && status ? [orgs.setPlanStatement(db, orgId, { plan, status })] : [],
   );
   return 'saved';
 }

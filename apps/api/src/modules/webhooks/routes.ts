@@ -13,7 +13,7 @@ const SvixHeaders = z.object({
 });
 
 const webhookRoute = (
-  source: 'clerk' | 'resend' | 'paddle',
+  source: 'clerk' | 'resend' | 'stripe',
   summary: string,
   description: string,
   signature: z.ZodObject = SvixHeaders,
@@ -38,13 +38,13 @@ const webhookRoute = (
     responses: { 200: json(Received, 'Received'), ...errors(400, 401, 503) },
   });
 
-const paddleRoute = webhookRoute(
-  'paddle',
-  'Paddle webhook',
-  'Keeps the org’s subscription, plan and status in step with Paddle: each `subscription.*` ' +
-    'event stores the subscription, for the org whose checkout started it. Signed with ' +
-    '`Paddle-Signature`.',
-  z.object({ 'paddle-signature': z.string().optional() }),
+const stripeRoute = webhookRoute(
+  'stripe',
+  'Stripe webhook',
+  'Keeps the org’s subscription, plan and status in step with Stripe: each ' +
+    '`customer.subscription.*` event stores the subscription, for the org whose checkout ' +
+    'started it. Signed with `Stripe-Signature`.',
+  z.object({ 'stripe-signature': z.string().optional() }),
 );
 
 const clerkRoute = webhookRoute(
@@ -72,9 +72,9 @@ export const webhookRoutes = createRouter()
       200,
     ),
   )
-  .openapi(paddleRoute, async (c) =>
+  .openapi(stripeRoute, async (c) =>
     c.json(
-      await service.paddleWebhook(c.var.db, c.env, c.req.raw.headers, await c.req.text()),
+      await service.stripeWebhook(c.var.db, c.env, c.req.raw.headers, await c.req.text()),
       200,
     ),
   );

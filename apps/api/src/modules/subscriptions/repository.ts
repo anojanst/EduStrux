@@ -17,17 +17,17 @@ export function latest(ctx: OrgCtx) {
     .get();
 }
 
-/** A subscription by Paddle's id, in whichever org: for Paddle's webhook. */
-export function findByPaddleId(db: Db, paddleSubscriptionId: string) {
+/** A subscription by Stripe's id, in whichever org: for Stripe's webhook. */
+export function findByStripeId(db: Db, stripeSubscriptionId: string) {
   return db
     .select()
     .from(orgSubscriptions)
-    .where(eq(orgSubscriptions.paddleSubscriptionId, paddleSubscriptionId))
+    .where(eq(orgSubscriptions.stripeSubscriptionId, stripeSubscriptionId))
     .get();
 }
 
 /**
- * Stores what Paddle says of a subscription, adding it or updating it, with `also` (the org's new
+ * Stores what Stripe says of a subscription, adding it or updating it, with `also` (the org's new
  * plan and status) in the same batch and one audit row.
  */
 export async function save(

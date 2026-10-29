@@ -76,7 +76,7 @@ const updateRoute = createRoute({
   summary: 'Change an organisation’s plan, status or trial',
   description:
     'For support: lengthen a trial, put an org on the custom plan, suspend or restore it. A ' +
-    'later Paddle event sets plan and status again. Recorded in the org’s audit log as ' +
+    'later Stripe event sets plan and status again. Recorded in the org’s audit log as ' +
     '`org.admin_updated`.',
   middleware: [requireSuperAdmin],
   request: { params: OrgIdParams, body: jsonBody(UpdateAdminOrg) },
