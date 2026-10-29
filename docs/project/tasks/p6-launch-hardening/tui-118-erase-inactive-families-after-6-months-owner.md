@@ -9,7 +9,7 @@ size: M
 endpoints:
   - PATCH /orgs/{id}
 branch: task/tui-118-auto-erase-retention
-pr:
+pr: 78
 ---
 
 # TUI-118 Erase inactive families after 6 months; owner sets money-record retention
