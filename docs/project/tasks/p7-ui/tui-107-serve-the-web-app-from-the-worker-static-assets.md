@@ -8,7 +8,7 @@ priority: P0
 size: S
 endpoints: []
 branch: task/tui-107-serve-web-from-worker
-pr:
+pr: 77
 ---
 
 # TUI-107 Serve the web app from the Worker (static assets, SPA fallback, CLERK_AUTHORIZED_PARTIES)
