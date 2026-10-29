@@ -3102,6 +3102,9 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-112 · 2026-10-14 · The class's branch sees a cross-branch child's emergency contacts
 
+**The contacts' relationship is superseded by D-187** (guardians no longer have one: a contact
+is name and phone). The rest is unchanged.
+
 - **Context:** A child whose family's home branch is another one shows on a class's roster by
   name. Branch-limited staff of the class's branch can't open the student or the family, so they
   had no guardian or emergency contacts for the child (D-061). Attendance was built keeping that,
@@ -3542,6 +3545,9 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-126 · 2026-10-15 · The parent portal
 
+**The student-notes rule and the children's `dateOfBirth` are superseded by D-187** (students
+have neither any more). The rest is unchanged.
+
 - **Context:** TUI-39 builds the first three parent portal endpoints in handoff §9: children,
   timetable and invoices. The handoff listed only their paths. During the build the owner was
   asked whether parents see a student's notes.
@@ -3638,6 +3644,9 @@ under "Not changed here" for a reach that is a subquery.
 
 ## D-128 · 2026-10-19 · A class's emergency contacts have a route of their own
 
+**`relationship` on each contact is superseded by D-187** (name and phone only). The route is
+unchanged.
+
 - **Context:** D-112 gave the class's branch a cross-branch child's emergency contacts and left
   to TUI-102 where the API carries them: on the roster, on the enrolment or in a route of their
   own.
@@ -3680,6 +3689,9 @@ under "Not changed here" for a reach that is a subquery.
 - **Tasks:** TUI-102 (and TUI-34).
 
 ## D-129 · 2026-10-19 · An absence notice is a child away from a date to a date, and marks nothing
+
+**The free-text `reason` is superseded by D-187** (an optional `sick`, `holiday` or `other`).
+The rest is unchanged.
 
 - **Context:** TUI-54 builds absence notices: `GET|POST /absence-notices` for staff and
   `POST /portal/absence-notices` for parents. D-046 left open what happens to a notice when its
@@ -4220,6 +4232,9 @@ under "Not changed here" for a reach that is a subquery.
 - **Tasks:** TUI-61.
 
 ## D-146 · 2026-10-22 · Spreadsheet import: CSV, one student per row
+
+**The date of birth, notes, address and relationship columns are superseded by D-187** (those
+fields are gone; mapping one is 400). The rest is unchanged.
 
 - **Context:** TUI-60 builds the import with manual column mapping (D-022). Built in the session
   of 2026-10-21 (Q-42 to Q-44).
@@ -5482,3 +5497,49 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
     return URLs were settled during the build, not stated by the owner.
 - **Supersedes:** D-152.
 - **Tasks:** TUI-106.
+
+## D-187 · 2026-10-29 · Six personal fields dropped, and the audit log keeps no personal values
+
+- **Context:** TUI-115 and TUI-116 build two parts of D-171: the six fields it removed, and the
+  audit log recording which personal fields changed, not their values.
+- **Decision:**
+  - **Columns dropped** (migration `0036_drop_personal_fields`): `families.address`,
+    `guardians.relationship`, `guardians.language`, `students.date_of_birth`, `students.notes`.
+    The API no longer takes or returns them.
+  - **Absence reason:** optional, `sick`, `holiday` or `other`; anything else is 400. Notices
+    already stored with any other text become `other`. The portal's Report an absence form is a
+    select (Not saying, Sick, Holiday, Other); rosters show the word.
+  - **What follows from the cut:**
+    - Duplicate warnings lose the `same_name_and_birth_date` reason and the query's
+      `dateOfBirth`: a student matches on `same_name` only. Guardians still match on email and
+      phone.
+    - Search results lose the student's `dateOfBirth` and the guardian's `relationship`.
+    - A class's emergency contacts are first name, last name and phone (D-112, D-128).
+    - `GET /portal/children` loses `dateOfBirth`. D-126's rule that a parent doesn't see a
+      student's notes no longer applies: students have no notes. Lesson notes stay (D-130).
+    - The public enrolment request form loses `students[].dateOfBirth`. Requests stored before
+      still hold it in their JSON, but the API doesn't return it; TUI-117 purges those details.
+    - The spreadsheet import loses the `dateOfBirth`, `notes`, `address` and
+      `guardianRelationship` fields; mapping a column to one is 400.
+    - Web: the family page loses the address card, the student page its notes card and dialog;
+      lists lose age and date of birth (the Age column is gone); guardian rows and the search
+      palette lose relationship; the add and edit dialogs lose those inputs.
+    - `families.bankReference` stays: it comes from the family's id, so it isn't personal.
+  - **Audit log:** for audit rows of families, guardians, students, lesson notes, enquiries and
+    enrolment requests (told apart by the action's first word), every non-null personal value in
+    `before` and `after` is written as `"changed"`, at any depth; null stays null. Ids, statuses,
+    dates, amounts, `preferredChannel`, `emergencyContact` and the like are kept. The normalised
+    name and phone columns count as personal.
+  - **Beyond the task text** (an implementation decision, not stated by the owner): enquiries
+    (name, email, phone, student name, message) and enrolment requests (guardian, students,
+    notes) are covered too. Their audit rows copied the whole public form and are kept for good,
+    so TUI-117's purge would otherwise leave a copy in the audit log. Consents, which D-171
+    named, need nothing: their audit rows hold only the type, granted and the guardian's id.
+  - **Rows already stored** are scrubbed by the same rule in migration
+    `0037_scrub_personal_values` (written by hand, safe to run twice), which also scrubs the
+    dropped fields and each note in old `lesson_notes.updated` rows.
+- **Consequences:** Values in the dropped columns are lost for good. The audit log shows that a
+  personal field changed, not from what or to what. A personal field added later needs adding to
+  the audit scrub as well.
+- **Supersedes:** in part D-112, D-126, D-128, D-129 and D-146 (see the notes under each).
+- **Tasks:** TUI-115, TUI-116.

@@ -81,7 +81,7 @@ async function centre() {
   });
   // What accepting an invite will do: tie the guardian to the parent's membership.
   await db().update(guardians).set({ membershipId: parent.id }).where(eq(guardians.id, mere.id));
-  const child = { familyId: family.id, lastName: 'Perera', dateOfBirth: '2012-05-17' };
+  const child = { familyId: family.id, lastName: 'Perera' };
   const mia = await make('/students', { ...child, firstName: 'Mia', gradeLevelId: year10.id });
   const sam = await make('/students', { ...child, firstName: 'Sam', gradeLevelId: year11.id });
   await make('/enrolments', {
@@ -257,7 +257,6 @@ describe('families and students within the budget (D-102)', () => {
       familyId: tui.id,
       firstName: 'Kiri',
       lastName: 'Tui',
-      dateOfBirth: '2012-05-17',
       gradeLevelId: year10.id,
       academicYearId: year.id,
     });
@@ -268,7 +267,6 @@ describe('families and students within the budget (D-102)', () => {
     const changeStudent = await api('PATCH', `/students/${kiri.id}`, {
       updatedAt: kiri.updatedAt,
       firstName: 'Kiri-Jane',
-      dateOfBirth: '2012-05-18',
       gradeLevelId: year11.id,
       academicYearId: year.id,
     });

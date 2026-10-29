@@ -35,7 +35,6 @@ function toChild({ student, familyName }: Child, enrolments: Enrolment[]): Porta
     branchId: student.branchId,
     firstName: student.firstName,
     lastName: student.lastName,
-    dateOfBirth: student.dateOfBirth,
     gradeLevelId: student.gradeLevelId,
     enrolments: enrolments.filter((e) => e.studentId === student.id),
   };

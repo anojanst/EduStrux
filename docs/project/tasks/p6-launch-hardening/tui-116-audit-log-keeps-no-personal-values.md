@@ -1,14 +1,14 @@
 ---
 id: TUI-116
 title: Audit log keeps no personal values
-status: todo
+status: done
 phase: P6
 module: platform
 priority: P0
 size: S
 endpoints: []
-branch:
-pr:
+branch: task/tui-115-116-least-data
+pr: 76
 ---
 
 # TUI-116 Audit log keeps no personal values
@@ -23,3 +23,5 @@ D-171 (follows from the least-data rule; confirmed by the owner on 2026-10-26). 
   by adding one word.
 - A data migration scrubs the same fields in the rows already stored.
 - Tests: a guardian email change writes `{ "email": "changed" }`; an old row is scrubbed.
+
+Built with TUI-115 as D-187: `PERSONAL_AUDIT_FIELDS` in `apps/api/src/db/scope.ts`, keyed by the first word of the action. Enquiry and enrolment-request audit rows are covered too. Migration 0037 scrubs the rows already stored.

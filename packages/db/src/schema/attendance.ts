@@ -1,4 +1,5 @@
 import {
+  ABSENCE_REASONS,
   ABSENCE_NOTICE_SOURCES,
   ATTENDANCE_STATUSES,
   MAKEUP_CREDIT_STATUSES,
@@ -35,7 +36,7 @@ export const absenceNotices = sqliteTable(
     studentId: text('student_id').notNull(),
     startDate: text('start_date').notNull(),
     endDate: text('end_date').notNull(),
-    reason: text('reason'),
+    reason: text('reason', { enum: ABSENCE_REASONS }),
     /** Who gave it: a parent through the portal, or a member of staff. */
     source: text('source', { enum: ABSENCE_NOTICE_SOURCES }).notNull(),
   },

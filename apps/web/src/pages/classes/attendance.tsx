@@ -207,7 +207,7 @@ export function StudentRow({
               <Badge tone="info">
                 {notice.reason
                   ? t(notice.source === 'parent' ? 'lesson.awayParent' : 'lesson.awayStaff', {
-                      reason: notice.reason,
+                      reason: t(`absence.reason.${notice.reason}`),
                     })
                   : t(
                       notice.source === 'parent'

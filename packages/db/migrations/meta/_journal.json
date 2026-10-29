@@ -253,6 +253,20 @@
       "when": 1793225402237,
       "tag": "0035_stripe_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1793245274638,
+      "tag": "0036_drop_personal_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1793245307313,
+      "tag": "0037_scrub_personal_values",
+      "breakpoints": true
     }
   ]
 }

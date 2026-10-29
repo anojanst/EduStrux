@@ -15,7 +15,6 @@ export const PortalChild = z
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     firstName: z.string(),
     lastName: z.string(),
-    dateOfBirth: LocalDate.nullable(),
     gradeLevelId: z.string().nullable().openapi({
       description: 'The child’s grade level in the current academic year. null = none recorded.',
     }),

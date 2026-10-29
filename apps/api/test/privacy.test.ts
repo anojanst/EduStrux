@@ -47,7 +47,7 @@ async function setup() {
   };
   const main = (await api('GET', '/branches')).body.data[0] as Row;
   const family = async (name: string) => {
-    const f = await make('/families', { name, branchId: main.id, address: '1 Queen St' });
+    const f = await make('/families', { name, branchId: main.id });
     const g = await make(`/families/${f.id}/guardians`, {
       firstName: 'Mere',
       lastName: name,
@@ -58,8 +58,6 @@ async function setup() {
       familyId: f.id,
       firstName: 'Aroha',
       lastName: name,
-      dateOfBirth: '2012-05-17',
-      notes: 'Allergic to peanuts',
     });
     return { family: f, guardian: g, student: s };
   };
@@ -183,7 +181,7 @@ describe('POST /families/{id}/erase', () => {
     await api('POST', '/absence-notices', {
       studentId: student.id,
       startDate: today(),
-      reason: 'Hospital appointment',
+      reason: 'sick',
     });
     expect((await api('POST', `/guardians/${guardian.id}/invitation`, {})).status).toBe(201);
     const sent = await api('POST', '/messages', {
@@ -210,7 +208,6 @@ describe('POST /families/{id}/erase', () => {
     const fam = one(await db().select().from(families).where(eq(families.id, f.id)));
     expect(fam).toMatchObject({
       name: 'Erased family',
-      address: null,
       erasedAt: erased.body.erasedAt,
     });
     expect(fam.deletedAt).not.toBeNull();
@@ -226,7 +223,7 @@ describe('POST /families/{id}/erase', () => {
     });
     expect(
       one(await db().select().from(students).where(eq(students.id, student.id))),
-    ).toMatchObject({ firstName: 'Erased', dateOfBirth: null, notes: null });
+    ).toMatchObject({ firstName: 'Erased', lastName: 'student' });
     expect(
       await db().select().from(studentConsents).where(eq(studentConsents.studentId, student.id)),
     ).toEqual([]);

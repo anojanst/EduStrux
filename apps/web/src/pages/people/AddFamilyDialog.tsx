@@ -28,7 +28,6 @@ type StudentDraft = {
   firstName: string;
   /** null follows the family name until it's typed over. */
   lastName: string | null;
-  dateOfBirth: string;
   gradeLevelId: string;
 };
 
@@ -36,7 +35,6 @@ const blankStudent = (key: number): StudentDraft => ({
   key,
   firstName: '',
   lastName: null,
-  dateOfBirth: '',
   gradeLevelId: '',
 });
 
@@ -89,11 +87,9 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
 
   const [name, setName] = useState('');
   const [branchId, setBranchId] = useState('');
-  const [address, setAddress] = useState('');
   const [guardian, setGuardian] = useState({
     firstName: '',
     lastName: '',
-    relationship: '',
     email: '',
     phone: '',
     emergencyContact: true,
@@ -144,7 +140,7 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
     );
 
   const lastNameOf = (s: StudentDraft) => s.lastName ?? name.trim();
-  const isBlank = (s: StudentDraft) => !s.firstName.trim() && !s.dateOfBirth && !s.gradeLevelId;
+  const isBlank = (s: StudentDraft) => !s.firstName.trim() && !s.gradeLevelId;
 
   function updateStudent(key: number, change: Partial<StudentDraft>) {
     setStudents((list) => list.map((s) => (s.key === key ? { ...s, ...change } : s)));
@@ -178,7 +174,7 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
     let family: Family;
     try {
       family = await api<Family>('POST', orgApiPath(membership, '/families'), {
-        body: { name: name.trim(), branchId: homeBranch, address: address.trim() || undefined },
+        body: { name: name.trim(), branchId: homeBranch },
       });
     } catch (err) {
       setSaving(false);
@@ -208,7 +204,6 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
           body: {
             firstName: guardian.firstName.trim(),
             lastName: guardian.lastName.trim(),
-            relationship: guardian.relationship.trim() || undefined,
             email: guardian.email.trim() || undefined,
             phone: guardian.phone.trim() || undefined,
             emergencyContact: guardian.emergencyContact,
@@ -227,7 +222,6 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
             familyId: family.id,
             firstName: s.firstName.trim(),
             lastName: lastNameOf(s).trim(),
-            dateOfBirth: s.dateOfBirth || undefined,
             gradeLevelId: s.gradeLevelId || undefined,
           },
         });
@@ -275,15 +269,6 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
             />
           )}
         </div>
-        <TextField
-          label={t('people.form.address')}
-          value={address}
-          maxLength={500}
-          autoComplete="off"
-          placeholder={t('people.form.addressPlaceholder')}
-          onChange={(e) => setAddress(e.target.value)}
-          error={errors.address}
-        />
         {sameFamily ? (
           <Notice
             tone="warning"
@@ -338,13 +323,6 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
             maxLength={80}
             onChange={(e) => setGuardian({ ...guardian, lastName: e.target.value })}
             error={errors['guardian.lastName']}
-          />
-          <TextField
-            label={t('people.form.relationship')}
-            value={guardian.relationship}
-            maxLength={60}
-            placeholder={t('people.form.relationshipPlaceholder')}
-            onChange={(e) => setGuardian({ ...guardian, relationship: e.target.value })}
           />
           <TextField
             label={t('people.form.email')}
@@ -447,13 +425,6 @@ function AddFamilyForm({ onClose }: { onClose: () => void }) {
                 maxLength={80}
                 onChange={(e) => updateStudent(s.key, { lastName: e.target.value })}
                 error={errors[`students.${i}.lastName`]}
-              />
-              <TextField
-                label={t('people.form.dateOfBirth')}
-                type="date"
-                value={s.dateOfBirth}
-                onChange={(e) => updateStudent(s.key, { dateOfBirth: e.target.value })}
-                error={errors[`students.${i}.dateOfBirth`]}
               />
               {askGrade ? (
                 <SelectField

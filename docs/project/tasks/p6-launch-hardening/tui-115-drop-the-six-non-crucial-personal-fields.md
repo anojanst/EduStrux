@@ -1,7 +1,7 @@
 ---
 id: TUI-115
 title: Drop the six non-crucial personal fields
-status: todo
+status: done
 phase: P6
 module: people
 priority: P0
@@ -13,8 +13,8 @@ endpoints:
   - POST /students
   - PATCH /students/{id}
   - POST /absence-notices
-branch:
-pr:
+branch: task/tui-115-116-least-data
+pr: 76
 ---
 
 # TUI-115 Drop the six non-crucial personal fields
@@ -36,3 +36,5 @@ D-171. Remove what the product can work without:
   family erase (D-155) and the web screens all lose the fields.
 - Tests: the fields no longer appear in responses or `/api/openapi.json`; the absence reason
   accepts the three values only (400 otherwise).
+
+Built with TUI-116 as D-187. Beyond the table: duplicate warnings match a student on name only, search and emergency contacts lose `relationship`, and the public form and import lose the dropped fields. Migration 0036 drops the columns; 0037 maps old absence reasons to `other`.

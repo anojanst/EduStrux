@@ -115,7 +115,6 @@ function EditFamilyForm({ family, onClose }: { family: Family; onClose: () => vo
   );
   const [name, setName] = useState(family.name);
   const [branchId, setBranchId] = useState(family.branchId);
-  const [address, setAddress] = useState(family.address ?? '');
 
   const save = useMutation({
     mutationFn: () =>
@@ -124,7 +123,6 @@ function EditFamilyForm({ family, onClose }: { family: Family; onClose: () => vo
           updatedAt: family.updatedAt,
           name: name.trim(),
           ...(branchId !== family.branchId ? { branchId } : {}),
-          address: address.trim() || null,
         },
       }),
     onSuccess: async () => {
@@ -161,13 +159,6 @@ function EditFamilyForm({ family, onClose }: { family: Family; onClose: () => vo
           error={errors.branchId}
         />
       ) : null}
-      <TextField
-        label={t('people.form.address')}
-        value={address}
-        maxLength={500}
-        onChange={(e) => setAddress(e.target.value)}
-        error={errors.address}
-      />
       <StaleOrError
         error={save.error}
         onReload={() => {
@@ -344,7 +335,6 @@ function GuardianForm({
   const [form, setForm] = useState({
     firstName: guardian?.firstName ?? '',
     lastName: guardian?.lastName ?? '',
-    relationship: guardian?.relationship ?? '',
     email: guardian?.email ?? '',
     phone: guardian?.phone ?? '',
     emergencyContact: guardian?.emergencyContact ?? true,
@@ -355,7 +345,6 @@ function GuardianForm({
       const fields = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        relationship: form.relationship.trim() || null,
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
         emergencyContact: form.emergencyContact,
@@ -403,14 +392,6 @@ function GuardianForm({
           maxLength={80}
           onChange={(e) => setForm({ ...form, lastName: e.target.value })}
           error={errors.lastName}
-        />
-        <TextField
-          label={t('people.form.relationship')}
-          value={form.relationship}
-          maxLength={60}
-          placeholder={t('people.form.relationshipPlaceholder')}
-          onChange={(e) => setForm({ ...form, relationship: e.target.value })}
-          error={errors.relationship}
         />
         <TextField
           label={t('people.form.email')}
@@ -649,7 +630,6 @@ function StudentForm({
   const [form, setForm] = useState({
     firstName: student?.firstName ?? '',
     lastName: student?.lastName ?? family.name,
-    dateOfBirth: student?.dateOfBirth ?? '',
     gradeLevelId: student?.gradeLevelId ?? '',
   });
 
@@ -662,7 +642,6 @@ function StudentForm({
             updatedAt: student.updatedAt,
             firstName: form.firstName.trim(),
             lastName: form.lastName.trim(),
-            dateOfBirth: form.dateOfBirth || null,
             ...(gradeChanged ? { gradeLevelId: form.gradeLevelId || null } : {}),
           },
         });
@@ -672,7 +651,6 @@ function StudentForm({
           familyId: family.id,
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          dateOfBirth: form.dateOfBirth || undefined,
           gradeLevelId: form.gradeLevelId || undefined,
         },
       });
@@ -714,13 +692,6 @@ function StudentForm({
           maxLength={80}
           onChange={(e) => setForm({ ...form, lastName: e.target.value })}
           error={errors.lastName}
-        />
-        <TextField
-          label={t('people.form.dateOfBirth')}
-          type="date"
-          value={form.dateOfBirth}
-          onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
-          error={errors.dateOfBirth}
         />
         {askGrade ? (
           <SelectField

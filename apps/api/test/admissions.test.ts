@@ -166,6 +166,7 @@ describe('enrolment requests', () => {
     const sent = await request({
       students: [
         { firstName: 'Aroha', lastName: 'Perera', classIds: [maths.id] },
+        // A date of birth is no longer kept (D-171): one sent is ignored.
         {
           firstName: 'Sam',
           lastName: 'Perera',
@@ -182,8 +183,8 @@ describe('enrolment requests', () => {
       status: 'pending',
       guardian: { firstName: 'Mere', email: 'mere@example.com', phone: null },
       students: [
-        { firstName: 'Aroha', dateOfBirth: null, classIds: [maths.id] },
-        { firstName: 'Sam', dateOfBirth: '2014-02-03', classIds: [maths.id, full.id] },
+        { firstName: 'Aroha', lastName: 'Perera', classIds: [maths.id] },
+        { firstName: 'Sam', lastName: 'Perera', classIds: [maths.id, full.id] },
       ],
       notes: 'Sam is shy.',
       result: null,

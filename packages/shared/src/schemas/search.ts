@@ -1,5 +1,4 @@
 import { z } from '../zod';
-import { LocalDate } from './common';
 
 // Prefix search on normalised names, and exact email, phone and bank reference (D-026, TUI-43).
 
@@ -40,7 +39,6 @@ export const SearchStudent = z
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     firstName: z.string(),
     lastName: z.string(),
-    dateOfBirth: LocalDate.nullable(),
   })
   .openapi('SearchStudent');
 export type SearchStudent = z.infer<typeof SearchStudent>;
@@ -53,7 +51,6 @@ export const SearchGuardian = z
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     firstName: z.string(),
     lastName: z.string(),
-    relationship: z.string().nullable(),
     email: z.string().nullable(),
     phone: z.string().nullable(),
   })
@@ -72,12 +69,7 @@ export type SearchResults = z.infer<typeof SearchResults>;
 // ── Duplicate warnings ──────────────────────────────────────────────────────
 
 export const DUPLICATE_KINDS = ['family', 'student', 'guardian'] as const;
-export const DUPLICATE_REASONS = [
-  'same_name',
-  'same_name_and_birth_date',
-  'same_email',
-  'same_phone',
-] as const;
+export const DUPLICATE_REASONS = ['same_name', 'same_email', 'same_phone'] as const;
 export type DuplicateReason = (typeof DUPLICATE_REASONS)[number];
 
 const PersonName = z.string().trim().min(1).max(120);
@@ -88,7 +80,6 @@ export const DuplicateQuery = z
     name: PersonName.optional().openapi({ description: 'A family’s name.' }),
     firstName: PersonName.optional(),
     lastName: PersonName.optional(),
-    dateOfBirth: LocalDate.optional().openapi({ description: 'A student’s, when known.' }),
     email: z.string().trim().toLowerCase().max(254).optional(),
     phone: z.string().trim().max(30).optional(),
   })
@@ -112,9 +103,7 @@ export const DuplicateQuery = z
 export type DuplicateQuery = z.infer<typeof DuplicateQuery>;
 
 const Reasons = z.array(z.enum(DUPLICATE_REASONS)).openapi({
-  description:
-    'Why it may be the same: `same_name`, `same_name_and_birth_date` (a student), `same_email` ' +
-    'or `same_phone` (a guardian).',
+  description: 'Why it may be the same: `same_name`, `same_email` or `same_phone` (a guardian).',
 });
 
 export const DuplicateMatches = z

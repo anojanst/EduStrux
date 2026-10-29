@@ -14,6 +14,13 @@ const StudentId = z.string().openapi({ example: 'stu_01j9z3k6m2q8w4e5r6t7y8u9i0'
 export const ABSENCE_NOTICE_SOURCES = ['parent', 'staff'] as const;
 export type AbsenceNoticeSource = (typeof ABSENCE_NOTICE_SOURCES)[number];
 
+/**
+ * Why a student is away, as a fixed choice rather than free text, so nothing personal (such as
+ * a health detail) is typed in (D-171).
+ */
+export const ABSENCE_REASONS = ['sick', 'holiday', 'other'] as const;
+export type AbsenceReason = (typeof ABSENCE_REASONS)[number];
+
 /** The longest an absence notice can run, in days, both ends included. */
 export const MAX_ABSENCE_DAYS = 366;
 
@@ -21,7 +28,7 @@ export const MAX_ABSENCE_DAYS = 366;
 export const RosterAbsenceNotice = z
   .object({
     id: z.string().openapi({ example: 'abn_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
-    reason: z.string().nullable(),
+    reason: z.enum(ABSENCE_REASONS).nullable(),
     source: z.enum(ABSENCE_NOTICE_SOURCES),
   })
   .openapi('RosterAbsenceNotice');
@@ -103,7 +110,6 @@ export const EmergencyContact = z
   .object({
     firstName: z.string(),
     lastName: z.string(),
-    relationship: z.string().nullable().openapi({ example: 'Mother' }),
     phone: z.string().nullable().openapi({ example: '+64 21 555 0100' }),
   })
   .openapi('EmergencyContact');
@@ -145,7 +151,7 @@ export const AbsenceNotice = z
     studentLastName: z.string(),
     startDate: LocalDate.openapi({ description: 'The first day the student is away.' }),
     endDate: LocalDate.openapi({ description: 'The last day the student is away.' }),
-    reason: z.string().nullable(),
+    reason: z.enum(ABSENCE_REASONS).nullable(),
     source: z.enum(ABSENCE_NOTICE_SOURCES).openapi({
       description: 'Who gave it: a parent through the portal, or a member of staff.',
     }),
@@ -162,8 +168,9 @@ export const CreateAbsenceNotice = z
     endDate: LocalDate.optional().openapi({
       description: 'The last day the student is away. Leave out for one day.',
     }),
-    reason: z.string().trim().min(1).max(500).nullable().optional().openapi({
-      example: 'Unwell',
+    reason: z.enum(ABSENCE_REASONS).nullable().optional().openapi({
+      description: 'Why the student is away, if given. null = not given.',
+      example: 'sick',
     }),
   })
   // Compared only when both are real dates; a malformed one already has its own error.

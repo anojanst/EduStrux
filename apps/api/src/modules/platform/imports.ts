@@ -6,7 +6,6 @@ import {
   type Import,
   type ImportField,
   type MapImport,
-  type Org,
 } from '@edustrux/shared';
 import type { JobContext } from '../../background/jobs';
 import type { JobMessage } from '../../background/messages';
@@ -17,7 +16,6 @@ import { parseCsv } from '../../lib/csv';
 import * as branches from '../branches/service';
 import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
-import * as orgs from '../orgs/service';
 import * as people from '../people/service';
 import { contentOf } from './files';
 import * as repo from './repository';
@@ -106,7 +104,6 @@ export async function getImport(ctx: OrgCtx, env: Bindings, access: Access, id: 
 }
 
 type Lookups = {
-  org: Org;
   branchByName: Map<string, string>;
   branchIds: Set<string>;
   gradeByName: Map<string, string>;
@@ -114,29 +111,17 @@ type Lookups = {
 };
 
 async function lookups(ctx: OrgCtx): Promise<Lookups> {
-  const [org, branchList, grades, years] = await Promise.all([
-    orgs.getOrg(ctx),
+  const [branchList, grades, years] = await Promise.all([
     branches.listBranches(ctx, 200),
     curriculum.listGradeLevels(ctx),
     calendar.academicYears(ctx),
   ]);
   return {
-    org,
     branchByName: new Map(branchList.data.map((b) => [normaliseName(b.name), b.id])),
     branchIds: new Set(branchList.data.map((b) => b.id)),
     gradeByName: new Map(grades.data.map((g) => [normaliseName(g.name), g.id])),
     hasYear: years.current !== null,
   };
-}
-
-/** A date as the sheet has it: `YYYY-MM-DD`, or day/month/year in the org's date format. */
-function parseDate(value: string, org: Org): string | null {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const m = value.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (!m) return null;
-  const [day, month] = org.dateFormat === 'MM/DD/YYYY' ? [m[2]!, m[1]!] : [m[1]!, m[2]!];
-  const iso = `${m[3]}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  return Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) ? null : iso;
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -178,9 +163,6 @@ function resolveRows(
     if (branchId && allowedBranches && !allowedBranches.includes(branchId)) {
       problem('branch', 'Not one of your branches');
     }
-    const dobText = value('dateOfBirth');
-    const dateOfBirth = dobText ? parseDate(dobText, found.org) : null;
-    if (dobText && !dateOfBirth) problem('dateOfBirth', `Not a date: “${dobText}”`);
     const gradeName = value('grade');
     const gradeLevelId = gradeName
       ? (found.gradeByName.get(normaliseName(gradeName)) ?? null)
@@ -201,17 +183,15 @@ function resolveRows(
     resolved.push({
       familyName,
       branchId: branchId ?? '',
-      address: value('address') || null,
       guardian: hasGuardian
         ? {
             firstName: guardianFirst,
             lastName: guardianLast,
             email: email || null,
             phone: phone || null,
-            relationship: value('guardianRelationship') || null,
           }
         : null,
-      student: { firstName, lastName, dateOfBirth, notes: value('notes') || null },
+      student: { firstName, lastName },
       gradeLevelId,
     });
   });

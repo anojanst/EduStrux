@@ -67,7 +67,6 @@ const children = page([
     familyId: 'fam_1',
     familyName: 'Perera',
     branchId: 'brn_1',
-    dateOfBirth: null,
     gradeLevelId: 'g7',
     enrolments: [enrolment('stu_a', 'Year 7 English')],
   },
@@ -76,7 +75,6 @@ const children = page([
     familyId: 'fam_1',
     familyName: 'Perera',
     branchId: 'brn_1',
-    dateOfBirth: null,
     gradeLevelId: 'g9',
     enrolments: [enrolment('stu_k', 'Year 9 Maths')],
   },
@@ -278,14 +276,14 @@ describe("a parent's timetable", () => {
       'true',
     );
     expect(await within(dialog).findByText('Kavi will miss 1 lesson')).toBeVisible();
-    await userEvent.type(within(dialog).getByLabelText(/Reason/), 'Away sick');
+    await userEvent.selectOptions(within(dialog).getByLabelText(/Reason/), 'Sick');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Send to the centre' }));
 
     expect(await screen.findByText('Thanks – the centre has been told')).toBeVisible();
     expect(calls.find((c) => c.key.startsWith('POST'))?.body).toEqual({
       studentId: 'stu_k',
       startDate: today,
-      reason: 'Away sick',
+      reason: 'sick',
     });
   });
 });

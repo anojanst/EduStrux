@@ -17,17 +17,13 @@ export const MAX_IMPORT_ROWS = 1000;
 export const IMPORT_FIELDS = [
   'studentFirstName',
   'studentLastName',
-  'dateOfBirth',
-  'notes',
   'grade',
   'familyName',
   'branch',
-  'address',
   'guardianFirstName',
   'guardianLastName',
   'guardianEmail',
   'guardianPhone',
-  'guardianRelationship',
 ] as const;
 export type ImportField = (typeof IMPORT_FIELDS)[number];
 

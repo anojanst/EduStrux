@@ -69,7 +69,6 @@ async function setup() {
     familyId: perera.id,
     firstName: 'Aroha',
     lastName: 'Perera',
-    dateOfBirth: '2012-05-17',
   });
   const sam = await make('/students', {
     familyId: perera.id,
@@ -105,7 +104,6 @@ describe('GET /search', () => {
       branchId: main.id,
       firstName: 'Aroha',
       lastName: 'Perera',
-      dateOfBirth: '2012-05-17',
     });
     expect(res.body.guardians).toEqual([
       {
@@ -115,7 +113,6 @@ describe('GET /search', () => {
         branchId: main.id,
         firstName: 'Mere',
         lastName: 'Perera',
-        relationship: null,
         email: 'mere.perera@example.com',
         phone: '+64 21 555 0100',
       },
@@ -234,7 +231,7 @@ describe('GET /search/duplicates', () => {
     expect((await api('GET', dup({ kind: 'family', name: 'Per' }))).body.families).toEqual([]);
   });
 
-  it('warns of a student with the same name, and says when the birth date matches too', async () => {
+  it('warns of a student with the same name', async () => {
     const { api, aroha } = await setup();
     const sameName = await api(
       'GET',
@@ -243,16 +240,6 @@ describe('GET /search/duplicates', () => {
     expect(sameName.body.students).toEqual([
       expect.objectContaining({ id: aroha.id, reasons: ['same_name'] }),
     ]);
-    const sameBirth = await api(
-      'GET',
-      dup({ kind: 'student', firstName: 'Aroha', lastName: 'Perera', dateOfBirth: '2012-05-17' }),
-    );
-    expect(sameBirth.body.students[0].reasons).toEqual(['same_name_and_birth_date']);
-    const otherBirth = await api(
-      'GET',
-      dup({ kind: 'student', firstName: 'Aroha', lastName: 'Perera', dateOfBirth: '2013-01-01' }),
-    );
-    expect(otherBirth.body.students[0].reasons).toEqual(['same_name']);
   });
 
   it('warns of a guardian with the same name, email or phone, naming each reason', async () => {

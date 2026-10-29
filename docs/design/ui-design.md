@@ -399,6 +399,7 @@ Settled when TUI-23 was built (D-158):
   `wide` size (640px) for forms with sections, and focus their first field when they open.
   The student page's Make-up credits card lists each available credit with Book and each
   booked make-up still to come with Cancel; Book opens a dialog of lessons to pick from (D-184).
+  No address, age, date of birth, guardian relationship or student notes anywhere (D-187).
 - **Settings › Theme** (D-165), from the owner's Figma Make design, owner only: a radio grid of
   the 12 themes (D-166: the 4 light ones last) (a mini app mock-up on each, a check on the chosen one), a live preview of the
   staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with
@@ -444,7 +445,8 @@ Settled when TUI-23 was built (D-158):
 - **Parent portal** (D-180), from the owner's Figma Make design: Home (next lesson, Report an
   absence, the children, latest homework, family balance), a week Timetable by day with child
   chips and a lesson sheet (homework, the teacher's note, report absence for it), the Report an
-  absence sheet with which lessons it covers, Invoices (owing and overdue, each invoice with
+  absence sheet with which lessons it covers (the reason a select: Not saying, Sick, Holiday,
+  Other, D-187), Invoices (owing and overdue, each invoice with
   its lines and PDF, how to pay with the family reference), Messages to read, and More
   (profile, family, sign out). Same paths as staff (`timetable`, `invoices`) plus `messages`
   and `more`.

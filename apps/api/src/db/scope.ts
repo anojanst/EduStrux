@@ -216,7 +216,46 @@ export function changedFields(before: object, changes: object) {
   return { before: was, after: is };
 }
 
+/**
+ * The personal fields of each kind of audit row, by the first word of its action (D-171,
+ * TUI-116). The audit log keeps that such a field was set or changed, not its value: a value
+ * that isn't null is written as `"changed"`, at any depth, so the notes inside a session's
+ * `lesson_notes.updated` row are covered too. Ids, statuses, dates and amounts are kept. A
+ * personal field added later is covered by adding its name here. Consents record no personal
+ * values, so they need no entry.
+ */
+export const PERSONAL_AUDIT_FIELDS: Record<string, readonly string[]> = {
+  family: ['name', 'nameNorm'],
+  guardian: [
+    'firstName',
+    'lastName',
+    'firstNameNorm',
+    'lastNameNorm',
+    'email',
+    'phone',
+    'phoneNorm',
+  ],
+  student: ['firstName', 'lastName', 'firstNameNorm', 'lastNameNorm'],
+  lesson_notes: ['note'],
+  enquiry: ['name', 'email', 'phone', 'studentName', 'message'],
+  enrolment_request: ['guardian', 'students', 'notes'],
+};
+
+/** `value` with the listed fields' values, wherever they are, written as `"changed"`. */
+export function scrubPersonal(value: unknown, fields: readonly string[]): unknown {
+  if (Array.isArray(value)) return value.map((item) => scrubPersonal(item, fields));
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [
+      key,
+      fields.includes(key) && inner != null ? 'changed' : scrubPersonal(inner, fields),
+    ]),
+  );
+}
+
 export function auditInsert(ctx: OrgCtx, entry: AuditEntry) {
+  const fields = PERSONAL_AUDIT_FIELDS[entry.action.split('.')[0]!] ?? [];
+  const scrub = (value: unknown) => (fields.length ? scrubPersonal(value, fields) : value);
   return ctx.db.insert(auditLog).values({
     id: newId('audit'),
     orgId: ctx.orgId,
@@ -224,8 +263,8 @@ export function auditInsert(ctx: OrgCtx, entry: AuditEntry) {
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId,
-    before: entry.before ?? null,
-    after: entry.after ?? null,
+    before: scrub(entry.before ?? null),
+    after: scrub(entry.after ?? null),
   });
 }
 

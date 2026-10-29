@@ -515,7 +515,7 @@ describe('the attendance sheet', () => {
           record('stu_maia', 'Maia'),
           record('stu_jack', 'Jack'),
           record('stu_aroha', 'Aroha', {
-            absenceNotice: { id: 'abn_1', reason: 'dentist', source: 'parent' },
+            absenceNotice: { id: 'abn_1', reason: 'other', source: 'parent' },
           }),
         ],
       },
@@ -537,7 +537,7 @@ describe('the attendance sheet', () => {
 
     // A notice from home starts the student as excused, for staff to confirm.
     const aroha = (await screen.findByText('Aroha Perera')).closest('li')!;
-    expect(within(aroha).getByText('Parent said away: dentist')).toBeVisible();
+    expect(within(aroha).getByText('Parent said away: Other')).toBeVisible();
     expect(within(aroha).getByRole('radio', { name: 'Excused' })).toHaveAttribute(
       'aria-checked',
       'true',

@@ -198,11 +198,6 @@ function FamilyDetail({ familyId }: { familyId: string }) {
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           {canBill ? <MoneyCards familyId={data.id} familyName={data.name} /> : null}
-          {data.address ? (
-            <SectionCard title={t('people.address')}>
-              <p className="px-4 py-3.5 text-body whitespace-pre-line text-text">{data.address}</p>
-            </SectionCard>
-          ) : null}
         </div>
       </div>
 
@@ -264,7 +259,6 @@ function BankReference({ reference }: { reference: string }) {
 }
 
 function StudentsCard({ family, onAdd }: { family: Family; onAdd?: () => void }) {
-  const format = useFormat();
   const paths = usePeoplePaths();
   const gradeName = namesOf(useGradeLevels().data?.data);
   return (
@@ -294,18 +288,8 @@ function StudentsCard({ family, onAdd }: { family: Family; onAdd?: () => void })
                   <Avatar name={name} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <b className="truncate text-body font-semibold text-text">{name}</b>
-                    {student.dateOfBirth ? (
-                      <small className="text-meta text-muted">
-                        {t('people.born', { date: format.date(student.dateOfBirth) })}
-                      </small>
-                    ) : null}
                   </span>
                   {grade ? <Badge>{grade}</Badge> : null}
-                  {student.dateOfBirth ? (
-                    <span className="hidden w-[60px] text-body text-muted tabular-nums sm:block">
-                      {t('people.age', { age: format.age(student.dateOfBirth) })}
-                    </span>
-                  ) : null}
                   <ChevronRight className="size-4 shrink-0 text-subtle" aria-hidden />
                 </Link>
               </li>
@@ -336,7 +320,6 @@ function GuardianRow({
   const refresh = useRefreshPeople();
   const [error, setError] = useState<string | null>(null);
   const roles = [
-    guardian.relationship,
     billing ? t('people.billingContact') : null,
     guardian.emergencyContact ? t('people.emergencyContact') : null,
   ].filter(Boolean);

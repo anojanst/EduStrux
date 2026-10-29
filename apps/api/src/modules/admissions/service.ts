@@ -156,7 +156,6 @@ export async function receiveRequest(
     students: input.students.map((s) => ({
       firstName: s.firstName,
       lastName: s.lastName,
-      dateOfBirth: s.dateOfBirth ?? null,
       classIds: s.classIds,
     })),
     notes: input.notes ?? null,
@@ -208,7 +207,10 @@ function toRequest(row: repo.RequestRow): EnrolmentRequest {
   return {
     ...request,
     guardian: row.guardian as EnrolmentRequest['guardian'],
-    students: row.students as EnrolmentRequest['students'],
+    // Requests sent before D-171 also hold a date of birth, which is no longer shown.
+    students: (row.students as EnrolmentRequest['students']).map(
+      ({ firstName, lastName, classIds }) => ({ firstName, lastName, classIds }),
+    ),
     result: (row.result as EnrolmentRequest['result']) ?? null,
   };
 }
@@ -290,7 +292,6 @@ export async function approveRequest(
       familyId,
       firstName: child.firstName,
       lastName: child.lastName,
-      dateOfBirth: child.dateOfBirth ?? undefined,
     });
     studentIds.push(student.id);
     for (const classId of child.classIds) {

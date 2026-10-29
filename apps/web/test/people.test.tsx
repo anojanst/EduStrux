@@ -84,11 +84,9 @@ const mere = {
   familyId: 'fam_perera',
   firstName: 'Mere',
   lastName: 'Perera',
-  relationship: 'Mother',
   email: 'mere@example.co.nz',
   phone: '021 555 0142',
   preferredChannel: 'email',
-  language: null,
   emergencyContact: true,
   membershipId: 'mem_mere',
   createdAt: at,
@@ -98,7 +96,6 @@ const nimal = {
   ...mere,
   id: 'gdn_nimal',
   firstName: 'Nimal',
-  relationship: 'Father',
   email: 'nimal@example.co.nz',
   phone: null,
   emergencyContact: false,
@@ -111,8 +108,6 @@ const aria = {
   branchId: 'brn_albany',
   firstName: 'Aria',
   lastName: 'Perera',
-  dateOfBirth: '2013-03-09',
-  notes: 'Works best near the front.',
   gradeLevelId: 'grd_7',
   grades: [{ academicYearId: 'acy_26', gradeLevelId: 'grd_7' }],
   createdAt: at,
@@ -136,7 +131,6 @@ const perera = {
   id: 'fam_perera',
   name: 'Perera',
   branchId: 'brn_albany',
-  address: '18 Kauri Road',
   billingGuardianId: 'gdn_mere',
   bankReference: '7K2M9QXA',
   guardians: [mere, nimal],
@@ -384,7 +378,7 @@ describe('adding a family', () => {
           error: {
             code: 'validation_failed',
             message: 'x',
-            fields: { dateOfBirth: ['Can’t be in the future'] },
+            fields: { lastName: ['At most 80 characters'] },
           },
         },
       },
@@ -406,7 +400,7 @@ describe('adding a family', () => {
     expect(
       await screen.findByText('The family was added, but some details weren’t saved'),
     ).toBeVisible();
-    expect(screen.getByText('Tavita Fonoti: Can’t be in the future')).toBeVisible();
+    expect(screen.getByText('Tavita Fonoti: At most 80 characters')).toBeVisible();
   });
 });
 
@@ -457,8 +451,7 @@ describe('the family page', () => {
       'href',
       '/o/bright-minds/students/stu_aria',
     );
-    expect(screen.getByText('Mother · Billing contact · Emergency contact')).toBeVisible();
-    expect(screen.getByText('Father')).toBeVisible();
+    expect(screen.getByText('Billing contact · Emergency contact')).toBeVisible();
     expect(screen.getByText('Signed in')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Invite to portal' })).toBeVisible();
 
@@ -467,7 +460,6 @@ describe('the family page', () => {
     expect(screen.getByText('Overdue')).toBeVisible();
     expect(screen.getByText('Draft')).toBeVisible();
     expect(await screen.findByText('Bank transfer')).toBeVisible();
-    expect(screen.getByText('18 Kauri Road')).toBeVisible();
   });
 
   it('invites a guardian to the parent portal and shows the link', async () => {
@@ -557,7 +549,7 @@ describe('the family page', () => {
 describe('the student page', () => {
   const today = localNow(Intl.DateTimeFormat().resolvedOptions().timeZone).date;
 
-  it('shows classes, upcoming lessons, grades, consents and notes', async () => {
+  it('shows classes, upcoming lessons, grades and consents', async () => {
     stubApi({
       ...lookups,
       [`${API}/students/stu_aria`]: { body: aria },
@@ -650,7 +642,6 @@ describe('the student page', () => {
     expect(screen.getByText('2026')).toBeVisible();
     expect(await screen.findByText('Granted')).toBeVisible();
     expect(screen.getByText('Not asked')).toBeVisible();
-    expect(screen.getByText('Works best near the front.')).toBeVisible();
   });
 });
 

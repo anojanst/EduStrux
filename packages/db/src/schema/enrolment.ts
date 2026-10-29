@@ -64,7 +64,7 @@ export const enrolmentRequests = sqliteTable(
     status: text('status', { enum: ENROLMENT_REQUEST_STATUSES }).notNull().default('pending'),
     // `{ firstName, lastName, email, phone }`.
     guardian: text('guardian', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
-    // `[{ firstName, lastName, dateOfBirth, classIds }]`.
+    // `[{ firstName, lastName, classIds }]` (sent before D-171, also `dateOfBirth`).
     students: text('students', { mode: 'json' }).$type<Record<string, unknown>[]>().notNull(),
     notes: text('notes'),
     ipHash: text('ip_hash'),

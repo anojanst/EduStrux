@@ -120,7 +120,6 @@ async function setup() {
       firstName,
       lastName,
       gradeLevelId: grade.id,
-      notes: 'Staff only: ask about the overdue fees',
     });
   const kai = await child(perera.id, 'Kai', 'Perera');
   const aroha = await child(perera.id, 'Aroha', 'Perera');
@@ -176,7 +175,7 @@ async function setup() {
 }
 
 describe('GET /portal/children', () => {
-  it('lists the parent’s children with their family and active enrolments, without staff notes', async () => {
+  it('lists the parent’s children with their family and active enrolments', async () => {
     const s = await setup();
 
     const res = await s.parent.as('GET', '/portal/children');
@@ -194,7 +193,6 @@ describe('GET /portal/children', () => {
         branchId: s.main.id,
         firstName: 'Aroha',
         lastName: 'Perera',
-        dateOfBirth: null,
         gradeLevelId: s.grade.id,
         enrolments: [
           enrolment(s.arohaMaths.id, 'Maths', null),
@@ -208,7 +206,6 @@ describe('GET /portal/children', () => {
         branchId: s.main.id,
         firstName: 'Kai',
         lastName: 'Perera',
-        dateOfBirth: null,
         gradeLevelId: s.grade.id,
         enrolments: [enrolment(s.kaiMaths.id, 'Maths', null)],
       },
