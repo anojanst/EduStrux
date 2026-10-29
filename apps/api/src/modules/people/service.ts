@@ -1,6 +1,5 @@
 import {
   bankReferenceFor,
-  localNow,
   newId,
   normaliseName,
   normalisePhone,
@@ -13,7 +12,6 @@ import {
   type DuplicateReason,
   type Family,
   type Guardian,
-  type Org,
   type PromoteStudents,
   type PromotionResult,
   type SearchQuery,
@@ -25,14 +23,13 @@ import {
   type UpdateStudent,
 } from '@edustrux/shared';
 import type { Access, IdQuery, Ids, OrgCtx } from '../../db/scope';
-import { forbidden, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
+import { forbidden, notFound, staleData, unprocessable } from '../../lib/errors';
 import { byKeys, decodeKeys, toPage } from '../../lib/pagination';
 import * as branches from '../branches/service';
 import { currentAcademicYear } from '../calendar/for-people';
 import * as calendar from '../calendar/service';
 import * as curriculum from '../curriculum/service';
 import * as enrolment from '../enrolment/service';
-import * as orgs from '../orgs/service';
 import type { JobContext } from '../../background/jobs';
 import type { JobMessage } from '../../background/messages';
 import { startJob } from '../platform/service';
@@ -103,16 +100,6 @@ export function toStudent(
       .sort((a, b) => position(a) - position(b))
       .map((g) => ({ academicYearId: g.academicYearId, gradeLevelId: g.gradeLevelId })),
   };
-}
-
-/**
- * A student as this caller reads them. A student's notes are for staff, so parents don't get them
- * (D-126). The field is left out, so null still means there are none.
- */
-function forReader(student: Student, access: Access): Student {
-  if (access.role !== 'parent') return student;
-  const { notes: _hidden, ...rest } = student;
-  return rest;
 }
 
 export function toFamily(
@@ -194,14 +181,11 @@ function withMembers(
       students
         .filter((s) => s.familyId === family.id)
         .map((student) =>
-          forReader(
-            toStudent(
-              student,
-              family,
-              grades.filter((g) => g.studentId === student.id),
-              years,
-            ),
-            access,
+          toStudent(
+            student,
+            family,
+            grades.filter((g) => g.studentId === student.id),
+            years,
           ),
         ),
     ),
@@ -265,7 +249,6 @@ export async function createFamily(
     name: input.name,
     nameNorm: normaliseName(input.name),
     branchId: input.branchId,
-    address: input.address ?? null,
     billingGuardianId: null,
     bankReference: bankReferenceFor(id),
   });
@@ -348,12 +331,10 @@ export async function createGuardian(
       lastName: input.lastName,
       firstNameNorm: normaliseName(input.firstName),
       lastNameNorm: normaliseName(input.lastName),
-      relationship: input.relationship ?? null,
       email: input.email ?? null,
       phone: input.phone ?? null,
       phoneNorm: normalisePhone(input.phone),
       preferredChannel: input.preferredChannel,
-      language: input.language ?? null,
       emergencyContact: input.emergencyContact,
       membershipId: null,
     },
@@ -418,13 +399,6 @@ export function unlinkMembershipStatement(ctx: OrgCtx, membershipId: string) {
 }
 
 // ── Students ────────────────────────────────────────────────────────────────
-
-/** A birth date can't be after today, in the org's timezone. */
-function checkBirthDate(org: Org, dateOfBirth: string | null | undefined) {
-  if (dateOfBirth && dateOfBirth > localNow(org.timezone).date) {
-    throw validationFailed({ dateOfBirth: ['In the future'] });
-  }
-}
 
 /**
  * The academic year a grade is for: the one named, which must be one of the org's (404), or the
@@ -502,14 +476,11 @@ export async function listStudents(
   );
   return {
     data: data.map(({ student, branchId, familyName }) =>
-      forReader(
-        toStudent(
-          student,
-          { branchId, name: familyName },
-          grades.filter((g) => g.studentId === student.id),
-          years,
-        ),
-        access,
+      toStudent(
+        student,
+        { branchId, name: familyName },
+        grades.filter((g) => g.studentId === student.id),
+        years,
       ),
     ),
     nextCursor,
@@ -529,9 +500,11 @@ export async function getStudent(ctx: OrgCtx, access: Access, id: string): Promi
     calendar.academicYears(ctx),
   ]);
   if (!found) throw notFound('Student');
-  return forReader(
-    toStudent(found.student, { branchId: found.branchId, name: found.familyName }, grades, years),
-    access,
+  return toStudent(
+    found.student,
+    { branchId: found.branchId, name: found.familyName },
+    grades,
+    years,
   );
 }
 
@@ -541,14 +514,12 @@ export async function createStudent(
   input: CreateStudent,
 ): Promise<Student> {
   const { gradeLevelId } = input;
-  const [family, org, gradeLevel, years] = await Promise.all([
+  const [family, gradeLevel, years] = await Promise.all([
     repo.findFamily(ctx, input.familyId, reachOf(ctx, access)),
-    orgs.getOrg(ctx),
     gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,
     gradeLevelId ? calendar.academicYears(ctx) : NO_YEARS,
   ]);
   if (!family) throw notFound('Family');
-  checkBirthDate(org, input.dateOfBirth);
   let academicYearId: string | null = null;
   if (gradeLevelId) {
     if (gradeLevel) orThrow(gradeLevel);
@@ -571,8 +542,6 @@ export async function createStudent(
       lastName: input.lastName,
       firstNameNorm: normaliseName(input.firstName),
       lastNameNorm: normaliseName(input.lastName),
-      dateOfBirth: input.dateOfBirth ?? null,
-      notes: input.notes ?? null,
     },
     grade,
   );
@@ -594,11 +563,10 @@ export async function updateStudent(
   const changes: repo.StudentChanges = { ...rest };
   // The student, every grade they have (the one being changed is among them, and the answer
   // shows them all), the academic years, and the grade level they may be given.
-  const [found, grades, years, org, gradeLevel] = await Promise.all([
+  const [found, grades, years, gradeLevel] = await Promise.all([
     repo.findStudent(ctx, id, reach),
     repo.listGrades(ctx, repo.studentFound(ctx, id, reach)),
     calendar.academicYears(ctx),
-    orgs.getOrg(ctx),
     gradeLevelId ? held(curriculum.getGradeLevel(ctx, gradeLevelId)) : undefined,
   ]);
   if (!found) throw notFound('Student');
@@ -608,7 +576,6 @@ export async function updateStudent(
 
   if (changes.firstName !== undefined) changes.firstNameNorm = normaliseName(changes.firstName);
   if (changes.lastName !== undefined) changes.lastNameNorm = normaliseName(changes.lastName);
-  checkBirthDate(org, changes.dateOfBirth);
 
   let grade: repo.GradeChange | undefined;
   if (gradeLevelId !== undefined) {
@@ -720,8 +687,8 @@ export async function familyIdsOfStudents(ctx: OrgCtx, ids: Ids) {
 }
 
 /**
- * The given students by name, each with the guardians to call in an emergency: name,
- * relationship and phone only (D-112). For whoever may see the students on a class's roster,
+ * The given students by name, each with the guardians to call in an emergency: name and phone
+ * only (D-112). For whoever may see the students on a class's roster,
  * whichever branch their families belong to. One stage: both reads go by a query for the students.
  */
 export async function emergencyContactsOf(
@@ -854,14 +821,7 @@ export async function duplicates(
     const rows = await repo.matchStudents(ctx, { name }, DUPLICATE_LIMIT, reach);
     return {
       ...empty,
-      students: rows.map((row) => ({
-        ...row,
-        reasons: [
-          query.dateOfBirth && row.dateOfBirth === query.dateOfBirth
-            ? 'same_name_and_birth_date'
-            : 'same_name',
-        ],
-      })),
+      students: rows.map((row) => ({ ...row, reasons: ['same_name'] as DuplicateReason[] })),
     };
   }
 
@@ -1036,20 +996,13 @@ export async function promoteStudents(ctx: JobContext): Promise<PromotionResult>
 export type ImportedRow = {
   familyName: string;
   branchId: string;
-  address: string | null;
   guardian: {
     firstName: string;
     lastName: string;
     email: string | null;
     phone: string | null;
-    relationship: string | null;
   } | null;
-  student: {
-    firstName: string;
-    lastName: string;
-    dateOfBirth: string | null;
-    notes: string | null;
-  };
+  student: { firstName: string; lastName: string };
   gradeLevelId: string | null;
 };
 
@@ -1081,7 +1034,6 @@ export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: str
         name: row.familyName,
         nameNorm: normaliseName(row.familyName),
         branchId: row.branchId,
-        address: row.address,
         billingGuardianId: null,
         bankReference: bankReferenceFor(id),
       };
@@ -1101,12 +1053,10 @@ export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: str
           lastName: row.guardian.lastName,
           firstNameNorm: normaliseName(row.guardian.firstName),
           lastNameNorm: normaliseName(row.guardian.lastName),
-          relationship: row.guardian.relationship,
           email: row.guardian.email,
           phone: row.guardian.phone,
           phoneNorm: normalisePhone(row.guardian.phone),
           preferredChannel: 'email',
-          language: null,
           emergencyContact: true,
           membershipId: null,
         });
@@ -1122,8 +1072,6 @@ export async function importRows(ctx: OrgCtx, rows: ImportedRow[], importId: str
       lastName: row.student.lastName,
       firstNameNorm: normaliseName(row.student.firstName),
       lastNameNorm: normaliseName(row.student.lastName),
-      dateOfBirth: row.student.dateOfBirth,
-      notes: row.student.notes,
     });
     if (row.gradeLevelId && current) {
       gradeRows.push({

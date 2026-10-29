@@ -344,7 +344,6 @@ describe('one student', () => {
               branchId: 'brn_main',
               firstName: 'Amaya',
               lastName: 'Perera',
-              dateOfBirth: null,
             },
           ],
         },

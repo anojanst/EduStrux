@@ -196,10 +196,12 @@ describe('lesson notes', () => {
       entityType: 'session',
       entityId: mainSession,
       actorUserId: owner.userId,
+      // The homework is the class's; a note is about a student, so only that it changed is
+      // kept (D-171).
       before: { homework: null, notes: [{ studentId: mia.id, note: null }] },
       after: {
         homework: 'Textbook p.42, questions 1–10',
-        notes: [{ studentId: mia.id, note: 'Great work on fractions' }],
+        notes: [{ studentId: mia.id, note: 'changed' }],
       },
     });
   });
@@ -222,8 +224,8 @@ describe('lesson notes', () => {
     expect(await seen(api, mainSession)).toEqual(['Ben: Late', 'Mia: Second']);
     // The audit row keeps only what changed.
     expect((await lastAudit())[0]).toMatchObject({
-      before: { notes: [{ studentId: mia.id, note: 'First' }] },
-      after: { notes: [{ studentId: mia.id, note: 'Second' }] },
+      before: { notes: [{ studentId: mia.id, note: 'changed' }] },
+      after: { notes: [{ studentId: mia.id, note: 'changed' }] },
     });
 
     const cleared = await api('PUT', path(mainSession), {

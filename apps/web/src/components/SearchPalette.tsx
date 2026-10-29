@@ -72,7 +72,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
           kind: 'guardian' as const,
           group: t('search.guardians'),
           title: `${g.firstName} ${g.lastName}`,
-          meta: [g.relationship, t('people.familyName', { name: g.familyName }), g.phone]
+          meta: [t('people.familyName', { name: g.familyName }), g.phone]
             .filter(Boolean)
             .join(' · '),
           to: paths.family(g.familyId),

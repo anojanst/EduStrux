@@ -51,13 +51,12 @@ export function StudentPage() {
   return <StudentDetail key={studentId} studentId={studentId} />;
 }
 
-type Open = { kind: 'edit' | 'delete' | 'notes' } | { kind: 'consent'; type: ConsentType } | null;
+type Open = { kind: 'edit' | 'delete' } | { kind: 'consent'; type: ConsentType } | null;
 
 function StudentDetail({ studentId }: { studentId: string }) {
   const { membership } = useOrg();
   const navigate = useNavigate();
   const paths = usePeoplePaths();
-  const format = useFormat();
   const refresh = useRefreshPeople();
   const branches = useBranches();
   const gradeName = namesOf(useGradeLevels().data?.data);
@@ -89,7 +88,6 @@ function StudentDetail({ studentId }: { studentId: string }) {
         title={name}
         meta={[
           grade,
-          data.dateOfBirth ? t('people.age', { age: format.age(data.dateOfBirth) }) : null,
           (branches.data?.data.length ?? 0) > 1
             ? t('people.branchName', { name: namesOf(branches.data?.data)(data.branchId) })
             : null,
@@ -133,24 +131,6 @@ function StudentDetail({ studentId }: { studentId: string }) {
             student={data}
             onChange={canWrite ? (type) => setOpen({ kind: 'consent', type }) : undefined}
           />
-          {data.notes !== undefined ? (
-            <SectionCard
-              title={t('people.notes')}
-              action={
-                canWrite ? (
-                  <Button variant="ghost" size="sm" onClick={() => setOpen({ kind: 'notes' })}>
-                    {t('people.edit')}
-                  </Button>
-                ) : null
-              }
-            >
-              {data.notes ? (
-                <p className="px-4 py-3.5 text-body whitespace-pre-line text-text">{data.notes}</p>
-              ) : (
-                <CardEmpty>{t('people.noNotes')}</CardEmpty>
-              )}
-            </SectionCard>
-          ) : null}
         </div>
       </div>
 
@@ -174,7 +154,6 @@ function StudentDetail({ studentId }: { studentId: string }) {
           }}
         />
       ) : null}
-      {open?.kind === 'notes' ? <NotesDialog student={data} onClose={close} /> : null}
       {open?.kind === 'consent' ? (
         <ConsentDialog student={data} type={open.type} onClose={close} />
       ) : null}
@@ -518,80 +497,6 @@ function ConsentDialog({
             {t('common.cancel')}
           </Button>
           <Button type="submit" disabled={!granted} loading={save.isPending}>
-            {t('people.save')}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function NotesDialog({ student, onClose }: { student: Student; onClose: () => void }) {
-  const { membership } = useOrg();
-  const refresh = useRefreshPeople();
-  const toast = useToast();
-  const [notes, setNotes] = useState(student.notes ?? '');
-  const save = useMutation({
-    mutationFn: () =>
-      api('PATCH', orgApiPath(membership, `/students/${student.id}`), {
-        body: { updatedAt: student.updatedAt, notes: notes.trim() || null },
-      }),
-    onSuccess: async () => {
-      await refresh();
-      toast(t('people.saved'));
-      onClose();
-    },
-  });
-  const stale = save.error instanceof ApiError && save.error.code === 'stale_data';
-
-  return (
-    <Dialog open onClose={onClose} title={t('people.notes')}>
-      <form
-        noValidate
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-        className="flex flex-col gap-4"
-      >
-        <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-text">{t('people.notes')}</span>
-          <textarea
-            value={notes}
-            maxLength={2000}
-            rows={6}
-            autoFocus
-            onChange={(e) => setNotes(e.target.value)}
-            className="rounded-lg border border-border-strong px-3 py-2 text-body focus:outline-2 focus:outline-brand"
-          />
-          <span className="text-meta text-muted">{t('people.notesHelp')}</span>
-        </label>
-        {save.error ? (
-          <Notice
-            tone="danger"
-            action={
-              stale ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void refresh();
-                    onClose();
-                  }}
-                >
-                  {t('people.reload')}
-                </Button>
-              ) : null
-            }
-          >
-            {errorMessage(save.error)}
-          </Notice>
-        ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" loading={save.isPending}>
             {t('people.save')}
           </Button>
         </div>

@@ -19,7 +19,7 @@ const SHEET = [
 const MAPPING = {
   First: 'studentFirstName',
   Surname: 'studentLastName',
-  Born: 'dateOfBirth',
+  // Born stays unmapped: a date of birth is no longer kept (D-171).
   Year: 'grade',
   'Parent first': 'guardianFirstName',
   'Parent email': 'guardianEmail',
@@ -134,7 +134,7 @@ describe('imports', () => {
       branchId: string;
       billingGuardianId: string;
       guardians: { firstName: string; lastName: string; email: string; phone: string | null }[];
-      students: { firstName: string; dateOfBirth: string | null; gradeLevelId: string | null }[];
+      students: { firstName: string; gradeLevelId: string | null }[];
     }[];
     const perera = families.find((f) => f.name === 'Perera')!;
     expect(perera.branchId).toBe(main.id);
@@ -147,9 +147,9 @@ describe('imports', () => {
       }),
     ]);
     expect(perera.billingGuardianId).toEqual(expect.stringMatching(/^gdn_/));
-    expect(perera.students.map((s) => [s.firstName, s.dateOfBirth, s.gradeLevelId])).toEqual([
-      ['Aroha', '2012-05-17', y10.id],
-      ['Sam', '2014-02-03', null],
+    expect(perera.students.map((s) => [s.firstName, s.gradeLevelId])).toEqual([
+      ['Aroha', y10.id],
+      ['Sam', null],
     ]);
     const ngata = families.find((f) => f.name === 'Ngata')!;
     expect(ngata.branchId).toBe(albany.id);
@@ -176,7 +176,6 @@ describe('imports', () => {
       mapping: {
         First: 'studentFirstName',
         Surname: 'studentLastName',
-        Born: 'dateOfBirth',
         Year: 'grade',
         'Parent email': 'guardianEmail',
         Campus: 'branch',
@@ -186,7 +185,6 @@ describe('imports', () => {
     expect(mapped.body.problems).toEqual([
       { row: 2, field: 'studentFirstName', message: 'Required' },
       { row: 2, field: 'branch', message: 'No branch called “Nowhere”' },
-      { row: 2, field: 'dateOfBirth', message: 'Not a date: “32/13/2012”' },
       { row: 2, field: 'grade', message: 'No grade level called “Year 12”' },
       { row: 2, field: 'guardianEmail', message: 'Not an email: “not-an-email”' },
       { row: 2, field: 'guardianFirstName', message: 'Required with a guardian’s email or phone' },
@@ -206,6 +204,7 @@ describe('imports', () => {
     ]);
     expect((await patch({ ...MAPPING, Phone: 'studentFirstName' })).status).toBe(400);
     expect((await patch({ ...MAPPING, Phone: 'favouriteColour' })).status).toBe(400);
+    expect((await patch({ ...MAPPING, Born: 'dateOfBirth' })).status).toBe(400);
     const stale = await api('PATCH', `/imports/${started.id}`, {
       updatedAt: '2020-01-01T00:00:00.000Z',
       mapping: MAPPING,

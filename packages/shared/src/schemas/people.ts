@@ -1,5 +1,5 @@
 import { z } from '../zod';
-import { LocalDate, PageQuery, Timestamp } from './common';
+import { PageQuery, Timestamp } from './common';
 
 /** How a guardian prefers to hear from the centre. Only email is sent so far. */
 export const CONTACT_CHANNELS = ['email', 'sms', 'whatsapp'] as const;
@@ -9,11 +9,6 @@ const Name = z.string().trim().min(1).max(120);
 const PersonName = z.string().trim().min(1).max(80);
 const UpdatedAt = Timestamp.openapi({
   description: 'The updatedAt you last read. A newer value on the server returns 409.',
-});
-const Address = z.string().trim().max(500).nullable();
-const Relationship = z.string().trim().min(1).max(60).nullable().openapi({
-  description: 'How this person is related to the students. null = not set.',
-  example: 'Mother',
 });
 const Email = z.string().trim().toLowerCase().max(254).email().nullable().openapi({
   description: 'Stored in lower case. null = not set.',
@@ -30,24 +25,8 @@ const Phone = z
 const PreferredChannel = z.enum(CONTACT_CHANNELS).openapi({
   description: 'How this guardian prefers to be contacted. Only email is sent so far.',
 });
-const Language = z
-  .string()
-  .trim()
-  .regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/, 'A language tag like en, mi or si')
-  .nullable()
-  .openapi({
-    description: 'The guardian’s preferred language. Stored only; nothing uses it yet.',
-    example: 'en',
-  });
 const EmergencyContact = z.boolean().openapi({
   description: 'Whether to call this person in an emergency.',
-});
-const Notes = z.string().trim().max(2000).nullable().openapi({
-  description: 'Anything staff should know about the student. null = not set.',
-});
-const DateOfBirth = LocalDate.nullable().openapi({
-  description: 'Can’t be in the future. null = not set.',
-  example: '2012-05-17',
 });
 
 // ── Guardians ───────────────────────────────────────────────────────────────
@@ -58,11 +37,9 @@ export const Guardian = z
     familyId: z.string(),
     firstName: z.string(),
     lastName: z.string(),
-    relationship: z.string().nullable(),
     email: z.string().nullable(),
     phone: z.string().nullable(),
     preferredChannel: z.enum(CONTACT_CHANNELS),
-    language: z.string().nullable(),
     emergencyContact: z.boolean(),
     membershipId: z.string().nullable().openapi({
       description:
@@ -78,11 +55,9 @@ export const CreateGuardian = z
   .object({
     firstName: PersonName.openapi({ example: 'Mere' }),
     lastName: PersonName.openapi({ example: 'Perera' }),
-    relationship: Relationship.optional(),
     email: Email.optional(),
     phone: Phone.optional(),
     preferredChannel: PreferredChannel.default('email'),
-    language: Language.optional(),
     emergencyContact: EmergencyContact.default(true),
   })
   .openapi('CreateGuardian');
@@ -94,11 +69,9 @@ export const UpdateGuardian = z
     updatedAt: UpdatedAt,
     firstName: PersonName,
     lastName: PersonName,
-    relationship: Relationship,
     email: Email,
     phone: Phone,
     preferredChannel: PreferredChannel,
-    language: Language,
     emergencyContact: EmergencyContact,
   })
   .partial()
@@ -121,11 +94,6 @@ export const Student = z
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
     firstName: z.string(),
     lastName: z.string(),
-    dateOfBirth: LocalDate.nullable(),
-    // Left out, not null, for parents, since null means no notes.
-    notes: z.string().nullable().optional().openapi({
-      description: 'For staff. null = not set. Left out for parents (D-126).',
-    }),
     gradeLevelId: z
       .string()
       .nullable()
@@ -158,8 +126,6 @@ export const CreateStudent = z
     familyId: z.string().openapi({ example: 'fam_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
     firstName: PersonName.openapi({ example: 'Aroha' }),
     lastName: PersonName.openapi({ example: 'Perera' }),
-    dateOfBirth: DateOfBirth.optional(),
-    notes: Notes.optional(),
     gradeLevelId: GradeLevelId.optional(),
     academicYearId: AcademicYearId.optional(),
   })
@@ -173,8 +139,6 @@ export const UpdateStudent = z
     updatedAt: UpdatedAt,
     firstName: PersonName,
     lastName: PersonName,
-    dateOfBirth: DateOfBirth,
-    notes: Notes,
     gradeLevelId: GradeLevelId.nullable().openapi({
       description:
         'Sets the grade level for `academicYearId`, or for the current academic year. null ' +
@@ -208,7 +172,6 @@ export const Family = z
     id: z.string().openapi({ example: 'fam_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
     name: z.string(),
     branchId: z.string().openapi({ description: 'The family’s home branch.' }),
-    address: z.string().nullable(),
     billingGuardianId: z
       .string()
       .nullable()
@@ -241,7 +204,6 @@ export const CreateFamily = z
       description: 'The family’s home branch.',
       example: 'brn_01j9z3k6m2q8w4e5r6t7y8u9i0',
     }),
-    address: Address.optional().openapi({ example: '4 Kowhai Street, Albany, Auckland' }),
   })
   .openapi('CreateFamily');
 export type CreateFamily = z.infer<typeof CreateFamily>;
@@ -251,7 +213,6 @@ export const UpdateFamily = z
     updatedAt: UpdatedAt,
     name: Name,
     branchId: z.string(),
-    address: Address,
     billingGuardianId: z.string().openapi({
       description: 'One of this family’s guardians.',
     }),

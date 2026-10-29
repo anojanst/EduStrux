@@ -1,3 +1,4 @@
+import { ABSENCE_REASONS, type AbsenceReason } from '@edustrux/shared';
 import { diffDays, weekday } from '@edustrux/shared/dates';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Info } from 'lucide-react';
@@ -6,6 +7,7 @@ import { errorMessage } from '../../components/PageState';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { Dialog } from '../../components/ui/Dialog';
+import { SelectField } from '../../components/ui/Field';
 import { useToast } from '../../components/ui/Toast';
 import { t } from '../../i18n';
 import { api, fieldErrors } from '../../lib/api';
@@ -18,7 +20,6 @@ import type { Child } from './parts';
 /** The preview reads lessons for up to this many days; a longer absence just isn't previewed. */
 const PREVIEW_DAYS = 62;
 const PREVIEW_LINES = 4;
-const REASON_MAX = 500;
 
 /**
  * Report an absence (Figma "Report an absence"): which child, from and to, an optional reason,
@@ -40,7 +41,7 @@ export function ReportAbsence({
   const [studentId, setStudentId] = useState(initial?.studentId ?? kids[0]?.id ?? '');
   const [from, setFrom] = useState(initial?.date ?? format.today);
   const [to, setTo] = useState('');
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState<AbsenceReason | ''>('');
   const child = kids.find((k) => k.id === studentId);
   const last = to || from;
   const ordered = Boolean(from) && last >= from;
@@ -56,7 +57,7 @@ export function ReportAbsence({
           studentId,
           startDate: from,
           ...(to && { endDate: to }),
-          ...(reason.trim() && { reason: reason.trim() }),
+          ...(reason && { reason }),
         },
       }),
     onSuccess: async () => {
@@ -154,23 +155,18 @@ export function ReportAbsence({
           </label>
         </div>
 
-        <label className="flex flex-col gap-1.5 text-label font-semibold text-text">
-          <span>
-            {t('portal.absence.reason')}{' '}
-            <small className="text-meta font-normal text-muted">{t('lesson.optional')}</small>
-          </span>
-          <textarea
-            value={reason}
-            maxLength={REASON_MAX}
-            rows={3}
-            placeholder={t('portal.absence.reasonPlaceholder')}
-            onChange={(e) => setReason(e.target.value)}
-            className="min-h-[90px] rounded-lg border border-border-strong px-2.5 py-2.5 text-label font-normal focus:outline-2 focus:outline-brand"
-          />
-          <i className="self-end text-meta font-normal text-muted not-italic">
-            {reason.length} / {REASON_MAX}
-          </i>
-        </label>
+        {/* A fixed choice, not free text, so no health detail is typed in (D-171). */}
+        <SelectField
+          label={t('portal.absence.reason')}
+          helper={t('lesson.optional')}
+          value={reason}
+          onChange={(e) => setReason(e.target.value as AbsenceReason | '')}
+          options={[
+            { value: '', label: t('portal.absence.noReason') },
+            ...ABSENCE_REASONS.map((r) => ({ value: r, label: t(`absence.reason.${r}`) })),
+          ]}
+          error={errors.reason}
+        />
 
         {child && previewable && sessions.isSuccess ? (
           <div className="flex gap-2.5 rounded-lg bg-info-soft p-3 text-info" aria-live="polite">

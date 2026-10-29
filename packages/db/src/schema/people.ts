@@ -15,7 +15,6 @@ export const families = sqliteTable(
     nameNorm: text('name_norm').notNull(),
     // The family's home branch. Staff limited to some branches reach only those branches' families.
     branchId: text('branch_id').notNull(),
-    address: text('address'),
     // The guardian invoices are addressed to: the first one added, until another is chosen.
     billingGuardianId: text('billing_guardian_id'),
     // What the family quotes on a bank transfer, copied onto its invoices. Set when the family
@@ -44,7 +43,6 @@ export const guardians = sqliteTable(
     lastName: text('last_name').notNull(),
     firstNameNorm: text('first_name_norm').notNull(),
     lastNameNorm: text('last_name_norm').notNull(),
-    relationship: text('relationship'),
     // Stored lower-case.
     email: text('email'),
     phone: text('phone'),
@@ -53,8 +51,6 @@ export const guardians = sqliteTable(
     preferredChannel: text('preferred_channel', { enum: CONTACT_CHANNELS })
       .notNull()
       .default('email'),
-    // A stored preference; nothing acts on it yet.
-    language: text('language'),
     emergencyContact: integer('emergency_contact', { mode: 'boolean' }).notNull().default(true),
     // The `parent` membership this guardian signs in with. null until they accept an invite.
     membershipId: text('membership_id'),
@@ -79,9 +75,6 @@ export const students = sqliteTable(
     lastName: text('last_name').notNull(),
     firstNameNorm: text('first_name_norm').notNull(),
     lastNameNorm: text('last_name_norm').notNull(),
-    // Local `YYYY-MM-DD`.
-    dateOfBirth: text('date_of_birth'),
-    notes: text('notes'),
   },
   (t) => [
     index('students_org_name_idx').on(t.orgId, t.lastNameNorm, t.firstNameNorm, t.id),

@@ -77,7 +77,6 @@ export const CreateEnrolmentRequest = z
         z.object({
           firstName: Name,
           lastName: Name,
-          dateOfBirth: LocalDate.optional(),
           classIds: z.array(z.string()).min(1).max(10),
         }),
       )
@@ -135,7 +134,6 @@ export const EnrolmentRequest = z
       z.object({
         firstName: z.string(),
         lastName: z.string(),
-        dateOfBirth: LocalDate.nullable(),
         classIds: z.array(z.string()),
       }),
     ),

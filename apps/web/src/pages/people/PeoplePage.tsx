@@ -12,7 +12,6 @@ import { Card } from '../../components/ui/Card';
 import { t } from '../../i18n';
 import { api, ApiError } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
 import {
   guardianName,
@@ -178,9 +177,9 @@ const FAMILY_GRID =
 const FAMILY_GRID_ONE_BRANCH =
   'md:grid md:grid-cols-[minmax(170px,1.35fr)_minmax(150px,1.2fr)_minmax(130px,1fr)_120px_20px]';
 const STUDENT_GRID =
-  'md:grid md:grid-cols-[minmax(200px,1.5fr)_minmax(120px,1fr)_100px_60px_120px_20px]';
+  'md:grid md:grid-cols-[minmax(200px,1.5fr)_minmax(120px,1fr)_100px_120px_20px]';
 const STUDENT_GRID_ONE_BRANCH =
-  'md:grid md:grid-cols-[minmax(200px,1.5fr)_minmax(120px,1fr)_100px_60px_20px]';
+  'md:grid md:grid-cols-[minmax(200px,1.5fr)_minmax(120px,1fr)_100px_20px]';
 
 function HeadRow({ grid, cells }: { grid: string; cells: string[] }) {
   return (
@@ -375,7 +374,6 @@ function StudentList({
   manyBranches: boolean;
 }) {
   const { membership } = useOrg();
-  const format = useFormat();
   const paths = usePeoplePaths();
   const branchName = namesOf(useBranches().data?.data);
   const gradeName = namesOf(useGradeLevels().data?.data);
@@ -416,7 +414,6 @@ function StudentList({
           t('people.col.student'),
           t('people.col.family'),
           t('people.col.grade'),
-          t('people.col.age'),
           ...(manyBranches ? [t('people.col.branch')] : []),
           '',
         ]}
@@ -444,9 +441,6 @@ function StudentList({
                 {t('people.familyName', { name: student.familyName })}
               </span>
               <span className="hidden md:block">{grade ? <Badge>{grade}</Badge> : null}</span>
-              <span className="hidden tabular-nums md:block">
-                {student.dateOfBirth ? format.age(student.dateOfBirth) : ''}
-              </span>
               {manyBranches ? (
                 <span className="hidden truncate md:block">{branchName(student.branchId)}</span>
               ) : null}
@@ -472,7 +466,6 @@ function SearchList({
   manyBranches: boolean;
 }) {
   const { membership } = useOrg();
-  const format = useFormat();
   const paths = usePeoplePaths();
   const branchName = namesOf(useBranches().data?.data);
   const results = useQuery({
@@ -534,9 +527,6 @@ function SearchList({
                     title={name}
                     meta={[
                       t('people.familyName', { name: student.familyName }),
-                      student.dateOfBirth
-                        ? t('people.age', { age: format.age(student.dateOfBirth) })
-                        : null,
                       branch(student.branchId),
                     ]
                       .filter(Boolean)

@@ -308,13 +308,11 @@ describe('the org is read once per request', () => {
       familyId: family.id,
       firstName: 'Aroha',
       lastName: 'Perera',
-      dateOfBirth: '2012-05-17',
       gradeLevelId: grade.id,
     });
     const student = addStudent.body as Row;
     const changeStudent = await api('PATCH', `/students/${student.id}`, {
       updatedAt: student.updatedAt,
-      dateOfBirth: '2012-05-18',
       gradeLevelId: grade.id,
     });
     const listStudents = await api('GET', '/students');

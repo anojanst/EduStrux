@@ -12,11 +12,9 @@ type Guardian = Row & {
   familyId: string;
   firstName: string;
   lastName: string;
-  relationship: string | null;
   email: string | null;
   phone: string | null;
   preferredChannel: string;
-  language: string | null;
   emergencyContact: boolean;
   membershipId: string | null;
 };
@@ -26,15 +24,12 @@ type Student = Row & {
   branchId: string;
   firstName: string;
   lastName: string;
-  dateOfBirth: string | null;
-  notes: string | null;
   gradeLevelId: string | null;
   grades: { academicYearId: string; gradeLevelId: string }[];
 };
 type Family = Row & {
   name: string;
   branchId: string;
-  address: string | null;
   billingGuardianId: string | null;
   guardians: Guardian[];
   students: Student[];
@@ -115,6 +110,7 @@ describe('families', () => {
   it('adds a family, reads, lists, updates and deletes it, with audit rows', async () => {
     const { api, main, lastAudit } = await setup();
 
+    // An address is no longer kept (D-171): one sent is ignored.
     const created = await api('POST', '/families', {
       name: '  Perera ',
       branchId: main.id,
@@ -125,7 +121,6 @@ describe('families', () => {
       id: expect.stringMatching(/^fam_/),
       name: 'Perera',
       branchId: main.id,
-      address: '4 Kowhai Street',
       billingGuardianId: null,
       // What the family quotes on a bank transfer: the end of its id, in capitals.
       bankReference: expect.stringMatching(/^[0-9A-Z]{8}$/),
@@ -146,10 +141,9 @@ describe('families', () => {
     const updated = await api('PATCH', `/families/${id}`, {
       updatedAt: created.body.updatedAt,
       name: 'Perera-Smith',
-      address: null,
     });
     expect(updated.status).toBe(200);
-    expect(updated.body).toMatchObject({ name: 'Perera-Smith', address: null });
+    expect(updated.body).toMatchObject({ name: 'Perera-Smith' });
 
     expect((await api('DELETE', `/families/${id}`)).status).toBe(204);
     expect((await api('GET', `/families/${id}`)).status).toBe(404);
@@ -161,11 +155,13 @@ describe('families', () => {
       'family.updated',
       'family.created',
     ]);
+    // The audit log keeps that the name changed, not the name (D-171).
     expect(audit[1]).toMatchObject({
       entityId: id,
-      before: { name: 'Perera', address: '4 Kowhai Street' },
-      after: { name: 'Perera-Smith', nameNorm: 'perera-smith', address: null },
+      before: { name: 'changed', nameNorm: 'changed' },
+      after: { name: 'changed', nameNorm: 'changed' },
     });
+    expect(audit[2]!.after).toMatchObject({ name: 'changed', branchId: main.id });
   });
 
   it('returns a family with its guardians and students', async () => {
@@ -221,7 +217,6 @@ describe('families', () => {
     [{}, ['name', 'branchId']],
     [{ name: '  ', branchId: 'brn_x' }, ['name']],
     [{ name: 'x'.repeat(121), branchId: 'brn_x' }, ['name']],
-    [{ name: 'Perera', branchId: 'brn_x', address: 'x'.repeat(501) }, ['address']],
   ])('rejects an invalid family %j with 400', async (body, fields) => {
     const { api } = await setup();
     const res = await api('POST', '/families', body);
@@ -329,11 +324,9 @@ describe('guardians', () => {
     const first = await api('POST', `/families/${family.id}/guardians`, {
       firstName: ' Mere ',
       lastName: 'Perera',
-      relationship: 'Mother',
       email: '  Mere.Perera@Example.COM ',
       phone: '+64 21 555 0100',
       preferredChannel: 'whatsapp',
-      language: 'mi',
       emergencyContact: false,
     });
     expect(first.status).toBe(201);
@@ -342,11 +335,9 @@ describe('guardians', () => {
       familyId: family.id,
       firstName: 'Mere',
       lastName: 'Perera',
-      relationship: 'Mother',
       email: 'mere.perera@example.com',
       phone: '+64 21 555 0100',
       preferredChannel: 'whatsapp',
-      language: 'mi',
       emergencyContact: false,
       membershipId: null,
       createdAt: expect.any(String),
@@ -355,7 +346,14 @@ describe('guardians', () => {
     expect((await lastAudit())[0]).toMatchObject({
       action: 'guardian.created',
       entityId: first.body.id,
-      after: { firstNameNorm: 'mere', billingContact: true },
+      after: {
+        firstName: 'changed',
+        firstNameNorm: 'changed',
+        email: 'changed',
+        phone: 'changed',
+        preferredChannel: 'whatsapp',
+        billingContact: true,
+      },
     });
 
     // The least a guardian needs is a name; the rest has defaults.
@@ -365,14 +363,17 @@ describe('guardians', () => {
     });
     expect(second.status).toBe(201);
     expect(second.body).toMatchObject({
-      relationship: null,
       email: null,
       phone: null,
       preferredChannel: 'email',
-      language: null,
       emergencyContact: true,
     });
-    expect((await lastAudit())[0]!.after).toMatchObject({ billingContact: false });
+    // A field with no value stays null: there's nothing personal to hide.
+    expect((await lastAudit())[0]!.after).toMatchObject({
+      email: null,
+      phone: null,
+      billingContact: false,
+    });
 
     const after = await getFamily(family.id);
     expect(after.billingGuardianId).toBe(first.body.id);
@@ -387,7 +388,6 @@ describe('guardians', () => {
     [{ ...named, email: 'not-an-email' }, ['email']],
     [{ ...named, phone: 'call me' }, ['phone']],
     [{ ...named, preferredChannel: 'pigeon' }, ['preferredChannel']],
-    [{ ...named, language: 'English' }, ['language']],
     [{ ...named, emergencyContact: 'yes' }, ['emergencyContact']],
   ])('rejects an invalid guardian %j with 400', async (body, fields) => {
     const { api, addFamily } = await setup();
@@ -398,25 +398,37 @@ describe('guardians', () => {
     expect(Object.keys(res.body.error.fields)).toEqual(fields);
   });
 
+  it('keeps that a guardian’s email changed in the audit log, not the email', async () => {
+    const { api, addFamily, addGuardian, lastAudit } = await setup();
+    const family = await addFamily();
+    const guardian = await addGuardian(family.id, { email: 'mere@example.com' });
+    const res = await api('PATCH', `/guardians/${guardian.id}`, {
+      updatedAt: guardian.updatedAt,
+      email: 'mere.perera@example.com',
+    });
+    expect(res.status).toBe(200);
+    expect((await lastAudit())[0]).toMatchObject({
+      action: 'guardian.updated',
+      before: { email: 'changed' },
+      after: { email: 'changed' },
+    });
+  });
+
   it('updates a guardian, clears fields with null, and keeps them in their family', async () => {
     const { api, addFamily, addGuardian, lastAudit } = await setup();
     const family = await addFamily();
     const other = await addFamily('Other');
     const guardian = await addGuardian(family.id, {
-      relationship: 'Mother',
       email: 'mere@example.com',
       phone: '021 555 0100',
-      language: 'en',
     });
 
     const updated = await api('PATCH', `/guardians/${guardian.id}`, {
       updatedAt: guardian.updatedAt,
       familyId: other.id,
       firstName: 'Mereana',
-      relationship: null,
       email: null,
       phone: null,
-      language: null,
       preferredChannel: 'sms',
       emergencyContact: false,
     });
@@ -425,36 +437,31 @@ describe('guardians', () => {
       familyId: family.id,
       firstName: 'Mereana',
       lastName: 'Perera',
-      relationship: null,
       email: null,
       phone: null,
-      language: null,
       preferredChannel: 'sms',
       emergencyContact: false,
     });
     // Only what changed, old and new (D-113). The family can't change, so it isn't there.
+    // Personal values are kept as "changed", a cleared one as null (D-171).
     expect((await lastAudit())[0]).toEqual(
       expect.objectContaining({
         action: 'guardian.updated',
         before: {
-          firstName: 'Mere',
-          firstNameNorm: 'mere',
-          relationship: 'Mother',
-          email: 'mere@example.com',
-          phone: '021 555 0100',
-          phoneNorm: '0215550100',
-          language: 'en',
+          firstName: 'changed',
+          firstNameNorm: 'changed',
+          email: 'changed',
+          phone: 'changed',
+          phoneNorm: 'changed',
           preferredChannel: 'email',
           emergencyContact: true,
         },
         after: {
-          firstName: 'Mereana',
-          firstNameNorm: 'mereana',
-          relationship: null,
+          firstName: 'changed',
+          firstNameNorm: 'changed',
           email: null,
           phone: null,
           phoneNorm: null,
-          language: null,
           preferredChannel: 'sms',
           emergencyContact: false,
         },
@@ -553,6 +560,7 @@ describe('students', () => {
       familyId: family.id,
       firstName: ' Aroha',
       lastName: 'Perera ',
+      // Neither is kept any more (D-171): sent, they are ignored.
       dateOfBirth: '2012-05-17',
       notes: 'Allergic to peanuts',
       gradeLevelId: year10.id,
@@ -565,8 +573,6 @@ describe('students', () => {
       branchId: main.id,
       firstName: 'Aroha',
       lastName: 'Perera',
-      dateOfBirth: '2012-05-17',
-      notes: 'Allergic to peanuts',
       gradeLevelId: year10.id,
       grades: [{ academicYearId: year.id, gradeLevelId: year10.id }],
       createdAt: expect.any(String),
@@ -577,7 +583,9 @@ describe('students', () => {
       action: 'student.created',
       entityId: id,
       after: {
-        firstNameNorm: 'aroha',
+        firstName: 'changed',
+        firstNameNorm: 'changed',
+        familyId: family.id,
         grade: { academicYearId: year.id, gradeLevelId: year10.id },
       },
     });
@@ -591,15 +599,11 @@ describe('students', () => {
     const updated = await api('PATCH', `/students/${id}`, {
       updatedAt: created.body.updatedAt,
       firstName: 'Aroha-Rose',
-      dateOfBirth: null,
-      notes: null,
     });
     expect(updated.status).toBe(200);
     expect(updated.body).toMatchObject({
       firstName: 'Aroha-Rose',
       lastName: 'Perera',
-      dateOfBirth: null,
-      notes: null,
       gradeLevelId: year10.id,
     });
 
@@ -618,8 +622,6 @@ describe('students', () => {
     const family = await addFamily();
     const student = await addStudent(family.id);
     expect(student).toMatchObject({
-      dateOfBirth: null,
-      notes: null,
       gradeLevelId: null,
       grades: [],
     });
@@ -630,9 +632,6 @@ describe('students', () => {
     [{}, ['familyId', 'firstName', 'lastName']],
     [{ ...names, firstName: '' }, ['firstName']],
     [{ ...names, lastName: 'x'.repeat(81) }, ['lastName']],
-    [{ ...names, dateOfBirth: '2012-02-30' }, ['dateOfBirth']],
-    [{ ...names, dateOfBirth: '17/05/2012' }, ['dateOfBirth']],
-    [{ ...names, notes: 'x'.repeat(2001) }, ['notes']],
     [{ ...names, academicYearId: 'acy_x' }, ['academicYearId']],
   ])('rejects an invalid student %j with 400', async (body, fields) => {
     const { api } = await setup();
@@ -640,29 +639,6 @@ describe('students', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_failed');
     expect(Object.keys(res.body.error.fields)).toEqual(fields);
-  });
-
-  it('rejects a date of birth in the future, on create and on update', async () => {
-    const { api, addFamily, addStudent } = await setup();
-    const family = await addFamily();
-    const tomorrow = addDays(today(), 1);
-
-    const created = await api('POST', '/students', {
-      familyId: family.id,
-      firstName: 'Not',
-      lastName: 'Yet',
-      dateOfBirth: tomorrow,
-    });
-    expect(created.status).toBe(400);
-    expect(created.body.error.fields).toEqual({ dateOfBirth: ['In the future'] });
-
-    const student = await addStudent(family.id, { dateOfBirth: today() });
-    const patched = await api('PATCH', `/students/${student.id}`, {
-      updatedAt: student.updatedAt,
-      dateOfBirth: tomorrow,
-    });
-    expect(patched.status).toBe(400);
-    expect(patched.body.error.fields).toEqual({ dateOfBirth: ['In the future'] });
   });
 
   it('returns 404 for a family, grade level or academic year the org does not have', async () => {
@@ -1063,7 +1039,7 @@ describe('org isolation', () => {
       bob.api('PATCH', `/guardians/${guardian.id}`, { updatedAt: guardian.updatedAt, phone: null }),
       bob.api('DELETE', `/guardians/${guardian.id}`),
       bob.api('GET', `/students/${student.id}`),
-      bob.api('PATCH', `/students/${student.id}`, { updatedAt: student.updatedAt, notes: 'X' }),
+      bob.api('PATCH', `/students/${student.id}`, { updatedAt: student.updatedAt, firstName: 'X' }),
       bob.api('DELETE', `/students/${student.id}`),
       bob.api('POST', '/students', { familyId: family.id, firstName: 'A', lastName: 'B' }),
       bob.api('GET', `/students?familyId=${family.id}`),
@@ -1125,7 +1101,7 @@ describe('permissions', () => {
       as('POST', '/students', { familyId: t.mainFamily.id, firstName: 'A', lastName: 'B' }),
       as('PATCH', `/students/${t.mainStudent.id}`, {
         updatedAt: t.mainStudent.updatedAt,
-        notes: 'X',
+        firstName: 'X',
       }),
       as('DELETE', `/students/${t.mainStudent.id}`),
     ]);
@@ -1179,41 +1155,6 @@ describe('permissions', () => {
     expect(await familyNames(stranger.as)).toEqual([]);
     expect(await studentNames(stranger.as)).toEqual([]);
     expect((await stranger.as('GET', `/families/${t.mainFamily.id}`)).status).toBe(404);
-  });
-
-  // A student's notes are for staff. Parents get students without them: the field is left out
-  // rather than null, which means there are none (D-126). Teachers' view is in enrolment.test.
-  it('shows a student’s notes to staff but not to parents, wherever the student is', async () => {
-    const t = await twoBranches();
-    const nia = await t.addStudent(t.mainFamily.id, { firstName: 'Nia', notes: 'Asthma inhaler' });
-    const parent = await t.member('parent');
-    await db()
-      .update(guardians)
-      .set({ membershipId: parent.id })
-      .where(eq(guardians.id, t.mainGuardian.id));
-    /** Nia as the caller reads her in each of the four reads that carry a student. */
-    const notesSeen = async (as: As) => {
-      const [list, one, families, family] = await Promise.all([
-        as('GET', '/students'),
-        as('GET', `/students/${nia.id}`),
-        as('GET', '/families'),
-        as('GET', `/families/${t.mainFamily.id}`),
-      ]);
-      return [
-        ...(list.body.data as Student[]),
-        one.body as Student,
-        ...(families.body.data as Family[]).flatMap((f) => f.students),
-        ...(family.body as Family).students,
-      ]
-        .filter((s) => s.id === nia.id)
-        .map((s) => ('notes' in s ? s.notes : 'hidden'));
-    };
-
-    expect(await notesSeen(parent.as)).toEqual(Array(4).fill('hidden'));
-    expect(await notesSeen(t.api)).toEqual(Array(4).fill('Asthma inhaler'));
-    for (const role of ['branch_manager', 'front_desk'] as Role[]) {
-      expect(await notesSeen((await t.member(role)).as)).toEqual(Array(4).fill('Asthma inhaler'));
-    }
   });
 
   it.each(['branch_manager', 'front_desk'] as Role[])(

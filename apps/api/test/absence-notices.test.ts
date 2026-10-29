@@ -134,7 +134,7 @@ async function setup() {
 
 const roster = async (as: As, sessionId: string) =>
   (await as('GET', `/sessions/${sessionId}/attendance`)).body.records as RosterRecord[];
-/** Who is flagged on a roster, as "Mia: Unwell (parent)", "Ari: -" for nobody. */
+/** Who is flagged on a roster, as "Mia: sick (parent)", "Ari: -" for nobody. */
 const flags = async (as: As, sessionId: string) =>
   (await roster(as, sessionId)).map(
     (r) =>
@@ -149,7 +149,7 @@ describe('absence notices', () => {
       studentId: mia.id,
       startDate: day(1),
       endDate: day(3),
-      reason: 'Family trip',
+      reason: 'holiday',
     });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({
@@ -159,7 +159,7 @@ describe('absence notices', () => {
       studentLastName: 'Perera',
       startDate: day(1),
       endDate: day(3),
-      reason: 'Family trip',
+      reason: 'holiday',
       source: 'staff',
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
@@ -204,12 +204,9 @@ describe('absence notices', () => {
       { studentId: S, startDate: '2026-01-01', endDate: '2027-01-02' },
       ['endDate'],
     ],
+    // A fixed reason, not free text (D-171).
     ['an empty reason', { studentId: S, startDate: '2026-01-01', reason: '' }, ['reason']],
-    [
-      'a reason over 500 characters',
-      { studentId: S, startDate: '2026-01-01', reason: 'x'.repeat(501) },
-      ['reason'],
-    ],
+    ['a free-text reason', { studentId: S, startDate: '2026-01-01', reason: 'Unwell' }, ['reason']],
   ])('rejects %s with 400', async (_what, body, fields) => {
     const { api } = await setup();
     const res = await api('POST', '/absence-notices', body);
@@ -283,17 +280,17 @@ describe('on the roster', () => {
       studentId: t.mia.id,
       startDate: day(1),
       endDate: day(2),
-      reason: 'Unwell',
+      reason: 'sick',
     });
 
     expect(await roster(t.api, mainTomorrow)).toEqual([
       expect.objectContaining({
         studentFirstName: 'Mia',
         status: null,
-        absenceNotice: { id: notice.body.id, reason: 'Unwell', source: 'staff' },
+        absenceNotice: { id: notice.body.id, reason: 'sick', source: 'staff' },
       }),
     ]);
-    expect(await flags(t.api, albanyTomorrow)).toEqual(['Ari: -', 'Mia: Unwell (staff)']);
+    expect(await flags(t.api, albanyTomorrow)).toEqual(['Ari: -', 'Mia: sick (staff)']);
     // Outside its dates.
     expect(await flags(t.api, albanyLater)).toEqual(['Ari: -', 'Mia: -']);
   });
@@ -312,14 +309,14 @@ describe('on the roster', () => {
       studentId: t.mia.id,
       startDate: day(0),
       endDate: day(7),
-      reason: 'Away',
+      reason: 'holiday',
     });
     await t.parent.as('POST', '/portal/absence-notices', {
       studentId: t.mia.id,
       startDate: day(1),
-      reason: 'Dentist',
+      reason: 'other',
     });
-    expect(await flags(t.api, session)).toEqual(['Mia: Dentist (parent)']);
+    expect(await flags(t.api, session)).toEqual(['Mia: other (parent)']);
   });
 
   it('keeps the flag beside a mark, and in the roster a mark answers with', async () => {
@@ -348,15 +345,15 @@ describe('the parent portal', () => {
     const res = await t.parent.as('POST', '/portal/absence-notices', {
       studentId: t.mia.id,
       startDate: day(1),
-      reason: 'Unwell',
+      reason: 'sick',
     });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ studentId: t.mia.id, source: 'parent', reason: 'Unwell' });
+    expect(res.body).toMatchObject({ studentId: t.mia.id, source: 'parent', reason: 'sick' });
     expect((await t.lastAudit()).actorUserId).toBe(t.parent.userId);
 
     // Staff see it on the roster; the parent sees it on their own child's record only.
-    expect(await flags(t.api, session)).toEqual(['Ari: -', 'Mia: Unwell (parent)']);
-    expect(await flags(t.parent.as, session)).toEqual(['Mia: Unwell (parent)']);
+    expect(await flags(t.api, session)).toEqual(['Ari: -', 'Mia: sick (parent)']);
+    expect(await flags(t.parent.as, session)).toEqual(['Mia: sick (parent)']);
 
     // Their children's notices only, through the staff list.
     await t.api('POST', '/absence-notices', { studentId: t.ari.id, startDate: day(1) });

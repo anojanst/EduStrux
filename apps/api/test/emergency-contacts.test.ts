@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { call, db, newOrg, newUser } from './helpers';
 
 // A class's emergency contacts (D-112): every child with an active enrolment in the class, with
-// the guardians of their family marked as emergency contacts. Name, relationship and phone only.
+// the guardians of their family marked as emergency contacts. Name and phone only.
 
 const TZ = 'Pacific/Auckland'; // sampleOrg's timezone
 const firstDay = () => addDays(localNow(TZ).date, -30);
@@ -14,7 +14,6 @@ type Row = { id: string };
 type Contact = {
   firstName: string;
   lastName: string;
-  relationship: string | null;
   phone: string | null;
 };
 type OfStudent = {
@@ -73,7 +72,6 @@ async function setup() {
   const mere = await make(`/families/${mainFamily.id}/guardians`, {
     firstName: 'Mere',
     lastName: 'Perera',
-    relationship: 'Mother',
     email: 'mere.perera@example.com',
     phone: '+64 21 555 0100',
   });
@@ -122,10 +120,9 @@ const path = (classId: string) => `/classes/${classId}/emergency-contacts`;
 const MERE = {
   firstName: 'Mere',
   lastName: 'Perera',
-  relationship: 'Mother',
   phone: '+64 21 555 0100',
 };
-const ANA = { firstName: 'Ana', lastName: 'Ngata', relationship: null, phone: null };
+const ANA = { firstName: 'Ana', lastName: 'Ngata', phone: null };
 /** Who a caller sees on a class's sheet, as "Mia: Mere", "Zoe: -" for nobody to call. */
 const sheet = async (as: As, classId: string) =>
   ((await as('GET', path(classId))).body.students as OfStudent[]).map(

@@ -57,8 +57,6 @@ export function useFormat() {
     time: (time: string) => formatTime(time, locale),
     timeRange: (start: string, end: string) =>
       `${formatTime(start, locale)}–${formatTime(end, locale)}`,
-    /** Whole years from a date of birth to today. */
-    age: (dateOfBirth: string) => ageOn(dateOfBirth, today),
     daysUntil: (date: string) => diffDays(today, date),
     weekday: (weekday: number) => weekdayName(weekday, locale),
     /** "Monday" for ISO weekday 1. */
@@ -74,12 +72,6 @@ export function useFormat() {
     /** "November 2026" for the billing month `2026-11`. */
     month: (month: string) => monthYear.format(new Date(`${month}-01T00:00:00Z`)),
   };
-}
-
-export function ageOn(dateOfBirth: string, today: string) {
-  const [by, bm, bd] = dateOfBirth.split('-').map(Number) as [number, number, number];
-  const [ty, tm, td] = today.split('-').map(Number) as [number, number, number];
-  return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
 
 /** "Mon" (or "Monday") for ISO weekday 1, in the locale. */

@@ -653,8 +653,6 @@ describe('permissions', () => {
     expect(await studentNames(as)).toEqual(['Mia']);
     const mia = await as('GET', `/students/${t.mia.id}`);
     expect(mia.status).toBe(200);
-    // Unlike a parent, a teacher reads the notes staff keep on a student (D-126).
-    expect(mia.body).toHaveProperty('notes', null);
     expect((await as('GET', `/students/${t.sam.id}`)).status).toBe(404);
     expect((await as('GET', `/students/${t.ari.id}`)).status).toBe(404);
     const families = (await as('GET', '/families')).body.data as Family[];

@@ -18,7 +18,7 @@ import {
 export type FamilyRow = typeof families.$inferSelect;
 export type NewFamilyRow = typeof families.$inferInsert;
 export type FamilyChanges = Partial<
-  Pick<NewFamilyRow, 'name' | 'nameNorm' | 'branchId' | 'address' | 'billingGuardianId'>
+  Pick<NewFamilyRow, 'name' | 'nameNorm' | 'branchId' | 'billingGuardianId'>
 >;
 export type GuardianRow = typeof guardians.$inferSelect;
 export type NewGuardianRow = typeof guardians.$inferInsert;
@@ -28,10 +28,7 @@ export type GuardianChanges = Partial<
 export type StudentRow = typeof students.$inferSelect;
 export type NewStudentRow = typeof students.$inferInsert;
 export type StudentChanges = Partial<
-  Pick<
-    NewStudentRow,
-    'firstName' | 'lastName' | 'firstNameNorm' | 'lastNameNorm' | 'dateOfBirth' | 'notes'
-  >
+  Pick<NewStudentRow, 'firstName' | 'lastName' | 'firstNameNorm' | 'lastNameNorm'>
 >;
 export type GradeRow = typeof studentGrades.$inferSelect;
 export type NewGradeRow = typeof studentGrades.$inferInsert;
@@ -600,7 +597,7 @@ export function studentsByName(ctx: OrgCtx, ids: Ids) {
 
 /**
  * The guardians marked as emergency contacts in these students' families, oldest first, with
- * only what a call needs: name, relationship and phone (D-112).
+ * only what a call needs: name and phone (D-112).
  */
 export function emergencyContacts(ctx: OrgCtx, studentIds: Ids) {
   return ctx.db
@@ -608,7 +605,6 @@ export function emergencyContacts(ctx: OrgCtx, studentIds: Ids) {
       familyId: guardians.familyId,
       firstName: guardians.firstName,
       lastName: guardians.lastName,
-      relationship: guardians.relationship,
       phone: guardians.phone,
     })
     .from(guardians)
@@ -850,7 +846,6 @@ export function matchStudents(ctx: OrgCtx, match: PersonMatch, limit: number, re
       branchId: families.branchId,
       firstName: students.firstName,
       lastName: students.lastName,
-      dateOfBirth: students.dateOfBirth,
     })
     .from(students)
     .innerJoin(families, eq(families.id, students.familyId))
@@ -894,7 +889,6 @@ export function matchGuardians(ctx: OrgCtx, match: PersonMatch, limit: number, r
       branchId: families.branchId,
       firstName: guardians.firstName,
       lastName: guardians.lastName,
-      relationship: guardians.relationship,
       email: guardians.email,
       phone: guardians.phone,
       phoneNorm: guardians.phoneNorm,
@@ -1189,7 +1183,6 @@ export function eraseStatements(
       .set({
         name: `${ERASED} family`,
         nameNorm: 'erased family',
-        address: null,
         erasedAt: at,
         deletedAt: gone(families.deletedAt),
       })
@@ -1201,11 +1194,9 @@ export function eraseStatements(
         lastName: 'guardian',
         firstNameNorm: 'erased',
         lastNameNorm: 'guardian',
-        relationship: null,
         email: null,
         phone: null,
         phoneNorm: null,
-        language: null,
         membershipId: null,
         deletedAt: gone(guardians.deletedAt),
       })
@@ -1217,8 +1208,6 @@ export function eraseStatements(
         lastName: 'student',
         firstNameNorm: 'erased',
         lastNameNorm: 'student',
-        dateOfBirth: null,
-        notes: null,
         deletedAt: gone(students.deletedAt),
       })
       .where(and(eq(students.orgId, ctx.orgId), eq(students.familyId, familyId))),
