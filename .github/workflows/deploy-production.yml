@@ -57,9 +57,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # `deploy:production` never creates resources (D-065).
-      - name: Deploy the Worker
+      # `deploy:production` builds the web app, then deploys the Worker with it. It never creates
+      # resources (D-065). The publishable key is public and goes into the build; it's the
+      # repository variable VITE_CLERK_PUBLISHABLE_KEY, and the build stops without it.
+      - name: Build the web app and deploy the Worker
         run: pnpm deploy:production
         env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
