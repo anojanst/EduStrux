@@ -14,7 +14,7 @@ endpoints:
   - PATCH /students/{id}
   - POST /absence-notices
 branch: task/tui-115-116-least-data
-pr:
+pr: 76
 ---
 
 # TUI-115 Drop the six non-crucial personal fields
