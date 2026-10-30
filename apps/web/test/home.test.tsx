@@ -170,6 +170,34 @@ describe('the staff Home', () => {
     expect(screen.queryByText('Set up your centre')).toBeNull();
   });
 
+  it('keeps the right column useful: quick actions and the plan (TUI-134)', async () => {
+    stubHome({
+      [`${API}/billing/subscription`]: {
+        body: { plan: 'small', status: 'active', studentLimit: 50, activeStudents: 10 },
+      },
+    });
+    renderRoutes(routes, '/o/bright-minds', inOrg('owner', { ...org, setupCompletedAt: at }));
+
+    const actions = within(screen.getByRole('heading', { name: 'Quick actions' }).parentElement!);
+    expect(actions.getAllByRole('button').map((b) => b.querySelector('b')?.textContent)).toEqual([
+      'Add family',
+      'Add class',
+      'Record payment',
+      'Run invoices',
+    ]);
+    expect(await screen.findByText('10 of 50 active students on your plan.')).toBeVisible();
+    expect(screen.getByText('Small plan')).toBeVisible();
+    expect(screen.queryByText('You’re nearing your student limit')).toBeNull();
+  });
+
+  it('gives other staff quick actions without the plan', async () => {
+    const calls = stubHome({ [`${API}/reports/dashboard`]: dashboard({ money: undefined }) });
+    renderRoutes(routes, '/o/bright-minds', inOrg('front_desk'));
+    expect(await screen.findByRole('heading', { name: 'Quick actions' })).toBeVisible();
+    expect(screen.queryByText('Your plan')).toBeNull();
+    expect(calls.some((c) => c.key.includes('/billing/subscription'))).toBe(false);
+  });
+
   it('opens the oldest unmarked lesson from Attendance to take', async () => {
     stubHome();
     renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
