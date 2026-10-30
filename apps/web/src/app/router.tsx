@@ -25,7 +25,9 @@ import { PortalInvoices } from '../pages/portal/PortalInvoices';
 import { PortalMessages, PortalMore } from '../pages/portal/PortalMessages';
 import { PortalTimetable } from '../pages/portal/PortalTimetable';
 import { PricingPage } from '../pages/settings/PricingPage';
+import { OrganisationPage } from '../pages/settings/OrganisationPage';
 import { PrivacyPage } from '../pages/settings/PrivacyPage';
+import { SetupPage } from '../pages/setup/SetupPage';
 import { MessagesPage } from '../pages/messages/MessagesPage';
 import { TermsPage } from '../pages/settings/TermsPage';
 import { ThemePage } from '../pages/settings/ThemePage';
@@ -140,6 +142,8 @@ export const routes = [
               { path: 'settings/pricing', element: <PricingPage /> },
               { path: 'settings/theme', element: <ThemePage /> },
               { path: 'settings/privacy', element: <PrivacyPage /> },
+              { path: 'settings/organisation', element: <OrganisationPage /> },
+              { path: 'setup', element: <SetupPage /> },
               { path: 'profile', element: <ProfilePage /> },
               { path: '*', element: <NotFoundPage /> },
             ],

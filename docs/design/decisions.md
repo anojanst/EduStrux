@@ -5748,3 +5748,56 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
     and D-160's note that an invited parent sets a password. Extends D-021 from parents to
     everyone.
 - **Tasks:** TUI-72, TUI-80.
+
+## D-193 · 2026-10-30 · The setup wizard and Settings › Organisation
+
+- **Context:** Creating a centre (D-162) asks only its name and regional defaults; terms, grade
+  levels, subjects and tax were left for the full onboarding wizard (TUI-64). The org profile had
+  no screen of its own.
+- **Decision (stated by the owner):** the wizard is step-by-step pages, one step a page, built
+  straight to the design system without a Figma design.
+- **Decision (taken during the build):**
+  - **Where:** `/o/:orgSlug/setup`, owner only (`org:write`); other roles see the permission
+    message. Creating a centre from `/onboarding` now lands on the wizard instead of Home.
+  - **Steps:** five, the step in the URL (`?step=calendar|grades|subjects|tax|class`): Terms,
+    Grade levels, Subjects, Tax, First class. A numbered step list with a check on done steps on
+    the left on wide screens, and a "Set up · Step n of 5" overline on every screen. Each step has
+    Back, Skip for now, and Save and continue (or Continue).
+  - **Done means the data exists:** a step is done once the org has any academic year, grade
+    level, subject, tax rate or class. The wizard keeps no state of its own, in the API or
+    elsewhere. A done step shows "Already set up" with a summary and a link to the settings
+    screen that changes it.
+  - **Terms:** "By term" (a year name, start and end, defaulted to this calendar year in the
+    org's time zone, and rows for Term 1 to 4; a term with empty dates is skipped) or "Rolling
+    monthly", which saves nothing (terms are optional, D-036). Saves the year, then each term;
+    terms that fail are listed and the year stays.
+  - **Grade levels:** presets Year 1–13, Year 1–12, Grade 1–12, Grade 1–13 and Class 1–12,
+    defaulted by country (NZ, GB: Year 1–13; AU, IE: Year 1–12; US, CA, ZA, PH, KE, AE: Grade
+    1–12; LK: Grade 1–13; IN, PK, BD: Class 1–12; anywhere else: Year 1–13). Each is an editable
+    chip, plus "Add a grade level". Saved one by one in order, which becomes the grade order.
+  - **Subjects:** 11 suggestions as toggle chips (Mathematics, English and Science preselected)
+    plus the centre's own. Names that fail to save are listed and the step stays.
+  - **Tax:** "No tax" (the default: tuition is often exempt; saves nothing) or "We charge tax":
+    the name defaulted by country (GST for NZ, AU, SG, IN, CA; SST for MY; Sales tax for US; VAT
+    anywhere else), the rate as a percentage with no suggested value, "Prices include tax" (on by
+    default) and the tax number. The rate is saved as the org's default (`isDefault: true`,
+    D-080), the tax number with `PATCH /orgs/{orgId}`.
+  - **First class:** opens the existing Add class dialog (which can create the course); saving
+    goes to the class's schedule as before. Once a class exists the step shows "Go to Home".
+  - **Home:** the Getting started card (shown while there are no classes) gives the owner
+    "Finish setting up your centre", linking to the wizard, in place of "Add your courses" and
+    "Add your first class". Other staff keep those two.
+  - **Settings › Organisation** (`/settings/organisation`, a nav item for `org:write` before
+    Theme): centre name, single-tutor mode, tax number, country (the locale follows it,
+    `en-<country>`, D-162), date format and time zone. Sends only the changed fields with
+    `updatedAt`; a stale save (409) offers Reload, and a 422 (single-tutor mode with more than one
+    branch, D-032) shows under the switch. Currency is shown read-only, since prices, invoices
+    and payments are in it. The slug can't be changed (it's in every URL). Colours stay on
+    Settings › Theme (D-165). No logo upload: the API has no logo field.
+- **Consequences:**
+  - No new endpoints, tables or migration: the wizard uses `POST /academic-years`, `/terms`,
+    `/grade-levels`, `/subjects`, `/tax-rates` and `PATCH /orgs/{orgId}`.
+  - Each item is its own `POST`, so a step can half-save; the wizard lists what failed and the
+    rest stays. Coming back later shows the steps already done.
+  - Fulfils D-162's note that terms, grade levels and subjects wait for the onboarding wizard.
+- **Tasks:** TUI-64.

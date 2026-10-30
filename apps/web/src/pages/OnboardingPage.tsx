@@ -27,7 +27,7 @@ const DATE_FORMATS: DateFormat[] = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
 /**
  * The first step after a centre owner signs up: `POST /orgs` makes the org with its Main branch
  * and starts the 14-day trial (D-031, D-153). Only what the org can't be made without is asked
- * here; terms, grades and subjects come in the full wizard (TUI-64).
+ * here; the setup wizard it opens next asks for terms, grades, subjects and tax (TUI-64).
  */
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -48,7 +48,7 @@ export function OnboardingPage() {
     onSuccess: async (org) => {
       await queryClient.invalidateQueries({ queryKey: meKey });
       rememberOrg(org.slug);
-      navigate(orgPath(org.slug), { replace: true });
+      navigate(`${orgPath(org.slug)}/setup`, { replace: true });
     },
   });
   const errors = fieldErrors(create.error);

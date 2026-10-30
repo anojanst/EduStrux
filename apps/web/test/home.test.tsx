@@ -172,7 +172,7 @@ describe('the staff Home', () => {
     expect(await screen.findByText('All caught up')).toBeVisible();
   });
 
-  it('walks a new centre through its first steps', async () => {
+  const emptyCentre = () =>
     stubHome({
       [`${API}/reports/dashboard`]: dashboard({
         families: 0,
@@ -184,15 +184,32 @@ describe('the staff Home', () => {
       }),
       [`${API}/sessions?from=${today}&to=${today}&limit=200`]: page([]),
     });
+
+  it('walks a new centre through its first steps', async () => {
+    emptyCentre();
     renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
+
+    expect(await screen.findByText('Getting started')).toBeVisible();
+    // The owner finishes the setup wizard (TUI-64), which ends with the first class.
+    expect(screen.getByRole('link', { name: /Finish setting up your centre/ })).toHaveAttribute(
+      'href',
+      '/o/bright-minds/setup',
+    );
+    expect(screen.queryByRole('link', { name: /Add your first class/ })).toBeNull();
+    expect(screen.getByRole('link', { name: /Invite your team/ })).toBeVisible();
+    expect(screen.getAllByText('No lessons today')[0]).toBeVisible();
+  });
+
+  it('sends other staff in a new centre to courses and classes, not the wizard', async () => {
+    emptyCentre();
+    renderRoutes(routes, '/o/bright-minds', inOrg('branch_manager'));
 
     expect(await screen.findByText('Getting started')).toBeVisible();
     expect(screen.getByRole('link', { name: /Add your first class/ })).toHaveAttribute(
       'href',
       '/o/bright-minds/classes',
     );
-    expect(screen.getByRole('link', { name: /Invite your team/ })).toBeVisible();
-    expect(screen.getAllByText('No lessons today')[0]).toBeVisible();
+    expect(screen.queryByRole('link', { name: /Finish setting up/ })).toBeNull();
   });
 
   it('gives an accountant their invoices and payments, without the dashboard', async () => {
