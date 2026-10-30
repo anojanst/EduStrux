@@ -19,7 +19,6 @@ export function clerkMessage(error: unknown): string {
       return t('code.incorrect');
     }
     if (first?.code === 'verification_expired') return t('code.expired');
-    if (first?.code === 'form_password_incorrect') return t('security.password.wrongCurrent');
     if (first?.code === 'form_identifier_exists') return t('security.email.taken');
     if (first) return first.longMessage ?? first.message;
   }

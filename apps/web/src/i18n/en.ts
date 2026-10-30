@@ -342,7 +342,6 @@ export const en = {
   'reverify.title': 'Confirm it’s you',
   'reverify.sending': 'Sending a code to your email…',
   'reverify.codeIntro': 'For your security, enter the code we sent to {email}.',
-  'reverify.passwordIntro': 'For your security, enter your password.',
   'reverify.needsTwoStep':
     'Your account also needs a two-step code, which this page can’t ask for yet.',
   'reverify.unavailable': 'We couldn’t confirm it’s you. Sign out and back in, then try again.',
@@ -369,25 +368,6 @@ export const en = {
   'security.email.removeTitle': 'Remove this email address?',
   'security.email.removeBody': 'You won’t be able to sign in with {email} any more.',
   'security.email.removed': 'Email address removed.',
-
-  'security.password.title': 'Password',
-  'security.password.noneBody':
-    'You sign in with a code sent to your email. You can add a password if you prefer.',
-  'security.password.hasBody':
-    'You can sign in with your password, or with a code sent to your email.',
-  'security.password.setAction': 'Set a password',
-  'security.password.change': 'Change password',
-  'security.password.current': 'Current password',
-  'security.password.new': 'New password',
-  'security.password.hint': 'At least 8 characters. Longer is stronger.',
-  'security.password.tooShort': 'Use at least 8 characters.',
-  'security.password.okay': 'Good. A longer password with numbers and symbols is stronger.',
-  'security.password.strong': 'Strong password.',
-  'security.password.signOutOthers': 'Also sign out of my other devices',
-  'security.password.save': 'Save password',
-  'security.password.set': 'Your password is set.',
-  'security.password.changed': 'Your password is changed.',
-  'security.password.wrongCurrent': 'Your current password isn’t right.',
 
   'security.devices.title': 'Signed-in devices',
   'security.devices.body': 'Devices where you’re currently signed in.',

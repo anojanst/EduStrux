@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Button } from '../../components/ui/Button';
 import { CodeInput } from '../../components/ui/CodeInput';
 import { Dialog } from '../../components/ui/Dialog';
-import { TextField } from '../../components/ui/Field';
 import { Notice } from '../../components/ui/Notice';
 import { Spinner } from '../../components/ui/Spinner';
 import { t } from '../../i18n';
@@ -18,8 +17,7 @@ type Pending = {
 const ReverifyContext = createContext<(pending: Pending) => void>(() => {});
 
 /**
- * A change Clerk counts as sensitive (adding or removing an email, a password, deleting the
- * account). When Clerk wants fresh proof of who this is, our "Confirm it's you" dialog asks for
+ * A change Clerk counts as sensitive (adding or removing an email, deleting the account). When Clerk wants fresh proof of who this is, our "Confirm it's you" dialog asks for
  * it, then Clerk runs the change again. When it doesn't, the change just runs.
  */
 // Any async function, as Clerk's own hook takes.
@@ -43,26 +41,23 @@ type Factor = { strategy: string; emailAddressId?: string; safeIdentifier?: stri
 type Step =
   | { kind: 'starting' }
   | { kind: 'code'; emailAddressId: string; to: string }
-  | { kind: 'password' }
   | { kind: 'unavailable' };
 
 function ReverifyDialog({ pending, onDone }: { pending: Pending | null; onDone: () => void }) {
   const { session } = useSession();
   const [step, setStep] = useState<Step>({ kind: 'starting' });
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resendIn, restartResend] = useCountdown(30);
 
-  // A new request starts over: Clerk says which ways of proving it it accepts, and an emailed
-  // code is preferred, as parents may have no password.
+  // A new request starts over: Clerk says which ways of proving it it accepts. Everyone signs in
+  // with an emailed code (D-192), so that's the one asked for.
   useEffect(() => {
     if (!pending || !session) return;
     let live = true;
     setStep({ kind: 'starting' });
     setCode('');
-    setPassword('');
     setError(null);
     void (async () => {
       try {
@@ -84,8 +79,6 @@ function ReverifyDialog({ pending, onDone }: { pending: Pending | null; onDone: 
             emailAddressId: email.emailAddressId,
             to: email.safeIdentifier ?? '',
           });
-        } else if (factors.some((f) => f.strategy === 'password')) {
-          setStep({ kind: 'password' });
         } else {
           setStep({ kind: 'unavailable' });
         }
@@ -112,10 +105,7 @@ function ReverifyDialog({ pending, onDone }: { pending: Pending | null; onDone: 
     setBusy(true);
     setError(null);
     try {
-      const result =
-        step.kind === 'password'
-          ? await session.attemptFirstFactorVerification({ strategy: 'password', password })
-          : await session.attemptFirstFactorVerification({ strategy: 'email_code', code });
+      const result = await session.attemptFirstFactorVerification({ strategy: 'email_code', code });
       if (result.status === 'complete') {
         pending.complete();
         onDone();
@@ -143,8 +133,7 @@ function ReverifyDialog({ pending, onDone }: { pending: Pending | null; onDone: 
     }
   }
 
-  const ready =
-    (step.kind === 'code' && code.length === 6) || (step.kind === 'password' && password !== '');
+  const ready = step.kind === 'code' && code.length === 6;
 
   return (
     <Dialog
@@ -172,19 +161,6 @@ function ReverifyDialog({ pending, onDone }: { pending: Pending | null; onDone: 
           <CodeInput value={code} onChange={setCode} invalid={error !== null} />
           {error ? <p className="text-meta text-danger">{error}</p> : null}
           <ResendButton left={resendIn} onResend={() => void resend()} />
-        </div>
-      ) : step.kind === 'password' ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-body text-muted">{t('reverify.passwordIntro')}</p>
-          <TextField
-            label={t('security.password.current')}
-            type="password"
-            autoComplete="current-password"
-            autoFocus
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error ?? undefined}
-          />
         </div>
       ) : (
         <Notice tone="danger">{error ?? t('reverify.unavailable')}</Notice>

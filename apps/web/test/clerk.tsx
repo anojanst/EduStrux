@@ -53,7 +53,6 @@ export const clerk = {
   lastName: null as string | null,
   emails: [] as Email[],
   primaryEmailId: null as string | null,
-  passwordEnabled: false,
   hasImage: false,
   deleteSelfEnabled: true,
   sessions: [] as ReturnType<typeof makeSession>[],
@@ -62,7 +61,6 @@ export const clerk = {
   updateUser: vi.fn(async (_: Record<string, unknown>) => ({})),
   getToken: vi.fn(async (_?: { skipCache?: boolean }) => (clerk.signedIn ? 'test-token' : null)),
   setProfileImage: vi.fn(async (_: { file: unknown }) => ({})),
-  updatePassword: vi.fn(async (_: Record<string, unknown>) => ({})),
   deleteUser: vi.fn(async () => {}),
   createEmailAddress: vi.fn(async ({ email }: { email: string }) => {
     const created = makeEmail(`em_${clerk.emails.length + 1}`, email, false);
@@ -90,14 +88,13 @@ export function signOutClerk() {
   clerk.signedIn = false;
 }
 
-/** A signed-in account with one verified email, no password, photo or other devices. */
+/** A signed-in account with one verified email, no photo or other devices. */
 export function resetAccount(email = 'ethan@example.com') {
   signInAs(email);
   clerk.firstName = null;
   clerk.lastName = null;
   clerk.emails = [makeEmail('em_1', email)];
   clerk.primaryEmailId = 'em_1';
-  clerk.passwordEnabled = false;
   clerk.hasImage = false;
   clerk.deleteSelfEnabled = true;
   clerk.sessions = [
@@ -114,7 +111,6 @@ export function resetAccount(email = 'ethan@example.com') {
     clerk.updateUser,
     clerk.getToken,
     clerk.setProfileImage,
-    clerk.updatePassword,
     clerk.deleteUser,
     clerk.createEmailAddress,
     clerk.session.startVerification,
@@ -139,14 +135,12 @@ function currentUser() {
     lastName: clerk.lastName,
     hasImage: clerk.hasImage,
     imageUrl: 'https://img.example/me.png',
-    passwordEnabled: clerk.passwordEnabled,
     deleteSelfEnabled: clerk.deleteSelfEnabled,
     emailAddresses: clerk.emails,
     primaryEmailAddressId: clerk.primaryEmailId,
     primaryEmailAddress: primary ?? (clerk.email ? { emailAddress: clerk.email } : null),
     update: clerk.updateUser,
     setProfileImage: clerk.setProfileImage,
-    updatePassword: clerk.updatePassword,
     createEmailAddress: clerk.createEmailAddress,
     getSessions: async () => clerk.sessions,
     delete: clerk.deleteUser,

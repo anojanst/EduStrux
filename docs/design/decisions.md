@@ -5719,3 +5719,32 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - The limits, the Issues setting and the rate-limit bindings exist only in production, so tests
     don't exercise a real limiter.
 - **Tasks:** TUI-81, TUI-83.
+
+## D-192 · 2026-10-30 · Everyone signs in with an email code; no passwords, no 2FA at launch
+
+- **Context:** The MVP is public, so the sign-in page faces the internet and staff accounts hold
+  children's and families' details and money. The design had staff 2FA through Clerk Pro (about
+  $25 a month, TUI-80) as a launch requirement. Staff could also set a password, and Clerk's
+  development instance asks for one at sign-up (D-160).
+- **Decision (stated by the owner):**
+  - Every user, staff and parents alike, signs in with a one-time code sent to their email. There
+    are no passwords: the owner turns password sign-in off in the Clerk dashboard, on the
+    development and production instances.
+  - With no password, there's nothing to leak or guess. An account is as safe as its email.
+  - Authenticator-app 2FA (Clerk Pro) is not needed for the MVP. It comes back when a centre asks
+    for it or revenue covers it (TUI-80, deferred).
+  - The web app drops the Password card from Profile › Sign-in and security, and the "Confirm
+    it's you" dialog only ever asks for an emailed code.
+- **Alternatives considered:** Clerk Pro 2FA on top of passwords at launch (costs money before
+  any centre pays). Passwords with Clerk's new-device email check (still leaves a password to
+  phish or reuse).
+- **Consequences:**
+  - Free on day one: email codes are on Clerk's free plan.
+  - Signing in needs the email to arrive. If Clerk's emails are delayed or filtered, nobody can
+    sign in. Sessions last, so most people sign in rarely.
+  - Anyone who controls a staff member's mailbox can sign in as them. Mailbox security (Gmail,
+    Outlook) becomes the second factor in practice.
+  - Supersedes D-161's password card and the password fallback in its "Confirm it's you" dialog,
+    and D-160's note that an invited parent sets a password. Extends D-021 from parents to
+    everyone.
+- **Tasks:** TUI-72, TUI-80.
