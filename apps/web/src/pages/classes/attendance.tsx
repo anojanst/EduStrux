@@ -198,7 +198,9 @@ export function StudentRow({
 
   return (
     <li className="flex flex-col gap-3 px-4 py-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      {/* The name keeps room for itself: where the row is too narrow for it and the four
+          buttons (a dialog), the buttons wrap onto a line of their own. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3 md:min-w-[14rem]">
         <Avatar name={name} className="size-9 text-meta" />
         <span className="flex min-w-0 flex-1 flex-col">
           <b className="truncate text-body font-semibold text-text">{name}</b>
