@@ -515,7 +515,8 @@ Settled when TUI-23 was built (D-158):
   Organisation (owners), Branches, Terms & holidays and Courses (roles that change classes,
   D-178, D-181, D-170), Pricing (`billing:read`, D-175), Team (`staff:read`), Theme and Privacy &
   data (owners, D-165, D-189). Owners also get "Set up your centre", which opens the wizard.
-  Parents have no Settings.
+  Parents have no Settings. The cards fill the page's width: one column on phones, two on
+  tablets, three on wide screens.
 - **Settings › Organisation** (D-193), built straight to this design system, owner only: centre
   name, single-tutor mode, tax number, country, date format and time zone, with the currency
   read-only. A stale save (409) offers Reload; the single-tutor 422 shows under its switch.
