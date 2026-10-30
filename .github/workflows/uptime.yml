@@ -4,8 +4,8 @@ name: Uptime check
 # (`GET /api/v1/health/ready`, TUI-83). A failed run is the alert: GitHub emails whoever last
 # changed this schedule. Free, as the repository is public.
 #
-# Off until the owner sets the repository variable UPTIME_URL (the Worker's address, e.g.
-# https://edustrux.edustrux-api.workers.dev). While Cloudflare Access covers the Worker (D-069) it
+# Off until the owner sets the repository variable UPTIME_URL (the Worker's address,
+# https://app.edustrux.com). While Cloudflare Access covers the Worker (D-069) it
 # also needs an Access service token, as the secrets CF_ACCESS_CLIENT_ID and
 # CF_ACCESS_CLIENT_SECRET (README, Monitoring).
 on:
