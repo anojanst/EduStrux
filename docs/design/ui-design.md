@@ -358,7 +358,7 @@ portal Home (D-180). What each part reads:
 | Make-up credits, Absence notices                             | `GET /reports/dashboard` → `makeupCreditsAvailable`, `today.absenceNotices`                                           |
 | Money at a glance (roles that see money)                     | `GET /reports/dashboard` → `money` (owing with drafts to issue, received this month, overdue with its count)          |
 | Set up your centre (owner)                                   | the same lists the setup wizard checks (rooms, academic years, grade levels, subjects, staff, classes)                |
-| Student limit (owner)                                        | `GET /billing/subscription`, shown at 80% or more of the plan's limit                                                 |
+| Your plan (owner)                                            | `GET /billing/subscription`: active students against the plan's limit, amber at 80% or more                           |
 
 - **Header:** the date overline in `--brand`, the greeting, "Here's what's happening across
   {org} today." and, during the trial, a "14-day free trial" pill.
@@ -372,10 +372,15 @@ portal Home (D-180). What each part reads:
   2h 18m", or Take attendance.
 - **Money at a glance:** Owing, Received this month and Overdue across n invoices. Left out for
   roles that don't see money.
-- **Owner's right column:** the "Set up your centre" checklist (centre details, first branch
-  with rooms, grade levels, subjects, terms and dates, invite staff, first class) with a
-  progress ring and bar, each item opening its wizard step (first class opens Classes); under it
-  the student-limit card.
+- **Right column** (TUI-134), never empty for a role with something to do:
+  - The owner's "Set up your centre" checklist (centre details, first branch with rooms, grade
+    levels, subjects, terms and dates, invite staff, first class) with a progress ring and bar,
+    each item opening its wizard step (first class opens Classes), until setup is finished
+    (D-195).
+  - Quick actions for the role: Add family, Add class, Record payment, Run invoices, each
+    opening the same dialog as its own page.
+  - The owner's Your plan: the plan (or the trial's end date) and active students against its
+    limit with a bar, turning amber with "You're nearing your student limit" at 80% or more.
 - **Getting started:** other staff in a centre with no classes keep the links to courses,
   classes and families.
 
@@ -386,7 +391,8 @@ Changes from the Figma source (D-194):
 - Money at a glance shows overdue in place of this term's invoiced total against last term
   (TUI-133).
 - No "View plans" or "Compare plans" until there is a plans page (TUI-132).
-- Needs attention, Quick actions and Recent activity are left out.
+- Needs attention and Recent activity are left out: the count tiles and Money at a glance
+  already carry what Needs attention would list.
 - Text is never below 12px.
 
 ---

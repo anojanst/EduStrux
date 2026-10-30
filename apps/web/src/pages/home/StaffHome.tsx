@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleCheck,
   ClipboardCheck,
+  FileStack,
   GraduationCap,
   MessageSquareWarning,
   ReceiptText,
@@ -32,8 +33,12 @@ import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
 import { orgBanner, seesTrialBanner } from '../../lib/orgStatus';
 import { query, type Page } from '../../lib/people';
-import { can } from '../../lib/roles';
+import { can, type Role } from '../../lib/roles';
 import { orgPath } from '../../lib/session';
+import { RecordPaymentDialog } from '../billing/RecordPaymentDialog';
+import { RunInvoicesDialog } from '../billing/RunInvoicesDialog';
+import { ClassDialog } from '../classes/ClassDialog';
+import { AddFamilyDialog } from '../people/AddFamilyDialog';
 import { SkeletonRows } from '../people/parts';
 import { useSetupProgress } from '../setup/SetupPage';
 import { LessonRow } from '../today/TeacherToday';
@@ -112,6 +117,8 @@ export function StaffHome({ overline, greeting }: { overline: string; greeting: 
   const data = dashboard.data;
   const banner = org ? orgBanner(org) : null;
   const trialDays = banner?.kind === 'trial' && seesTrialBanner(role) ? banner.daysLeft : null;
+  // The right column: the owner's checklist and plan, and anyone's quick actions (TUI-134).
+  const side = owner || actionsFor(role).length > 0;
   // A centre with no classes yet: other staff get the first steps; the owner has the checklist.
   const starting = !owner && data?.classes === 0 && can(role, 'classes:write');
 
@@ -214,7 +221,7 @@ export function StaffHome({ overline, greeting }: { overline: string; greeting: 
       <div
         className={cn(
           'flex flex-col gap-5',
-          owner && 'lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)] lg:items-start',
+          side && 'lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)] lg:items-start',
         )}
       >
         <div className="flex min-w-0 flex-col gap-5">
@@ -274,10 +281,11 @@ export function StaffHome({ overline, greeting }: { overline: string; greeting: 
           ) : null}
           {data?.money ? <MoneyAtAGlance money={data.money} base={base} /> : null}
         </div>
-        {owner ? (
+        {side ? (
           <aside className="flex flex-col gap-5">
-            <SetupChecklist />
-            <StudentLimit />
+            {owner ? <SetupChecklist /> : null}
+            <QuickActions />
+            {owner ? <PlanCard /> : null}
           </aside>
         ) : null}
       </div>
@@ -606,31 +614,124 @@ function SetupChecklist() {
   );
 }
 
-/** For the owner, once active students reach 80% of the plan's limit. */
-function StudentLimit() {
+type Action = 'family' | 'class' | 'payment' | 'run';
+
+/** The everyday jobs the role may start from Home, in this order. */
+function actionsFor(role: Role): Action[] {
+  const actions: Action[] = [];
+  if (can(role, 'people:write')) actions.push('family');
+  if (can(role, 'classes:write')) actions.push('class');
+  if (can(role, 'billing:write')) actions.push('payment', 'run');
+  return actions;
+}
+
+const ACTION_ICONS = { family: Users, class: School, payment: Wallet, run: FileStack } as const;
+
+/** Quick actions (TUI-134): each opens the same dialog as its own page. */
+function QuickActions() {
   const { membership } = useOrg();
+  const [open, setOpen] = useState<Action | null>(null);
+  const actions = actionsFor(membership.role);
+  if (!actions.length) return null;
+  const close = () => setOpen(null);
+  return (
+    <Card flush className="overflow-hidden">
+      <h2 className="px-4 pt-4 pb-2 text-section font-medium text-text sm:px-5">
+        {t('home.actions')}
+      </h2>
+      <ul className="pb-2">
+        {actions.map((key) => {
+          const Icon = ACTION_ICONS[key];
+          return (
+            <li key={key}>
+              <button
+                type="button"
+                onClick={() => setOpen(key)}
+                className="grid min-h-[60px] w-full grid-cols-[36px_1fr_16px] items-center gap-3 px-4 py-2 text-left hover:bg-canvas sm:px-5"
+              >
+                <span className="grid size-9 place-items-center rounded-lg bg-brand-soft text-brand">
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <b className="text-label font-semibold text-text">{t(`home.action.${key}`)}</b>
+                  <small className="truncate text-meta text-muted">
+                    {t(`home.action.${key}Note`)}
+                  </small>
+                </span>
+                <ChevronRight className="size-4 text-subtle" aria-hidden />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <AddFamilyDialog open={open === 'family'} onClose={close} />
+      <ClassDialog open={open === 'class'} onClose={close} />
+      <RecordPaymentDialog open={open === 'payment'} onClose={close} />
+      <RunInvoicesDialog open={open === 'run'} onClose={close} />
+    </Card>
+  );
+}
+
+/**
+ * The owner's plan (TUI-134): active students against the plan's limit, and the trial's end.
+ * Amber once the students reach 80% of the limit.
+ */
+function PlanCard() {
+  const { membership } = useOrg();
+  const format = useFormat();
   const plan = useQuery({
     queryKey: ['billing', membership.org.id],
     queryFn: ({ signal }) =>
       api<BillingOverview>('GET', orgApiPath(membership, '/billing/subscription'), { signal }),
     staleTime: 5 * 60_000,
   });
-  const limit = plan.data?.studentLimit;
-  const active = plan.data?.activeStudents ?? 0;
-  if (!limit || active < limit * 0.8) return null;
+  if (!plan.data) return null;
+  const { studentLimit: limit, activeStudents: active, trialEndsAt, status } = plan.data;
+  const near = limit !== null && active >= limit * 0.8;
   return (
-    <section className="rounded-xl border border-[#f1d9a6] bg-warning-soft p-4 sm:p-5">
-      <h2 className="flex items-center gap-2 text-label font-semibold text-text">
-        <TriangleAlert className="size-4 text-warning" aria-hidden />
-        {t(active >= limit ? 'home.limit.reached' : 'home.limit.near')}
-      </h2>
-      <p className="mt-1 text-meta text-muted">{t('home.limit.body', { n: active, limit })}</p>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/70">
-        <div
-          className="h-full bg-warning"
-          style={{ width: `${Math.min(100, (active / limit) * 100)}%` }}
-        />
+    <section
+      className={cn(
+        'rounded-xl border p-4 sm:p-5',
+        near ? 'border-[#f1d9a6] bg-warning-soft' : 'border-border bg-surface',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-section font-medium text-text">{t('home.plan.title')}</h2>
+          <p className="mt-0.5 text-meta text-muted">
+            {status === 'trialing' && trialEndsAt
+              ? t('home.plan.trialEnds', { date: format.day(trialEndsAt.slice(0, 10)) })
+              : t(`home.plan.name.${plan.data.plan}`)}
+          </p>
+        </div>
+        <span className="grid size-9 place-items-center rounded-lg bg-brand-soft text-brand">
+          <GraduationCap className="size-4" aria-hidden />
+        </span>
       </div>
+      {near ? (
+        <p className="mt-3 flex items-center gap-2 text-label font-semibold text-text">
+          <TriangleAlert className="size-4 text-warning" aria-hidden />
+          {t(active >= limit ? 'home.limit.reached' : 'home.limit.near')}
+        </p>
+      ) : null}
+      <p className="mt-3 text-body text-text">
+        {limit === null
+          ? t('home.plan.unlimited', { n: active })
+          : t('home.limit.body', { n: active, limit })}
+      </p>
+      {limit !== null ? (
+        <div
+          className={cn(
+            'mt-2 h-1.5 overflow-hidden rounded-full',
+            near ? 'bg-white/70' : 'bg-brand-soft',
+          )}
+        >
+          <div
+            className={cn('h-full', near ? 'bg-warning' : 'bg-brand')}
+            style={{ width: `${Math.min(100, (active / limit) * 100)}%` }}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
