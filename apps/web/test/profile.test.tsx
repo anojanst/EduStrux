@@ -107,6 +107,8 @@ describe('email addresses', () => {
     const security = section('Sign-in and security');
     expect(within(security).getByText('ethan@example.com')).toBeVisible();
     expect(within(security).getByText('Primary')).toBeVisible();
+    // Everyone signs in with an emailed code: there's no password to set (D-192).
+    expect(within(security).queryByText(/password/i)).toBeNull();
 
     await userEvent.click(within(security).getByRole('button', { name: 'Add email address' }));
     const dialog = screen.getByRole('dialog', { name: 'Add email address' });
@@ -184,49 +186,6 @@ describe('email addresses', () => {
     const remove = screen.getByRole('dialog', { name: 'Remove this email address?' });
     await userEvent.click(within(remove).getByRole('button', { name: 'Remove' }));
     expect(await screen.findByText('Email address removed.')).toBeVisible();
-  });
-});
-
-describe('password', () => {
-  it('lets someone without one set a password, with no current password asked', async () => {
-    open();
-    const security = section('Sign-in and security');
-    expect(within(security).getByText(/You sign in with a code sent to your email/)).toBeVisible();
-    await userEvent.click(within(security).getByRole('button', { name: 'Set a password' }));
-
-    const dialog = screen.getByRole('dialog', { name: 'Set a password' });
-    expect(within(dialog).queryByLabelText(/Current password/)).toBeNull();
-    await userEvent.type(within(dialog).getByLabelText(/New password/), 'short');
-    expect(within(dialog).getByText('Use at least 8 characters.')).toBeVisible();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Save password' }));
-    expect(clerk.updatePassword).not.toHaveBeenCalled();
-
-    await userEvent.type(within(dialog).getByLabelText(/New password/), '-Longer-123');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Save password' }));
-    expect(await screen.findByText('Your password is set.')).toBeVisible();
-    expect(clerk.updatePassword).toHaveBeenCalledWith({
-      newPassword: 'short-Longer-123',
-      signOutOfOtherSessions: false,
-    });
-  });
-
-  it('asks for the current password when changing one', async () => {
-    clerk.passwordEnabled = true;
-    open();
-    await userEvent.click(
-      within(section('Sign-in and security')).getByRole('button', { name: 'Change password' }),
-    );
-    const dialog = screen.getByRole('dialog', { name: 'Change password' });
-    await userEvent.type(within(dialog).getByLabelText(/Current password/), 'old-password');
-    await userEvent.type(within(dialog).getByLabelText(/New password/), 'new-password-1');
-    await userEvent.click(within(dialog).getByLabelText('Also sign out of my other devices'));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Save password' }));
-    expect(await screen.findByText('Your password is changed.')).toBeVisible();
-    expect(clerk.updatePassword).toHaveBeenCalledWith({
-      newPassword: 'new-password-1',
-      currentPassword: 'old-password',
-      signOutOfOtherSessions: true,
-    });
   });
 });
 

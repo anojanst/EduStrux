@@ -1,6 +1,6 @@
 import { useClerk, useSession, useUser } from '@clerk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Mail, Monitor, Plus, Smartphone, Trash2 } from 'lucide-react';
+import { Mail, Monitor, Plus, Smartphone, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { Badge } from '../../components/ui/Badge';
@@ -18,12 +18,14 @@ import { useOrg } from '../../lib/org';
 import { ResendButton, useSensitive } from './reverify';
 import { clerkMessage, useCountdown, useRefreshIdentity, wasCancelled } from './shared';
 
-/** Sign-in and security: emails, password, devices and deleting the account (D-161). */
+/**
+ * Sign-in and security: emails, devices and deleting the account (D-161). Everyone signs in with a
+ * code sent to their email, so there's no password to set (D-192).
+ */
 export function SecuritySection() {
   return (
     <div className="flex flex-col gap-4">
       <EmailsCard />
-      <PasswordCard />
       <DevicesCard />
       <DeleteCard />
     </div>
@@ -365,159 +367,6 @@ function RemoveEmailDialog({
         </Notice>
       ) : null}
     </Dialog>
-  );
-}
-
-// ── Password ────────────────────────────────────────────────────────────────
-
-/** A plain hint while typing; Clerk applies its own rules when saving. */
-function strengthHint(password: string): { text: string; tone: 'muted' | 'warning' | 'success' } {
-  if (!password) return { text: t('security.password.hint'), tone: 'muted' };
-  if (password.length < 8) return { text: t('security.password.tooShort'), tone: 'warning' };
-  const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length;
-  return password.length >= 12 && kinds >= 3
-    ? { text: t('security.password.strong'), tone: 'success' }
-    : { text: t('security.password.okay'), tone: 'muted' };
-}
-
-function PasswordCard() {
-  const { user } = useUser();
-  const toast = useToast();
-  const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [signOutOthers, setSignOutOthers] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const update = useSensitive(
-    async (params: { newPassword: string; currentPassword?: string; others: boolean }) => {
-      await user!.updatePassword({
-        newPassword: params.newPassword,
-        ...(params.currentPassword ? { currentPassword: params.currentPassword } : {}),
-        signOutOfOtherSessions: params.others,
-      });
-    },
-  );
-
-  if (!user) return null;
-  const has = user.passwordEnabled;
-  const hint = strengthHint(next);
-
-  function openDialog() {
-    setCurrent('');
-    setNext('');
-    setSignOutOthers(false);
-    setError(null);
-    setOpen(true);
-  }
-
-  async function save() {
-    if (next.length < 8) {
-      setError(t('security.password.tooShort'));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await update({
-        newPassword: next,
-        currentPassword: has ? current : undefined,
-        others: signOutOthers,
-      });
-      toast(has ? t('security.password.changed') : t('security.password.set'));
-      setOpen(false);
-    } catch (err) {
-      if (!wasCancelled(err)) setError(clerkMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card flush className="px-4 md:px-5">
-      <SettingTitle
-        title={t('security.password.title')}
-        body={has ? t('security.password.hasBody') : t('security.password.noneBody')}
-        action={
-          <Button
-            variant="secondary"
-            className="max-md:h-11"
-            icon={<KeyRound className="size-4" />}
-            onClick={openDialog}
-          >
-            {has ? t('security.password.change') : t('security.password.setAction')}
-          </Button>
-        }
-      />
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title={has ? t('security.password.change') : t('security.password.setAction')}
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button loading={busy} onClick={() => void save()}>
-              {t('security.password.save')}
-            </Button>
-          </>
-        }
-      >
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
-          }}
-        >
-          {has ? (
-            <TextField
-              label={t('security.password.current')}
-              type="password"
-              autoComplete="current-password"
-              required
-              autoFocus
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
-          ) : null}
-          <div className="flex flex-col gap-1.5">
-            <TextField
-              label={t('security.password.new')}
-              type="password"
-              autoComplete="new-password"
-              required
-              autoFocus={!has}
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-            />
-            <p
-              className={
-                hint.tone === 'success'
-                  ? 'text-meta text-success'
-                  : hint.tone === 'warning'
-                    ? 'text-meta text-warning'
-                    : 'text-meta text-muted'
-              }
-            >
-              {hint.text}
-            </p>
-          </div>
-          <label className="flex min-h-11 items-center gap-2.5 text-body text-text">
-            <input
-              type="checkbox"
-              className="size-4 accent-[var(--brand)]"
-              checked={signOutOthers}
-              onChange={(e) => setSignOutOthers(e.target.checked)}
-            />
-            {t('security.password.signOutOthers')}
-          </label>
-          {error ? <Notice tone="danger">{error}</Notice> : null}
-        </form>
-      </Dialog>
-    </Card>
   );
 }
 

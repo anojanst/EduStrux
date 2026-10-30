@@ -1,18 +1,22 @@
 ---
 id: TUI-72
-title: Parent portal sign-in by email link
-status: blocked
+title: Sign-in by email code for everyone (no passwords)
+status: done
 phase: P4
 module: portal
 priority: P0
 size: M
 endpoints: []
-branch: task/tui-43-82-remaining-mvp-api
-pr: 51
+branch: task/tui-72-80-email-code-sign-in
+pr: 81
 ---
 
-# TUI-72 Parent portal sign-in by email link
+# TUI-72 Sign-in by email code for everyone (no passwords)
 
-Passwordless through Clerk email codes (D-021).
+Everyone, staff and parents, signs in with a one-time code sent to their email, with no
+password (D-021, D-192). The web app has no password card or password step (this PR). No API
+code needed (D-151).
 
-No API code needed (D-151): parents already sign in through Clerk and are linked by accepting a guardian invitation. Blocked on the owner: turn on email-code (or magic-link) sign-in in the Clerk dashboard and confirm.
+Done by the owner in the Clerk dashboard, on the development and the production instance
+(confirmed 2026-10-30): email verification code sign-in is on and passwords are off, so nobody is
+asked for one at sign-up or sign-in.
