@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-81-83-rate-limits-monitoring
-pr:
+pr: 80
 ---
 
 # TUI-81 Rate limiting rules per user and per org
