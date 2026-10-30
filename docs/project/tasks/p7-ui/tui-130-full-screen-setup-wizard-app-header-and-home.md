@@ -8,7 +8,7 @@ priority: P1
 size: L
 endpoints: []
 branch: task/tui-130-setup-header-home
-pr:
+pr: 83
 ---
 
 # TUI-130 Full-screen setup wizard, app header and Home from the Figma design
