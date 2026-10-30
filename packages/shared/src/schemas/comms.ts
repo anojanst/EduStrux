@@ -103,7 +103,14 @@ export const MessageRecipient = z
     id: z.string(),
     familyId: z.string(),
     guardianId: z.string(),
-    email: z.string().nullable(),
+    email: z
+      .string()
+      .nullable()
+      .openapi({
+        description:
+          'The guardian’s email address now, not a copy kept from the send. null when they have ' +
+          'none or were erased.',
+      }),
     emailStatus: z.enum(RECIPIENT_EMAIL_STATUSES).nullable(),
     error: z.string().nullable(),
     sentAt: Timestamp.nullable(),

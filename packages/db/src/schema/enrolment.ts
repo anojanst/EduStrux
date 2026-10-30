@@ -46,6 +46,8 @@ export const enquiries = sqliteTable(
     status: text('status', { enum: ENQUIRY_STATUSES }).notNull().default('new'),
     // SHA-256 of the sender's IP address, to slow down floods. The address itself isn't kept.
     ipHash: text('ip_hash'),
+    // When the daily cron cleared the sender's details (TUI-117, D-171). The row stays for counts.
+    purgedAt: text('purged_at'),
   },
   (t) => [
     uniqueIndex('enquiries_org_id_uq').on(t.orgId, t.id),
@@ -73,6 +75,9 @@ export const enrolmentRequests = sqliteTable(
     reason: text('reason'),
     // What approving made: `{ familyId, guardianId, studentIds, enrolmentIds, skipped }`.
     result: text('result', { mode: 'json' }).$type<Record<string, unknown>>(),
+    // When what the form sent was cleared: by the daily cron 30 days after the decision, or by
+    // erasing the family (TUI-117, D-171).
+    purgedAt: text('purged_at'),
   },
   (t) => [
     uniqueIndex('enrolment_requests_org_id_uq').on(t.orgId, t.id),

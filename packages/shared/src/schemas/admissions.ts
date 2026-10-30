@@ -104,6 +104,11 @@ export const Enquiry = z
     studentName: z.string().nullable(),
     message: z.string(),
     status: z.enum(ENQUIRY_STATUSES),
+    purgedAt: Timestamp.nullable().openapi({
+      description:
+        'When the sender’s details were cleared: 30 days after it was handled, or 6 months after ' +
+        'it arrived if it never was. Name, email and message are then empty.',
+    }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
@@ -124,12 +129,15 @@ export const EnrolmentRequest = z
     id: z.string(),
     branchId: z.string().nullable(),
     status: z.enum(ENROLMENT_REQUEST_STATUSES),
-    guardian: z.object({
-      firstName: z.string(),
-      lastName: z.string(),
-      email: z.string(),
-      phone: z.string().nullable(),
-    }),
+    guardian: z
+      .object({
+        firstName: z.string(),
+        lastName: z.string(),
+        email: z.string(),
+        phone: z.string().nullable(),
+      })
+      .nullable()
+      .openapi({ description: 'null once purged.' }),
     students: z.array(
       z.object({
         firstName: z.string(),
@@ -152,6 +160,11 @@ export const EnrolmentRequest = z
       })
       .nullable()
       .openapi({ description: 'What approving it made. null until approved.' }),
+    purgedAt: Timestamp.nullable().openapi({
+      description:
+        'When what the form sent was cleared: 30 days after it was approved or rejected, or ' +
+        'when the family was erased. The guardian is then null and the students empty.',
+    }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })

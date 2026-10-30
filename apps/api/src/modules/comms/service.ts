@@ -49,12 +49,12 @@ export function toMessage(row: repo.MessageRow): Message {
   };
 }
 
-function toRecipient(row: repo.RecipientRow) {
+function toRecipient(row: repo.RecipientRow, emails: Map<string, string | null>) {
   return {
     id: row.id,
     familyId: row.familyId,
     guardianId: row.guardianId,
-    email: row.email,
+    email: emails.get(row.guardianId) ?? null,
     emailStatus: row.emailStatus,
     error: row.error,
     sentAt: row.sentAt,
@@ -90,16 +90,23 @@ export async function listMessages(
 /** One stage: the message and its recipients are read together. */
 export async function getMessage(ctx: OrgCtx, access: Access, id: string): Promise<MessageDetail> {
   const sentBy = sentByFilter(access);
-  const [row, recipients] = await Promise.all([
+  const found = repo.messageFound(ctx, id, sentBy);
+  const [row, recipients, guardians] = await Promise.all([
     repo.findMessage(ctx, id, sentBy),
-    repo.listRecipients(ctx, repo.messageFound(ctx, id, sentBy)),
+    repo.listRecipients(ctx, found),
+    people.guardianEmails(ctx, repo.recipientGuardians(ctx, found)),
   ]);
   if (!row) throw notFound('Message');
   const delivery = Object.fromEntries(
     RECIPIENT_EMAIL_STATUSES.map((s) => [s, 0]),
   ) as MessageDetail['delivery'];
   for (const r of recipients) if (r.emailStatus) delivery[r.emailStatus] += 1;
-  return { ...toMessage(row), delivery, recipients: recipients.map(toRecipient) };
+  const emails = new Map(guardians.map((g) => [g.id, g.email]));
+  return {
+    ...toMessage(row),
+    delivery,
+    recipients: recipients.map((r) => toRecipient(r, emails)),
+  };
 }
 
 /** The families an audience names, as ids to filter the guardians by. */
@@ -134,7 +141,10 @@ async function audienceFamilies(ctx: OrgCtx, audience: Audience): Promise<Ids> {
 
 type Guardian = { id: string; familyId: string; email: string | null };
 
-/** A recipient row for each guardian. Without email, or with no address, nothing is emailed. */
+/**
+ * A recipient row for each guardian. Without email, or with no address, nothing is emailed. The
+ * address isn't copied onto the row (D-171): the sender reads the guardian's when it sends.
+ */
 function recipientRows(
   ctx: OrgCtx,
   messageId: string,
@@ -148,7 +158,6 @@ function recipientRows(
     messageId,
     familyId: g.familyId,
     guardianId: g.id,
-    email: g.email,
     emailStatus: byEmail ? (g.email ? 'queued' : 'skipped') : null,
   }));
 }
@@ -160,14 +169,14 @@ function recipientRows(
 async function queueEmails(
   ctx: OrgCtx,
   queue: Queue<EmailMessage>,
-  recipients: { id: string; email?: string | null; emailStatus?: string | null }[],
+  recipients: { id: string; emailStatus?: string | null }[],
 ) {
-  const toSend = recipients.filter((r) => r.emailStatus === 'queued' && r.email);
+  const toSend = recipients.filter((r) => r.emailStatus === 'queued');
   for (let i = 0; i < toSend.length; i += QUEUE_BATCH) {
     const batch = toSend.slice(i, i + QUEUE_BATCH).map((r) => ({
       body: {
         orgId: ctx.orgId,
-        to: r.email!,
+        to: '',
         template: 'message',
         data: {},
         recipientId: r.id,
@@ -476,11 +485,6 @@ export function recordDelivery(
 
 export function setEmailStatus(...args: Parameters<typeof repo.setEmailStatus>) {
   return repo.setEmailStatus(...args);
-}
-
-/** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
-export function eraseStatements(ctx: OrgCtx, guardianIds: string[]) {
-  return repo.eraseStatements(ctx, guardianIds);
 }
 
 export function purgeStatements(ctx: OrgCtx, familyId: string) {

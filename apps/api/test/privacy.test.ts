@@ -7,7 +7,6 @@ import {
   invitations,
   invoices,
   memberships,
-  messageRecipients,
   studentConsents,
   students,
 } from '@edustrux/db';
@@ -234,10 +233,10 @@ describe('POST /families/{id}/erase', () => {
     expect(
       await db().select().from(invitations).where(eq(invitations.guardianId, guardian.id)),
     ).toEqual([]);
-    const recipients = await db()
-      .select()
-      .from(messageRecipients)
-      .where(eq(messageRecipients.messageId, sent.body.id));
+    // Messages keep no copy of the address (TUI-117): the erased guardian's recipient shows none.
+    const { recipients } = (await api('GET', `/messages/${sent.body.id}`)).body as {
+      recipients: { guardianId: string; email: string | null }[];
+    };
     expect(recipients.find((r) => r.guardianId === guardian.id)!.email).toBeNull();
     expect(recipients.find((r) => r.guardianId === other.guardian.id)!.email).toBe(
       'mere.ngata@example.com',

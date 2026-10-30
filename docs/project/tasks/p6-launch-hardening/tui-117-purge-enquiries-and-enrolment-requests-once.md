@@ -1,13 +1,13 @@
 ---
 id: TUI-117
 title: Purge enquiries and enrolment requests once decided
-status: todo
+status: done
 phase: P6
 module: enrolment
 priority: P1
 size: S
 endpoints: []
-branch:
+branch: task/tui-117-purge-decided-enquiries
 pr:
 ---
 
@@ -23,3 +23,6 @@ D-171 (follows from the least-data rule; confirmed by the owner on 2026-10-26).
 - Message recipients stop storing a copy of the guardian's email; the guardian id is enough.
   The migration drops `message_recipients.email`.
 - Runs in the daily cron. Tests cover each window and that undecided requests are kept.
+
+Built as D-190: rows are marked `purged_at`; the sender reads the guardian's address when it
+sends; migration `0039_purge_decided_admissions`.

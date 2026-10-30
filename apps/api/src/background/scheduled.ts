@@ -3,6 +3,7 @@ import { localNow, orgCanWrite } from '@edustrux/shared';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
 import { forgetOldKeys } from '../middleware/idempotency';
+import * as admissions from '../modules/admissions/service';
 import * as attendance from '../modules/attendance/service';
 import * as billing from '../modules/billing/service';
 import * as classes from '../modules/classes/service';
@@ -82,8 +83,9 @@ export async function runHourly(db: Db, env: Bindings, at: Date) {
 /**
  * The daily cron (TUI-68): drops stale idempotency keys, webhook records and expired files, then for each org
  * extends its open-ended classes' sessions and starts its nightly backup job, erases its inactive
- * families, and deletes erased ones whose money is past the org's retention (TUI-118). An org
- * that fails is logged and the rest carry on.
+ * families, deletes erased ones whose money is past the org's retention (TUI-118), and clears
+ * what the public forms sent once it's no longer needed (TUI-117). An org that fails is logged
+ * and the rest carry on.
  */
 export async function runDaily(db: Db, env: Bindings, at: Date) {
   const cutoff = new Date(at.getTime() - IDEMPOTENCY_KEY_TTL_MS).toISOString();
@@ -95,6 +97,8 @@ export async function runDaily(db: Db, env: Bindings, at: Date) {
     backupsStarted: 0,
     familiesErased: 0,
     familiesPurged: 0,
+    enquiriesPurged: 0,
+    requestsPurged: 0,
     failed: 0,
   };
   try {
@@ -111,8 +115,12 @@ export async function runDaily(db: Db, env: Bindings, at: Date) {
         await exports.startBackup(ctx, env.JOBS_QUEUE, today);
         done.backupsStarted++;
       }
-      // Erasing runs whether or not the org can write: a lapsed trial still holds families.
+      // Erasing and purging run whether or not the org can write: a lapsed trial still holds
+      // families and enquiries.
       done.familiesErased += await privacy.eraseInactive(ctx, today);
+      const purged = await admissions.purgeDecided(ctx, today);
+      done.enquiriesPurged += purged.enquiries;
+      done.requestsPurged += purged.requests;
       if (org.financialRetentionYears) {
         done.familiesPurged += await privacy.purgeExpired(ctx, org.financialRetentionYears, today);
       }

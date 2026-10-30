@@ -1,6 +1,9 @@
-import { memberships } from '@edustrux/db';
+import { auditLog, enquiries, enrolmentRequests, memberships } from '@edustrux/db';
 import { addDays, localNow, newId, type Role } from '@edustrux/shared';
+import { env } from 'cloudflare:workers';
+import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { runDaily } from '../src/background/scheduled';
 import { call, db, newOrg, newUser } from './helpers';
 
 // Public enquiry and enrolment forms, and staff approving requests (TUI-47).
@@ -111,6 +114,7 @@ describe('enquiries', () => {
         studentName: null,
         message: 'Do you teach Year 10 maths on Saturdays?',
         status: 'new',
+        purgedAt: null,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       },
@@ -274,5 +278,145 @@ describe('enrolment requests', () => {
       body: {},
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('clearing what the forms sent (TUI-117, D-171)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  /** An instant this many days ago. */
+  const daysAgo = (days: number) => new Date(Date.now() - days * DAY).toISOString();
+
+  it('clears an enquiry 30 days after it’s handled, or 6 months after it arrived if never', async () => {
+    const { pub, api, org } = await setup();
+    const enquiry = async (name: string) =>
+      (
+        await pub('POST', '/enquiries', {
+          name,
+          email: `${name.toLowerCase()}@example.com`,
+          phone: '021 555 0101',
+          studentName: 'Aroha',
+          message: 'Do you teach Year 10 maths?',
+        })
+      ).body.id as string;
+    const backdate = (id: string, at: { createdAt?: string; updatedAt?: string }) =>
+      db().update(enquiries).set(at).where(eq(enquiries.id, id));
+    const handle = async (id: string) => {
+      const [row] = await db().select().from(enquiries).where(eq(enquiries.id, id));
+      await api('PATCH', `/enquiries/${id}`, { updatedAt: row!.updatedAt, status: 'handled' });
+    };
+
+    const handledLongAgo = await enquiry('Mere');
+    await handle(handledLongAgo);
+    await backdate(handledLongAgo, { createdAt: daysAgo(40), updatedAt: daysAgo(31) });
+    const handledLately = await enquiry('Tom');
+    await handle(handledLately);
+    await backdate(handledLately, { createdAt: daysAgo(40), updatedAt: daysAgo(28) });
+    // Old, but handled lately: the 30 days count from when it was handled.
+    const oldHandledLately = await enquiry('Ana');
+    await handle(oldHandledLately);
+    await backdate(oldHandledLately, { createdAt: daysAgo(220), updatedAt: daysAgo(10) });
+    const neverHandled = await enquiry('Ari');
+    await backdate(neverHandled, { createdAt: daysAgo(7 * 31), updatedAt: daysAgo(7 * 31) });
+    const waiting = await enquiry('Hana');
+    await backdate(waiting, { createdAt: daysAgo(5 * 30), updatedAt: daysAgo(5 * 30) });
+
+    const done = await runDaily(db(), env, new Date());
+    expect(done.enquiriesPurged).toBeGreaterThanOrEqual(2);
+
+    const byId = new Map(
+      ((await api('GET', '/enquiries')).body.data as { id: string }[]).map((e) => [e.id, e]),
+    );
+    for (const id of [handledLongAgo, neverHandled]) {
+      expect(byId.get(id)).toMatchObject({
+        id,
+        name: '',
+        email: '',
+        phone: null,
+        studentName: null,
+        message: '',
+        purgedAt: expect.any(String),
+      });
+    }
+    expect(byId.get(handledLongAgo)).toMatchObject({ status: 'handled' });
+    expect(byId.get(neverHandled)).toMatchObject({ status: 'new' });
+    const [cleared] = await db().select().from(enquiries).where(eq(enquiries.id, neverHandled));
+    expect(cleared!.ipHash).toBeNull();
+    for (const id of [handledLately, oldHandledLately, waiting]) {
+      expect(byId.get(id)).toMatchObject({ email: expect.stringContaining('@'), purgedAt: null });
+    }
+
+    // One audit row names what was cleared; the next night finds nothing more.
+    const audit = () =>
+      db()
+        .select()
+        .from(auditLog)
+        .where(and(eq(auditLog.orgId, org.id), eq(auditLog.action, 'admissions.purged')));
+    const rows = await audit();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorUserId: null, entityType: 'org', entityId: org.id });
+    expect((rows[0]!.after as { enquiryIds: string[] }).enquiryIds.sort()).toEqual(
+      [handledLongAgo, neverHandled].sort(),
+    );
+    await runDaily(db(), env, new Date());
+    expect(await audit()).toHaveLength(1);
+  });
+
+  it('clears a request 30 days after it’s approved or rejected, and keeps one undecided', async () => {
+    const { request, api } = await setup();
+    const approved = (await request()).body.id as string;
+    expect((await api('POST', `/enrolment-requests/${approved}/approve`, {})).status).toBe(200);
+    const rejected = (await request({ notes: 'Prefers Saturdays' })).body.id as string;
+    await api('POST', `/enrolment-requests/${rejected}/reject`, { reason: 'Full' });
+    const rejectedLately = (await request()).body.id as string;
+    await api('POST', `/enrolment-requests/${rejectedLately}/reject`, {});
+    const pending = (await request()).body.id as string;
+
+    const decided = (id: string, decidedAt: string | null, createdAt: string) =>
+      db()
+        .update(enrolmentRequests)
+        .set({ decidedAt, createdAt })
+        .where(eq(enrolmentRequests.id, id));
+    await decided(approved, daysAgo(31), daysAgo(35));
+    await decided(rejected, daysAgo(45), daysAgo(50));
+    await decided(rejectedLately, daysAgo(28), daysAgo(30));
+    await decided(pending, null, daysAgo(400));
+
+    const done = await runDaily(db(), env, new Date());
+    expect(done.requestsPurged).toBeGreaterThanOrEqual(2);
+
+    const byId = new Map(
+      ((await api('GET', '/enrolment-requests')).body.data as { id: string }[]).map((r) => [
+        r.id,
+        r,
+      ]),
+    );
+    expect(byId.get(approved)).toMatchObject({
+      status: 'approved',
+      guardian: null,
+      students: [],
+      notes: null,
+      purgedAt: expect.any(String),
+      // What approving made is kept.
+      result: { familyId: expect.any(String), studentIds: [expect.any(String)] },
+    });
+    expect(byId.get(rejected)).toMatchObject({
+      status: 'rejected',
+      guardian: null,
+      students: [],
+      notes: null,
+      reason: 'Full',
+      purgedAt: expect.any(String),
+    });
+    for (const id of [rejectedLately, pending]) {
+      expect(byId.get(id)).toMatchObject({
+        guardian: { email: 'mere@example.com' },
+        students: [{ firstName: 'Aroha' }],
+        purgedAt: null,
+      });
+    }
+    // A pending request is never cleared, however old: staff still have to decide it.
+    expect((await api('POST', `/enrolment-requests/${pending}/reject`, {})).body).toMatchObject({
+      status: 'rejected',
+    });
   });
 });

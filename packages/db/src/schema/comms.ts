@@ -39,9 +39,8 @@ export const messageRecipients = sqliteTable(
     messageId: text('message_id').notNull(),
     familyId: text('family_id').notNull(),
     guardianId: text('guardian_id').notNull(),
-    // Copied when the message is sent. null = the guardian has none.
-    email: text('email'),
-    // null when the message didn't go by email.
+    // null when the message didn't go by email. The address isn't copied here: the sender reads
+    // the guardian's when it sends (TUI-117, D-171).
     emailStatus: text('email_status', { enum: RECIPIENT_EMAIL_STATUSES }),
     // The email provider's id for the email, from its answer to the send.
     providerId: text('provider_id'),

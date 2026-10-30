@@ -980,6 +980,14 @@ export function guardiansOf(ctx: OrgCtx, familyIds: Ids, reach: Reach) {
     .orderBy(asc(guardians.familyId), asc(guardians.id));
 }
 
+/** These guardians' email addresses, whoever asks. A deleted guardian isn't found. */
+export function guardianEmails(ctx: OrgCtx, ids: Ids) {
+  return ctx.db
+    .select({ id: guardians.id, email: guardians.email })
+    .from(guardians)
+    .where(inOrg(ctx, guardians, inIds(guardians.id, ids)));
+}
+
 /** Of these families, the ones within reach: those a family id given in a request may name. */
 export function familiesFound(ctx: OrgCtx, ids: string[], reach: Reach) {
   return ctx.db

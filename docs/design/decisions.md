@@ -4432,6 +4432,9 @@ fields are gone; mapping one is 400). The rest is unchanged.
 after 6 months; the owner sets how long its money records are kept, then everything of the family
 is deleted).
 
+**Erase changed in part by D-190** (messages keep no copy of the email, so there is none to
+clear; the requests it clears are marked `purgedAt`).
+
 - **Context:** TUI-79 builds privacy controls. D-052 left which consents exist to it. Built in the
   session of 2026-10-21 (Q-64 to Q-66).
 - **Decision:**
@@ -5625,3 +5628,44 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Discount rules' family and student lists and enrolment request results may still name a
     deleted family's or student's id (ids only, no personal data).
 - **Tasks:** TUI-118.
+
+## D-190 · 2026-10-30 · Clearing enquiries and enrolment requests once decided, and no copied emails on messages
+
+- **Context:** TUI-117 builds the last two follow-ons of D-171: enquiries and enrolment requests
+  lose their personal details once they've served their purpose, and message recipients stop
+  storing a copy of the guardian's email. The windows come from D-171; the rest was chosen in the
+  build.
+- **Decision:**
+  - **Enquiries:** the daily cron clears the name, email, phone, student name and IP hash (the
+    message becomes empty) 30 days after the enquiry was handled, or 6 months after it arrived if
+    it is still `new`. A handled enquiry follows only the 30-day rule.
+  - **Enrolment requests:** 30 days after an approved or rejected request was decided, the
+    guardian and students the form sent are cleared, with its notes and IP hash. A pending request
+    is never cleared.
+  - Kept on both: the id, branch, status and dates; on requests also who decided, the staff's
+    `reason` and the `result` (ids only).
+  - A cleared row is marked with `purged_at`, shown as `purgedAt` on `Enquiry` and
+    `EnrolmentRequest`; a cleared request's `guardian` is null and its `students` empty. Erasing a
+    family (D-155) sets `purgedAt` on the requests it clears too, and migration
+    `0039_purge_decided_admissions` marks those already cleared by an erase.
+  - The cron runs in every org that isn't suspended or cancelled, read-only orgs included, like
+    the erase of D-189. At most 200 enquiries and 200 requests per org per night, the rest on
+    later nights; one batch and one `admissions.purged` audit row per org and night (on the org,
+    after `{ enquiryIds, requestIds }`, no actor). Nothing is written when nothing is due.
+  - **Message recipients no longer store the email** (column dropped). The email sender reads the
+    guardian's current address when it sends; a guardian with none by then (erased, deleted or
+    removed) is marked `skipped`. `GET /messages/{id}` shows each recipient's current address,
+    null when they have none or were erased.
+  - Implementation choices reported by the build, not stated by the owner (assumption):
+    - An enquiry's "handled" time is its last update, since its status is the only thing that
+      changes on it.
+    - The windows (30 days, 6 months) are fixed, not settings.
+    - The cutoffs are local dates compared with stored UTC times, so a row may wait up to a day
+      longer.
+- **Consequences:**
+  - D-155's erase no longer clears "the email copied onto messages": there is none to clear.
+  - A message's recipient list shows today's address, not the one it went to; a recipient who has
+    since been erased shows none. The delivery status still says what happened.
+  - Cleared enquiries and requests stay in the lists and counts, with empty details.
+  - All four follow-ons of D-171 are now built.
+- **Tasks:** TUI-117.

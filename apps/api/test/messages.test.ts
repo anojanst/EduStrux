@@ -488,7 +488,7 @@ describe('notification settings', () => {
 
 describe('sending an email (TUI-65)', () => {
   /** A message with one queued recipient, written straight to the database. */
-  async function queuedRecipient(orgId: string, email = 'mere@example.com') {
+  async function queuedRecipient(orgId: string, guardianId: string, familyId: string) {
     const messageId = newId('message');
     const recipientId = newId('messageRecipient');
     await db()
@@ -507,9 +507,8 @@ describe('sending an email (TUI-65)', () => {
       id: recipientId,
       orgId,
       messageId,
-      familyId: 'fam_x',
-      guardianId: 'gdn_x',
-      email,
+      familyId,
+      guardianId,
       emailStatus: 'queued',
     });
     return { messageId, recipientId };
@@ -519,8 +518,8 @@ describe('sending an email (TUI-65)', () => {
   const configured = { ...env, RESEND_API_KEY: 're_test', EMAIL_FROM: 'Centre <hi@example.com>' };
 
   it('sends it through Resend, escaped and tagged, and marks it sent', async () => {
-    const { org } = await setup();
-    const { recipientId } = await queuedRecipient(org.id);
+    const { org, mere, perera } = await setup();
+    const { recipientId } = await queuedRecipient(org.id, mere.id, perera.id);
     const fetchFn = vi.fn(async () => Response.json({ id: 'email_123' }));
     await deliverEmail(
       db(),
@@ -565,7 +564,7 @@ describe('sending an email (TUI-65)', () => {
   });
 
   it('retries what may pass later, and fails what won’t, or the last try', async () => {
-    const { org } = await setup();
+    const { org, mere, perera } = await setup();
     const message = (recipientId: string) => ({
       orgId: org.id,
       to: 'mere@example.com',
@@ -574,7 +573,7 @@ describe('sending an email (TUI-65)', () => {
       recipientId,
     });
     const busy = vi.fn(async () => new Response('slow down', { status: 429 }));
-    const first = await queuedRecipient(org.id);
+    const first = await queuedRecipient(org.id, mere.id, perera.id);
     await expect(
       deliverEmail(
         db(),
@@ -598,7 +597,7 @@ describe('sending an email (TUI-65)', () => {
     });
 
     const refused = vi.fn(async () => new Response('bad address', { status: 422 }));
-    const second = await queuedRecipient(org.id);
+    const second = await queuedRecipient(org.id, mere.id, perera.id);
     await deliverEmail(
       db(),
       configured,
@@ -608,7 +607,7 @@ describe('sending an email (TUI-65)', () => {
     );
     expect((await statusOf(second.recipientId)).emailStatus).toBe('failed');
 
-    const third = await queuedRecipient(org.id);
+    const third = await queuedRecipient(org.id, mere.id, perera.id);
     const never = vi.fn();
     await deliverEmail(db(), env, message(third.recipientId), 1, never as unknown as typeof fetch);
     expect(never).not.toHaveBeenCalled();
@@ -616,6 +615,41 @@ describe('sending an email (TUI-65)', () => {
       emailStatus: 'failed',
       error: 'Email sending is not set up (RESEND_API_KEY and EMAIL_FROM)',
     });
+  });
+
+  it('sends to the guardian’s address now, and skips one who has none any more', async () => {
+    const { org, mere, perera } = await setup();
+    const fetchFn = vi.fn(async () => Response.json({ id: 'email_5' }));
+    const { recipientId } = await queuedRecipient(org.id, mere.id, perera.id);
+    // Mere's address changes after the message was sent: the new one is used.
+    await db()
+      .update(guardians)
+      .set({ email: 'mere.new@example.com' })
+      .where(eq(guardians.id, mere.id));
+    await deliverEmail(
+      db(),
+      configured,
+      { orgId: org.id, to: '', template: 'message', data: {}, recipientId },
+      1,
+      fetchFn as unknown as typeof fetch,
+    );
+    const sent = JSON.parse(
+      (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(sent.to).toEqual(['mere.new@example.com']);
+
+    const later = await queuedRecipient(org.id, mere.id, perera.id);
+    await db().update(guardians).set({ email: null }).where(eq(guardians.id, mere.id));
+    fetchFn.mockClear();
+    await deliverEmail(
+      db(),
+      configured,
+      { orgId: org.id, to: '', template: 'message', data: {}, recipientId: later.recipientId },
+      1,
+      fetchFn as unknown as typeof fetch,
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect((await statusOf(later.recipientId)).emailStatus).toBe('skipped');
   });
 
   it('sends an invitation with its code, and a link when the app’s address is known', async () => {

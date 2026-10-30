@@ -93,6 +93,16 @@ export function messageFound(ctx: OrgCtx, id: string, sentBy?: string): IdQuery 
   );
 }
 
+/** The guardians these messages went to, as ids to filter by. */
+export function recipientGuardians(ctx: OrgCtx, messageIds: Ids): IdQuery {
+  return idsFrom(
+    ctx,
+    messageRecipients,
+    messageRecipients.guardianId,
+    inIds(messageRecipients.messageId, messageIds),
+  );
+}
+
 /** The recipients of these messages, oldest first. */
 export function listRecipients(ctx: OrgCtx, messageIds: Ids) {
   return ctx.db
@@ -377,22 +387,6 @@ export function settingsOfOrgs(db: OrgCtx['db'], orgIds: string[]) {
         sql`${notificationSettings.deletedAt} is null`,
       ),
     );
-}
-
-/** Clears the email addresses copied onto these guardians' messages (TUI-79). */
-export function eraseStatements(ctx: OrgCtx, guardianIds: string[]): BatchItem<'sqlite'>[] {
-  if (guardianIds.length === 0) return [];
-  return [
-    ctx.db
-      .update(messageRecipients)
-      .set({ email: null })
-      .where(
-        and(
-          eq(messageRecipients.orgId, ctx.orgId),
-          inIds(messageRecipients.guardianId, guardianIds),
-        ),
-      ),
-  ];
 }
 
 /** Deletes the family's message recipient rows for good (TUI-118). The messages stay. */
