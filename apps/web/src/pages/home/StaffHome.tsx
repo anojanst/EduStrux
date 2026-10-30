@@ -10,6 +10,7 @@ import {
   CircleCheck,
   FileStack,
   GraduationCap,
+  ListChecks,
   MessageSquareWarning,
   ReceiptText,
   RotateCcw,
@@ -478,13 +479,16 @@ function GettingStarted() {
   const { membership } = useOrg();
   const base = orgPath(membership.org.slug);
   const steps: {
-    key: 'courses' | 'classes' | 'families' | 'invite';
+    key: 'wizard' | 'courses' | 'classes' | 'families' | 'invite';
     to: string;
     Icon: LucideIcon;
-  }[] = [
-    { key: 'courses', to: `${base}/settings/courses`, Icon: GraduationCap },
-    { key: 'classes', to: `${base}/classes`, Icon: School },
-  ];
+  }[] = can(membership.role, 'org:write')
+    ? // The owner finishes the setup wizard (TUI-64), which ends with the first class.
+      [{ key: 'wizard', to: `${base}/setup`, Icon: ListChecks }]
+    : [
+        { key: 'courses', to: `${base}/settings/courses`, Icon: GraduationCap },
+        { key: 'classes', to: `${base}/classes`, Icon: School },
+      ];
   if (can(membership.role, 'people:write'))
     steps.push({ key: 'families', to: `${base}/families`, Icon: Users });
   if (can(membership.role, 'staff:write'))

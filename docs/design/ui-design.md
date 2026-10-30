@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), Theme for owners (D-165), and Privacy & data for owners (shield icon, after Theme, D-189). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), Organisation for owners (building icon, before Theme, D-193), Theme for owners (D-165), and Privacy & data for owners (shield icon, after Theme, D-189). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -358,7 +358,9 @@ Built in TUI-125 (D-179). Changes from the Figma source:
   lessons today) in place of the money cards.
 - Recent activity is left out until there is a feed endpoint; Quick actions sit under today's
   lessons instead. "Send message" waits for the messages screen.
-- A centre with no classes yet gets "Getting started" above the panels.
+- A centre with no classes yet gets "Getting started" above the panels. The owner's links to
+  the setup wizard ("Finish setting up your centre", D-193); other staff get "Add your courses"
+  and "Add your first class".
 - "Send message" describes **email or portal**: SMS and WhatsApp are paid add-ons, not in the
   base app.
 - On phones the stat cards are a 2 × 2 grid and "+ New" is an icon button, so nothing is cut off.
@@ -473,6 +475,16 @@ Settled when TUI-23 was built (D-158):
   Settings › Courses with a one-line explainer above; add and edit dialogs per tab, and a
   searchable checkbox list (`PickList`) for choosing students, families or courses. On phones
   each row puts its value under the name in a two-column grid, so long names aren't cut short.
+- **Setup wizard** (D-193), built straight to this design system without a Figma design (the
+  owner's choice, 2026-10-30), owner only, where a new centre lands after `/onboarding`: five
+  steps, one a page, the step in the URL (Terms, Grade levels, Subjects, Tax, First class). A
+  numbered step list with checks on done steps on the left on wide screens, a "Set up · Step n of
+  5" overline, and Back, Skip for now and Save and continue on each step. Presets are chips
+  (grade levels editable, subjects toggled); a done step shows "Already set up" with a link to
+  its settings screen; items that fail to save are listed on the step.
+- **Settings › Organisation** (D-193), built straight to this design system, owner only: centre
+  name, single-tutor mode, tax number, country, date format and time zone, with the currency
+  read-only. A stale save (409) offers Reload; the single-tutor 422 shows under its switch.
 - **Profile page** (D-161), from the Figma Make profile design: a section menu on the left on
   wide screens, chips and stacked sections on phones. Changes from the source: badges and small
   text stay at 12px (§3), and two-step verification is left out until MFA is available (TUI-80).

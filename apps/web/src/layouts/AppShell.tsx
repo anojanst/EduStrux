@@ -2,6 +2,7 @@ import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
+  Building2,
   CalendarCheck,
   CalendarDays,
   CalendarRange,
@@ -90,6 +91,7 @@ function navFor(role: Role): NavItem[] {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });
   }
   if (can(role, 'org:write')) {
+    items.push({ to: 'settings/organisation', label: 'nav.organisation', Icon: Building2 });
     items.push({ to: 'settings/theme', label: 'nav.theme', Icon: Palette });
     items.push({ to: 'settings/privacy', label: 'nav.privacy', Icon: ShieldCheck });
   }

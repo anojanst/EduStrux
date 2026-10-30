@@ -26,7 +26,7 @@ describe('setting up a centre', () => {
     await userEvent.click(screen.getByLabelText(/Just me/));
     await userEvent.click(screen.getByRole('button', { name: 'Create centre' }));
 
-    expect(await screen.findByTestId('where')).toHaveTextContent('/o/bright-minds');
+    expect(await screen.findByTestId('where')).toHaveTextContent('/o/bright-minds/setup');
     const body = calls[0]!.body as Record<string, unknown>;
     expect(body).toMatchObject({
       name: 'Bright Minds',
