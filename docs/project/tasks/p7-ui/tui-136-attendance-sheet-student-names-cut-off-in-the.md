@@ -17,3 +17,7 @@ The owner reported that in the attendance dialog a teacher couldn't read the stu
 tablet width up each row put the name beside four buttons fixed at 400px, which left the name
 about 100px in the dialog. The name now keeps at least 14rem, and the buttons wrap onto their
 own line when the row is too narrow for both. The lesson page keeps one line per student.
+
+Then, at the owner's request: one line per student, with small icon-only status buttons and a
+legend above the list saying what each icon means. Phones keep the name on its own line above
+four 44px buttons, since one line leaves the name no room there.

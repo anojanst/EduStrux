@@ -461,7 +461,10 @@ Settled when TUI-23 was built (D-158):
   absences reported this week) and This week (hidden on phones). Quick attendance is the
   attendance sheet in the shared wide dialog (a bottom sheet on phones); the lesson page's sheet
   and it share one implementation, now with homework for the class. Rows keep the sheet's status
-  buttons rather than the design's segmented control.
+  buttons rather than the design's segmented control. The status buttons are icon-only (✓
+  Present, clock Late, ✗ Absent, – Excused), each named for screen readers and with a tooltip,
+  and a legend above the list says which is which. From tablet width each student is one line;
+  phones put the name above the four 44px buttons (TUI-136).
 - **Settings › Branches & rooms** (D-178), from the owner's Figma Make design: a card per
   branch (address, room and class counts) with its rooms as rows (seats, class count), add and
   edit dialogs for branches and rooms, and delete dialogs that list what still uses the item,

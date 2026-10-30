@@ -16,7 +16,13 @@ import { useFormat } from '../../lib/format';
 import { orgApiPath, useOrg } from '../../lib/org';
 import { can } from '../../lib/roles';
 import { EmptyState } from '../people/parts';
-import { HomeworkField, StudentRow, useAttendanceDraft, useLessonAttendance } from './attendance';
+import {
+  HomeworkField,
+  StatusLegend,
+  StudentRow,
+  useAttendanceDraft,
+  useLessonAttendance,
+} from './attendance';
 
 /**
  * A lesson's attendance sheet (TUI-112): present, late, absent or excused for each student
@@ -180,6 +186,7 @@ function Sheet({
             </div>
           </div>
 
+          <StatusLegend />
           <Card flush className="overflow-hidden">
             {shown.length === 0 ? (
               <p className="px-4 py-6 text-body text-muted">{t('lesson.filterEmpty')}</p>

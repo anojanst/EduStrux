@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { useFormat } from '../../lib/format';
 import {
   HomeworkField,
+  StatusLegend,
   StudentRow,
   useAttendanceDraft,
   useLessonAttendance,
@@ -124,6 +125,7 @@ function Sheet({
             {save.error ? (
               <p className="text-meta text-danger md:hidden">{errorMessage(save.error)}</p>
             ) : null}
+            <StatusLegend />
             <Card flush className="overflow-hidden">
               <ul className="divide-y divide-border">
                 {records.map((record) => (

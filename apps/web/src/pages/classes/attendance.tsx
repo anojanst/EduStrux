@@ -172,6 +172,22 @@ const STATUSES: { status: AttendanceStatus; Icon: LucideIcon; on: string }[] = [
   { status: 'excused', Icon: Minus, on: 'border-border-strong bg-canvas text-text' },
 ];
 
+/** What each status button means, above the list of students (TUI-136). */
+export function StatusLegend() {
+  return (
+    <ul aria-hidden className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-meta text-muted">
+      {STATUSES.map(({ status, Icon, on }) => (
+        <li key={status} className="flex items-center gap-1.5">
+          <span className={cn('grid size-6 place-items-center rounded-md border', on)}>
+            <Icon className="size-3.5" />
+          </span>
+          {t(`lesson.status.${status}`)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** One student: their name, any notice from home, the four statuses, and a note for the family. */
 export function StudentRow({
   record,
@@ -197,10 +213,11 @@ export function StudentRow({
   const noteId = `note-${record.studentId}`;
 
   return (
-    <li className="flex flex-col gap-3 px-4 py-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
-      {/* The name keeps room for itself: where the row is too narrow for it and the four
-          buttons (a dialog), the buttons wrap onto a line of their own. */}
-      <div className="flex min-w-0 flex-1 items-center gap-3 md:min-w-[14rem]">
+    // One line per student from tablet width: the name, the note button and four icon-only status
+    // buttons, whose meaning the legend above the list gives (TUI-136). Phones keep the name on
+    // a line of its own, as four 44px buttons leave it no room. A note opens on a line of its own.
+    <li className="flex flex-col gap-2 px-4 py-2.5 md:flex-row md:flex-wrap md:items-center md:gap-x-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar name={name} className="size-9 text-meta" />
         <span className="flex min-w-0 flex-1 flex-col">
           <b className="truncate text-body font-semibold text-text">{name}</b>
@@ -245,7 +262,7 @@ export function StudentRow({
       <div
         role="radiogroup"
         aria-label={t('lesson.statusFor', { name })}
-        className="grid grid-cols-4 gap-1.5 md:flex md:w-[400px] md:shrink-0"
+        className="grid grid-cols-4 gap-1.5 md:flex md:shrink-0"
       >
         {STATUSES.map(({ status: value, Icon, on }) => {
           const selected = status === value;
@@ -255,18 +272,19 @@ export function StudentRow({
               type="button"
               role="radio"
               aria-checked={selected}
+              aria-label={t(`lesson.status.${value}`)}
+              title={t(`lesson.status.${value}`)}
               disabled={!onStatus}
               // A second tap on the chosen status clears it.
               onClick={() => onStatus?.(selected ? null : value)}
               className={cn(
-                'flex h-12 flex-col items-center justify-center gap-0.5 rounded-lg border text-meta font-semibold transition-colors duration-150 md:h-9 md:flex-1 md:flex-row md:gap-1.5 md:text-label',
+                'grid h-11 place-items-center rounded-lg border transition-colors duration-150 md:size-9',
                 selected ? on : 'border-border-strong bg-surface text-muted',
                 onStatus ? (selected ? '' : 'hover:bg-canvas hover:text-text') : 'cursor-default',
                 !onStatus && !selected && 'opacity-60',
               )}
             >
               <Icon className="size-4" aria-hidden />
-              {t(`lesson.status.${value}`)}
             </button>
           );
         })}
