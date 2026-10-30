@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-134-home-right-column
-pr:
+pr: 85
 ---
 
 # TUI-134 Home right column: quick actions and the plan card
