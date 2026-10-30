@@ -2,6 +2,8 @@
 @layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
+/* Only the logo's wordmark uses Manrope (TUI-135). */
+@import '@fontsource-variable/manrope';
 
 /* Design tokens: docs/design/ui-design.md §2. Components use these through the Tailwind theme
    below (bg-brand, text-muted, border-border), never raw hex values. */
@@ -14,6 +16,7 @@
   --sidebar-text: #c9d9da;
   --sidebar-strong: #ffffff;
   --sidebar-active: #ffffff;
+  --logo-accent: #50c7b7;
   --text: #192229;
   --muted: #66747d;
   --subtle: #8b979e;
@@ -65,6 +68,7 @@
   --shadow-pop: var(--shadow-pop);
 
   --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-brand: 'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif;
 
   /* Type scale: ui-design.md §3. Nothing below 12px. */
   --text-title: 28px;
