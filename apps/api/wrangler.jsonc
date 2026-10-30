@@ -66,13 +66,22 @@
         "not_found_handling": "single-page-application",
         "run_worker_first": ["/api/*"],
       },
+      // The app's own address (D-196). Cloudflare makes its DNS record and certificate on deploy;
+      // the deploy token needs Zone → Workers Routes: Edit on edustrux.com. The workers.dev
+      // address keeps working too.
+      "routes": [{ "pattern": "app.edustrux.com", "custom_domain": true }],
       "vars": {
         "ENVIRONMENT": "production",
         // On until launch, while production is the only deployed environment (D-068).
         "ENABLE_DOCS": "true",
         // The origins the web app is served from (this Worker). A token minted on any other
         // origin is refused. Add each new origin here when the app gets one.
-        "CLERK_AUTHORIZED_PARTIES": "https://edustrux.edustrux-api.workers.dev",
+        "CLERK_AUTHORIZED_PARTIES": "https://app.edustrux.com,https://edustrux.edustrux-api.workers.dev",
+        // Links in emails and Stripe's return address (D-196).
+        "APP_URL": "https://app.edustrux.com",
+        // On mail.edustrux.com, the domain verified with Resend (D-196). Sending also needs the
+        // RESEND_API_KEY secret.
+        "EMAIL_FROM": "EduStrux <no-reply@mail.edustrux.com>",
       },
       "d1_databases": [
         {

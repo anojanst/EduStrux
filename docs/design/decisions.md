@@ -5908,3 +5908,30 @@ as its first two). Settings › Organisation stays, now opened from the Settings
 - **Consequences:** Leaving the wizard part way still leaves the checklist on Home until the
   last step is finished. Orgs made before the migration count as not finished.
 - **Tasks:** TUI-130.
+
+## D-196 · 2026-10-31 · The app at app.edustrux.com, email from mail.edustrux.com
+
+- **Context:** The owner registered edustrux.com at Namecheap and moved its DNS to Cloudflare
+  (D-023). Production was only on its workers.dev address, and couldn't send email: Resend needs
+  a domain of ours to send from.
+- **Decision:**
+  - The web app and API are served at `https://app.edustrux.com`, a Workers Custom Domain on the
+    `edustrux` Worker (`routes` under `env.production`). The bare `edustrux.com` stays free for
+    the landing page (TUI-76). The workers.dev address keeps working.
+  - `CLERK_AUTHORIZED_PARTIES` lists both origins. `APP_URL` is `https://app.edustrux.com`.
+  - Email is sent from `EduStrux <no-reply@mail.edustrux.com>` (`EMAIL_FROM`), on the subdomain
+    `mail.edustrux.com` verified with Resend, so a sending problem doesn't touch the main domain's
+    reputation. Replies already go to the centre through `reply_to` where a message sets one.
+  - `APP_URL` and `EMAIL_FROM` aren't secret, so they are vars in the wrangler config, not
+    Worker secrets. `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` stay secrets the owner sets.
+  - Assumption: the two addresses were proposed during the build; the owner can change them in
+    review.
+- **Consequences:**
+  - The deploy token (`CLOUDFLARE_API_TOKEN`) needs Zone → Workers Routes: Edit on edustrux.com,
+    or the deploy that adds the domain fails.
+  - Access must cover `app.edustrux.com` before that deploy, or the app is public before launch
+    (D-069). The webhooks need an Access bypass on `app.edustrux.com/api/v1/webhooks`, and their
+    endpoints in Resend, Clerk and Stripe use this address.
+  - Resend's free plan sends 3,000 emails a month and 100 a day; more needs its paid plan.
+  - Clerk's production instance, which needs the domain too, is a separate step.
+- **Tasks:** TUI-3.

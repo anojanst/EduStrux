@@ -169,7 +169,7 @@ Set it up once with `scripts/setup-claude-bot.sh <bot-username>`.
 
 ## Deploying
 
-There is one deployed environment, production, at https://edustrux.edustrux-api.workers.dev: the
+There is one deployed environment, production, at https://app.edustrux.com: the
 Worker `edustrux` with the D1 database `edustrux` and the R2 bucket `edustrux-files` (both in
 Oceania) and the queues `edustrux-email` and `edustrux-jobs`. Its vars and bindings are under
 `env.production` in `apps/api/wrangler.jsonc`; the top level of that file is local development
@@ -191,8 +191,8 @@ serves the app and sends `/api` to `wrangler dev`.
 - It needs two repository secrets, set once by the owner with `gh secret set <NAME>`:
   `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`, a custom Cloudflare API token for this
   account only with three account permissions: Workers Scripts: Edit (the deploy), D1: Edit (the
-  migrations) and Queues: Edit (a deploy rewrites the queue consumer settings). A custom domain
-  will add Zone → Workers Routes: Edit for its zone.
+  migrations) and Queues: Edit (a deploy rewrites the queue consumer settings), plus the zone
+  permission Workers Routes: Edit on edustrux.com for the custom domain `app.edustrux.com`.
 - It needs one repository variable, `VITE_CLERK_PUBLISHABLE_KEY`
   (`gh variable set VITE_CLERK_PUBLISHABLE_KEY`): the publishable key of the Clerk instance whose
   secret key is on the Worker. It's public and goes into the web build. Without it the build stops
@@ -247,7 +247,7 @@ limiters, R2 and GitHub Actions on a public repository.
      that token.
   2. `gh secret set CF_ACCESS_CLIENT_ID` and `gh secret set CF_ACCESS_CLIENT_SECRET` with the
      token's id and secret.
-  3. `gh variable set UPTIME_URL --body https://edustrux.edustrux-api.workers.dev`.
+  3. `gh variable set UPTIME_URL --body https://app.edustrux.com`.
   4. Start it once by hand from the Actions tab to see it pass.
 - **Backups:** each night every org's export goes to `backups/{orgId}/{local date}.json` in the
   `edustrux-files` bucket, and the last 14 nights are kept (D-149). The daily cron checks that each
