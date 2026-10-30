@@ -1,7 +1,7 @@
 ---
 id: TUI-72
 title: Sign-in by email code for everyone (no passwords)
-status: blocked
+status: done
 phase: P4
 module: portal
 priority: P0
@@ -17,9 +17,6 @@ Everyone, staff and parents, signs in with a one-time code sent to their email, 
 password (D-021, D-192). The web app has no password card or password step (this PR). No API
 code needed (D-151).
 
-Blocked on the owner, in the Clerk dashboard, on the development and the production instance:
-
-- User & authentication › Email: turn on sign-in with an email verification code.
-- Password: turn it off, so nobody is asked for one at sign-up or sign-in.
-- Check session lifetime suits a centre (people stay signed in on their own devices).
-- Sign in from a private window on production and confirm it asks only for the emailed code.
+Done by the owner in the Clerk dashboard, on the development and the production instance
+(confirmed 2026-10-30): email verification code sign-in is on and passwords are off, so nobody is
+asked for one at sign-up or sign-in.
