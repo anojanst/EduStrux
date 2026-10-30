@@ -3,7 +3,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from './env';
-import { ApiError, errorBody } from './lib/errors';
+import { ApiError, errorBody, RateLimited } from './lib/errors';
 import { createRouter } from './lib/openapi';
 import { withDb } from './middleware/db';
 import { adminRoutes } from './modules/admin/routes';
@@ -86,6 +86,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.notFound((c) => c.json(errorBody('not_found', 'Route not found'), 404));
 
   app.onError((err, c) => {
+    if (err instanceof RateLimited) c.header('Retry-After', String(err.retryAfter));
     if (err instanceof ApiError) {
       return c.json(errorBody(err.code, err.message, err.fields), err.status);
     }

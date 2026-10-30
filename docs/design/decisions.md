@@ -5669,3 +5669,53 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
   - Cleared enquiries and requests stay in the lists and counts, with empty details.
   - All four follow-ons of D-171 are now built.
 - **Tasks:** TUI-117.
+
+## D-191 · 2026-10-30 · Rate limits, error tracking, uptime checks and the backups check
+
+- **Context:** TUI-81 and TUI-83 (launch hardening) add rate limits per user and per org, error
+  tracking, an uptime check and a check that the nightly backups ran. The handoff planned
+  Cloudflare WAF rate-limit rules. Every choice here was made in the build and reported, not
+  stated by the owner (assumption).
+- **Decision:**
+  - **Rate limits** use Workers rate-limit bindings, not WAF rate-limit rules: the free plan
+    allows very few WAF rules, and a binding is free config with no resource to create. Bound
+    under `env.production` only.
+    - Per signed-in user: 600 requests per 60 seconds, keyed on the Clerk user id and counted
+      when the token is verified, before any D1 read.
+    - Per org: 3000 requests per 60 seconds, keyed on the org id and counted only once the
+      caller's membership is confirmed, so someone outside the org can't use up its limit.
+    - Over a limit: 429 `rate_limited` with `Retry-After: 60`. Every route that documents 401
+      also documents 429.
+    - Counts are per Cloudflare location and approximate: they stop a runaway script or a stolen
+      session, not normal use.
+    - A limiter that fails lets the request through (and logs it).
+    - Nothing is limited locally or in tests, where there is no binding.
+    - The public forms keep their own limit (D-144), and their 429 now sends
+      `Retry-After: 3600`.
+  - **Error tracking:** Workers Issues, Cloudflare's built-in error tracking (free during its
+    beta), turned on under `env.production`. Uncaught exceptions, 5xx responses and
+    `console.error` lines are grouped into issues; source maps are uploaded so stacks point at
+    the source. Alerts are an Issues automation the owner sets in the dashboard. No Sentry or
+    other outside service.
+  - **Uptime:** a GitHub Actions workflow calls the new `GET /api/v1/health/ready` every 15
+    minutes, with 3 tries. A failed run is the alert (GitHub emails it). Free, since the repo is
+    public. It does nothing until the owner sets the repository variable `UPTIME_URL`.
+  - **`GET /api/v1/health/ready`** (no sign-in): 200 `{ ok, environment, database: 'ok' }` once
+    D1 answers `select 1`, 503 `unavailable` otherwise. `GET /api/v1/health` still doesn't touch
+    the database.
+  - **Backups check:** the daily cron, for each org that can write and was created more than a
+    day ago, checks that last night's backup file is in R2 before starting tonight's. A missing
+    one is logged as an error, so it becomes an Issue.
+  - **Restoring:** a runbook in the README covers D1 Time Travel (30 days on Workers Paid, 7 on
+    Free; it restores every org at once) and restoring one org from its nightly JSON backup by
+    hand.
+- **Consequences:**
+  - While Access covers the Worker (D-069), the uptime check needs an Access service token
+    (secrets `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`) and a Service Auth policy on
+    the Access app, both set by the owner. This answers D-069's note that monitoring needs one.
+  - An org that became able to write today (read-only last night, so no backup) can raise one
+    false missing-backup alarm.
+  - There is no in-app restore from a backup; restoring one org is a manual job.
+  - The limits, the Issues setting and the rate-limit bindings exist only in production, so tests
+    don't exercise a real limiter.
+- **Tasks:** TUI-81, TUI-83.

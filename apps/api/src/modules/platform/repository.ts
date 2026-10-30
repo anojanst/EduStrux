@@ -5,6 +5,11 @@ import { inOrg, writeWithAudit, type OrgCtx } from '../../db/scope';
 
 export type JobRow = typeof jobs.$inferSelect;
 
+/** One query that reads nothing, to see that the database answers (TUI-83). */
+export function ping(db: Db) {
+  return db.run(sql`select 1`);
+}
+
 export function findJob(ctx: OrgCtx, jobId: string) {
   return ctx.db
     .select()

@@ -124,6 +124,7 @@ export function orgsForCron(db: Db) {
       status: orgs.status,
       trialEndsAt: orgs.trialEndsAt,
       financialRetentionYears: orgs.financialRetentionYears,
+      createdAt: orgs.createdAt,
     })
     .from(orgs)
     .where(and(isNull(orgs.deletedAt), notInArray(orgs.status, ['suspended', 'cancelled'])));

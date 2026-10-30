@@ -117,6 +117,14 @@ export const BACKUP_KEEP_DAYS = 14;
 
 const backupPrefix = (orgId: string) => `backups/${orgId}/`;
 
+/**
+ * Whether the org's backup for `date` is in R2 (TUI-83): the daily cron checks last night's
+ * before it starts tonight's, and logs an error for one that's missing.
+ */
+export async function hasBackup(bucket: R2Bucket, orgId: string, date: string) {
+  return (await bucket.head(`${backupPrefix(orgId)}${date}.json`)) !== null;
+}
+
 /** Starts tonight's backup of the org, for the daily cron. */
 export function startBackup(ctx: OrgCtx, queue: Queue<JobMessage>, date: string) {
   return startJob(ctx, queue, BACKUP, { date });

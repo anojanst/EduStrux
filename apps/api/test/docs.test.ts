@@ -59,6 +59,10 @@ describe('API docs', () => {
       ]),
     );
     expect(res.body.paths['/api/v1/health'].get.security).toEqual([]);
+    expect(res.body.paths['/api/v1/health/ready'].get.security).toEqual([]);
+    // Every route that needs sign-in can be rate limited (TUI-81).
+    expect(res.body.paths['/api/v1/me'].get.responses['429']).toBeDefined();
+    expect(res.body.paths['/api/v1/health'].get.responses['429']).toBeUndefined();
   });
 
   it('serves Swagger UI', async () => {

@@ -59,6 +59,12 @@ export type Bindings = {
    * `/api/v1/admin/*`; with none set, nobody does.
    */
   SUPER_ADMIN_CLERK_USER_IDS?: string;
+  /**
+   * Workers rate limiters (TUI-81): requests per signed-in user, and per org, a minute. Bound in
+   * production only; locally and in tests they're absent and nothing is limited.
+   */
+  USER_RATE_LIMIT?: RateLimit;
+  ORG_RATE_LIMIT?: RateLimit;
 };
 
 export type AuthUser = {

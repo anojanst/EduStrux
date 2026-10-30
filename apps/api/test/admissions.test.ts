@@ -160,6 +160,7 @@ describe('enquiries', () => {
     const flood = await send('198.51.100.1');
     expect(flood.status).toBe(429);
     expect(flood.body.error.code).toBe('rate_limited');
+    expect(flood.headers.get('Retry-After')).toBe('3600');
     expect((await send('198.51.100.2')).status).toBe(201);
   });
 });
