@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-64-setup-wizard
-pr:
+pr: 82
 ---
 
 # TUI-64 Onboarding wizard (full) + org profile/branding UI
