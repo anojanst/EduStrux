@@ -8,7 +8,7 @@ priority: P0
 size: S
 endpoints: []
 branch: task/tui-136-attendance-names
-pr:
+pr: 87
 ---
 
 # TUI-136 Attendance sheet: student names cut off in the dialog
