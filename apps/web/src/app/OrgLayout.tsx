@@ -1,7 +1,7 @@
 import type { Org } from '@edustrux/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { Link, Outlet, useParams } from 'react-router';
+import { Link, Outlet, useMatch, useParams } from 'react-router';
 import { PageError, PageLoading } from '../components/PageState';
 import { buttonClass } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -15,12 +15,14 @@ import { useOrgTheme } from '../lib/theme';
 
 /**
  * `/o/:orgSlug/*`: the org from the user's memberships (`GET /me`), its settings, and the app
- * shell around the page, in the org's theme (D-165). A slug the user isn't a member of shows a dead end, not the org.
+ * shell around the page (not the setup wizard's full screen), in the org's theme (D-165). A slug the user isn't a member of shows a dead end, not the org.
  */
 export function OrgLayout() {
   const { orgSlug = '' } = useParams();
   const me = useMe();
   const membership = me.data?.memberships.find((m) => m.org.slug === orgSlug);
+  // The setup wizard has a full screen of its own (TUI-130).
+  const fullScreen = useMatch('/o/:orgSlug/setup') !== null;
 
   const org = useQuery({
     queryKey: ['org', membership?.org.id],
@@ -40,9 +42,13 @@ export function OrgLayout() {
 
   return (
     <OrgContext.Provider value={{ me: me.data, membership, org: org.data }}>
-      <AppShell>
+      {fullScreen ? (
         <Outlet />
-      </AppShell>
+      ) : (
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      )}
     </OrgContext.Provider>
   );
 }

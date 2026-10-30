@@ -89,7 +89,13 @@ export async function updateOrg(ctx: OrgCtx, input: UpdateOrg): Promise<Org> {
   const before = await orgRow(ctx);
   if (before.updatedAt !== input.updatedAt) throw staleData();
 
-  const { updatedAt: _ignored, ...changes } = input;
+  const { updatedAt: _ignored, setupCompleted, ...fields } = input;
+  const changes: repo.OrgChanges = { ...fields };
+  // Finishing the wizard keeps its first time; asking again changes nothing (D-195).
+  if (setupCompleted !== undefined) {
+    const at = setupCompleted ? (before.setupCompletedAt ?? new Date().toISOString()) : null;
+    if (at !== before.setupCompletedAt) changes.setupCompletedAt = at;
+  }
   if (Object.keys(changes).length === 0) return toOrg(before);
   // Neither check needs the other's answer, so they go to D1 together.
   const [branchCount, slugTaken] = await Promise.all([

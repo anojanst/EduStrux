@@ -219,7 +219,7 @@ describe("a teacher's Today", () => {
     stubApi({});
     renderRoutes(routes, '/o/bright-minds', inOrg('accountant'));
     expect(screen.queryByText('Today’s lessons')).toBeNull();
-    expect(screen.getByText('Quick actions')).toBeVisible();
+    expect(screen.getByText(/what’s happening across Bright Minds/)).toBeVisible();
   });
 });
 

@@ -15,7 +15,7 @@ vi.mock('@clerk/react', async () => (await import('./clerk')).clerkModule);
 // actions, each for the roles that can read it.
 
 const org = { id: 'org_1', name: 'Bright Minds Tuition', slug: 'bright-minds' };
-const inOrg = (role: Role) => (tree: ReactNode) => (
+const inOrg = (role: Role, settings?: object) => (tree: ReactNode) => (
   <OrgContext.Provider
     value={{
       me: {
@@ -25,7 +25,7 @@ const inOrg = (role: Role) => (tree: ReactNode) => (
         memberships: [{ id: 'mem_me', role, branchIds: null, org }],
       },
       membership: { id: 'mem_me', role, branchIds: null, org },
-      org: undefined,
+      org: settings as never,
     }}
   >
     <ToastProvider>{tree}</ToastProvider>
@@ -91,6 +91,21 @@ const dashboard = (extra = {}) => ({
   },
 });
 
+/** The owner's setup lists: a centre with a branch and grades, and nothing else yet. */
+const setupLists = {
+  [`${API}/tax-rates?limit=200`]: page([]),
+  [`${API}/branches?limit=200`]: page([{ id: 'brn_main', name: 'Main', updatedAt: at }]),
+  [`${API}/branches/brn_main/rooms?limit=200`]: page([{ id: 'rm_3', name: 'Room 3' }]),
+  [`${API}/academic-years?limit=200`]: page([]),
+  [`${API}/grade-levels`]: page([{ id: 'grd_1', name: 'Year 1' }]),
+  [`${API}/subjects?limit=200`]: page([]),
+  [`${API}/staff?limit=2`]: page([{ id: 'mem_me' }]),
+  [`${API}/classes?limit=200`]: page([{ id: 'cls_1' }]),
+  [`${API}/billing/subscription`]: {
+    body: { plan: 'small', studentLimit: 50, activeStudents: 45, subscription: null },
+  },
+};
+
 function stubHome(extra: Record<string, unknown> = {}) {
   return stubApi({
     [`${API}/reports/dashboard`]: dashboard(),
@@ -102,74 +117,97 @@ function stubHome(extra: Record<string, unknown> = {}) {
     [`${API}/sessions/old/notes`]: {
       body: { sessionId: 'old', homework: null, homeworkUpdatedAt: null, notes: [] },
     },
+    ...setupLists,
     ...(extra as Record<string, { body: unknown }>),
   });
 }
 
+/** A count's tile on Home, found by its label (the first on the page with that text). */
+const stat = (label: string) =>
+  screen.getAllByText(label)[0]!.closest<HTMLElement>('[class*="min-h-[84px]"]')!;
+
+// The staff Home (TUI-130, from the owner's Figma Make design): four counts for today, today's
+// lessons with the next one picked out, money at a glance, and the owner's setup checklist and
+// student limit.
 describe('the staff Home', () => {
-  it('shows the owner money, today’s lessons and what needs attention', async () => {
+  it('shows the owner today’s counts, lessons, money and what’s left to set up', async () => {
     stubHome();
     renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
 
     expect(await screen.findByText('$4,200.00')).toBeVisible();
-    expect(screen.getByText('Review drafts →')).toBeVisible();
-    expect(
-      await screen.findByText('Bright Minds Tuition · 3 lessons today · 1 to mark'),
-    ).toBeVisible();
+    expect(screen.getByText('4 drafts to issue')).toBeVisible();
+    expect(screen.getByText('$180.00')).toHaveClass('text-danger');
+    expect(screen.getByText('Across 2 invoices')).toBeVisible();
 
-    const lessons = within(
-      screen.getByRole('heading', { name: 'Today’s lessons' }).closest('section')!,
+    // Three lessons today; the one on now is picked out, and today's one to take plus three
+    // from earlier days are to mark.
+    expect(await screen.findByText('3 lessons today')).toBeVisible();
+    expect(stat('Attendance to take')).toHaveTextContent('4');
+    expect(stat('Absence notices')).toHaveTextContent('2');
+    expect(stat('Make-up credits')).toHaveTextContent('1');
+    // The lesson on now is picked out at the top, with attendance to take.
+    expect(screen.getAllByText('Attendance to take')).toHaveLength(2);
+    expect(screen.getByText('8 present · 1 absent')).toBeVisible();
+
+    const checklist = within(
+      screen.getByRole('heading', { name: 'Set up your centre' }).closest('div.rounded-xl')!,
     );
-    expect(lessons.getByText('8 present · 1 absent')).toBeVisible();
-    expect(lessons.getAllByText('Room 3 · Jason Lee')[0]).toBeVisible();
-    expect(lessons.getByRole('button', { name: 'Mark' })).toBeVisible();
-
-    const attention = within(
-      screen.getByRole('heading', { name: 'Needs attention' }).closest('aside')!,
+    expect(await checklist.findByText('Just 3 things left to do')).toBeVisible();
+    expect(checklist.getByRole('link', { name: /Set up terms & dates/ })).toHaveAttribute(
+      'href',
+      '/o/bright-minds/setup?step=calendar',
     );
-    expect(attention.getByText('Earlier lessons not marked').closest('li')).toHaveTextContent('3');
-    expect(attention.getByText('Students away today').closest('li')).toHaveTextContent('2');
-    expect(attention.getByText('Make-up credits to book')).toBeVisible();
-    expect(attention.getByText('$180.00 past its due date')).toBeVisible();
-
-    expect(screen.getByRole('button', { name: /Run invoices/ })).toBeVisible();
-    expect(screen.queryByText('Getting started')).toBeNull();
+    expect(checklist.getByRole('link', { name: /Add grade levels/ })).toHaveTextContent('Done');
+    expect(await screen.findByText('You’re nearing your student limit')).toBeVisible();
+    expect(screen.getByText('45 of 50 active students on your plan.')).toBeVisible();
   });
 
-  it('opens the oldest unmarked lesson from Needs attention', async () => {
+  it('leaves the checklist out once the owner finished the setup', async () => {
+    stubHome();
+    renderRoutes(routes, '/o/bright-minds', inOrg('owner', { ...org, setupCompletedAt: at }));
+    expect(await screen.findByText('3 lessons today')).toBeVisible();
+    expect(await screen.findByText('You’re nearing your student limit')).toBeVisible();
+    expect(screen.queryByText('Set up your centre')).toBeNull();
+  });
+
+  it('opens the oldest unmarked lesson from Attendance to take', async () => {
     stubHome();
     renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
-    await userEvent.click(await screen.findByRole('button', { name: /Oldest is .* mark it now/ }));
+    await screen.findByText('3 lessons today');
+    await userEvent.click(stat('Attendance to take'));
     expect(await screen.findByRole('dialog', { name: 'Class old' })).toBeVisible();
   });
 
-  it('gives front desk the centre’s counts and no money', async () => {
+  it('gives front desk the counts and lessons, and no money or checklist', async () => {
     const calls = stubHome({
       [`${API}/reports/dashboard`]: dashboard({ money: undefined }),
     });
     renderRoutes(routes, '/o/bright-minds', inOrg('front_desk'));
 
-    expect(await screen.findByText('Families')).toBeVisible();
-    expect(screen.getByText('41')).toBeVisible();
-    expect(screen.getByText('1 marked')).toBeVisible();
-    expect(screen.queryByText('Total owing')).toBeNull();
-    expect(screen.queryByText('Overdue invoices')).toBeNull();
-    expect(screen.getByRole('button', { name: /Record payment/ })).toBeVisible();
-    expect(calls.some((c) => c.key.includes('/audit-log'))).toBe(false);
+    expect(await screen.findByText('3 lessons today')).toBeVisible();
+    expect(screen.queryByText('Money at a glance')).toBeNull();
+    expect(screen.queryByText('Set up your centre')).toBeNull();
+    expect(calls.some((c) => c.key.includes('/billing/subscription'))).toBe(false);
   });
 
-  it('says when everything is caught up', async () => {
-    stubHome({
-      [`${API}/reports/dashboard`]: dashboard({
-        today: { lessons: 1, cancelled: 0, marked: 1, absenceNotices: 0 },
-        unmarkedLessons: 0,
-        makeupCreditsAvailable: 0,
-        money: undefined,
+  it('tells the owner about the trial and where setup left off', async () => {
+    stubHome();
+    renderRoutes(
+      routes,
+      '/o/bright-minds',
+      inOrg('owner', {
+        ...org,
+        status: 'trialing',
+        trialEndsAt: new Date(Date.now() + 9 * 86_400_000 - 60_000).toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
-      [`${API}/sessions?from=${today}&to=${today}&limit=200`]: page([done]),
-    });
-    renderRoutes(routes, '/o/bright-minds', inOrg('branch_manager'));
-    expect(await screen.findByText('All caught up')).toBeVisible();
+    );
+    expect(screen.getByText('14-day free trial')).toBeVisible();
+    expect(screen.getByText('Make the most of your free trial')).toBeVisible();
+    expect(await screen.findByRole('link', { name: 'Continue setup' })).toHaveAttribute(
+      'href',
+      '/o/bright-minds/setup?step=calendar',
+    );
   });
 
   const emptyCentre = () =>
@@ -183,24 +221,22 @@ describe('the staff Home', () => {
         makeupCreditsAvailable: 0,
       }),
       [`${API}/sessions?from=${today}&to=${today}&limit=200`]: page([]),
+      [`${API}/classes?limit=200`]: page([]),
     });
 
-  it('walks a new centre through its first steps', async () => {
+  it('walks a new centre’s owner through setup with the checklist', async () => {
     emptyCentre();
     renderRoutes(routes, '/o/bright-minds', inOrg('owner'));
 
-    expect(await screen.findByText('Getting started')).toBeVisible();
-    // The owner finishes the setup wizard (TUI-64), which ends with the first class.
-    expect(screen.getByRole('link', { name: /Finish setting up your centre/ })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /Add your first class/ })).toHaveAttribute(
       'href',
-      '/o/bright-minds/setup',
+      '/o/bright-minds/classes',
     );
-    expect(screen.queryByRole('link', { name: /Add your first class/ })).toBeNull();
-    expect(screen.getByRole('link', { name: /Invite your team/ })).toBeVisible();
+    expect(screen.queryByText('Getting started')).toBeNull();
     expect(screen.getAllByText('No lessons today')[0]).toBeVisible();
   });
 
-  it('sends other staff in a new centre to courses and classes, not the wizard', async () => {
+  it('sends other staff in a new centre to courses and classes', async () => {
     emptyCentre();
     renderRoutes(routes, '/o/bright-minds', inOrg('branch_manager'));
 
@@ -209,7 +245,7 @@ describe('the staff Home', () => {
       'href',
       '/o/bright-minds/classes',
     );
-    expect(screen.queryByRole('link', { name: /Finish setting up/ })).toBeNull();
+    expect(screen.queryByText('Set up your centre')).toBeNull();
   });
 
   it('gives an accountant their invoices and payments, without the dashboard', async () => {

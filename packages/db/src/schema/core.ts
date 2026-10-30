@@ -41,6 +41,8 @@ export const orgs = sqliteTable(
     // Years an erased family's invoices and payments are kept, set by the owner from the
     // centre's local tax law (D-171). null = not set: nothing financial is deleted.
     financialRetentionYears: integer('financial_retention_years'),
+    // When the owner finished the setup wizard (D-195). null = not yet: Home keeps offering it.
+    setupCompletedAt: text('setup_completed_at'),
     ...timestamps,
   },
   (t) => [uniqueIndex('orgs_slug_uq').on(t.slug)],

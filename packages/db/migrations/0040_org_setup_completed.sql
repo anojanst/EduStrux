@@ -1,0 +1,1 @@
+ALTER TABLE `orgs` ADD `setup_completed_at` text;

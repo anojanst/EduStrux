@@ -5184,6 +5184,9 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
 
 ## D-179 · 2026-10-27 · The staff Home dashboard
 
+**The layout is superseded by D-194** for the owner, branch managers, front desk and accountants
+(Needs attention and Quick actions are gone). Getting started stays for other staff.
+
 - **Context:** Staff other than teachers still saw a placeholder greeting at `/o/:slug`. TUI-125,
   split from TUI-40, builds the Home dashboard of ui-design.md §9, the first Figma Make design.
   That design is no longer on the Figma Make site (it now shows the latest screen), so the build
@@ -5751,6 +5754,9 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
 
 ## D-193 · 2026-10-30 · The setup wizard and Settings › Organisation
 
+**The wizard is superseded by D-194** (a full-screen wizard of eight steps, with `/onboarding`
+as its first two). Settings › Organisation stays, now opened from the Settings page.
+
 - **Context:** Creating a centre (D-162) asks only its name and regional defaults; terms, grade
   levels, subjects and tax were left for the full onboarding wizard (TUI-64). The org profile had
   no screen of its own.
@@ -5801,3 +5807,104 @@ reference; the method filter goes to the API; "Paid towards" lists each invoice 
     rest stays. Coming back later shows the steps already done.
   - Fulfils D-162's note that terms, grade levels and subjects wait for the onboarding wizard.
 - **Tasks:** TUI-64.
+
+## D-194 · 2026-10-30 · Full-screen setup wizard, the app header and Home from the Figma design
+
+- **Context:** The owner made a Figma Make design for Home, the app header and the setup
+  wizard. Some of its parts show data the API doesn't have yet.
+- **Decision (stated by the owner, 2026-10-30):**
+  - Build the three in one PR. Parts with no data are adapted to what exists, and the missing
+    API pieces are filed as tasks.
+  - No branch switcher yet: the header shows the centre only.
+  - Keep our nav items and take only the look. The settings screens sit behind one Settings
+    link.
+- **Decision (taken during the build):**
+  - **Setup wizard** (replaces D-193's pages): a full screen of its own, outside the app shell.
+    On the left a dark panel in the theme's sidebar colours with "Let's get started" / "Set up
+    your centre" and the 8 steps: Centre details, Setup type, Tax, Branch & rooms, Academic
+    year, Grade levels, Subjects, Invite staff. Each step shows as done (a check), current ("In
+    progress") or to do. On phones a bar with "Step n of 8" and a progress line takes its place.
+    Each step has a "Step n of 8" overline, title, subtitle, the form, then Back, Skip for now
+    and Continue (arrow on the right). The last says "Finish setup" and goes Home. D-193's First
+    class step is gone: Home's checklist links to Classes instead.
+  - **`/onboarding`** is steps 1–2 of the same screen. Centre details: name; web address (the
+    slug, suggested from the name and editable only while creating); country; currency, time
+    zone and date format shown as a summary with Edit. Setup type: Just me or A centre with
+    staff (single-tutor mode). Continue on step 2 calls `POST /orgs`, now sending the slug, and
+    opens `/o/<slug>/setup?step=tax`. A refused field (a taken slug, 409) goes back to step 1
+    with the error under it. Steps 3–8 are locked there.
+  - **Inside a centre**, `/setup` steps 1–2 `PATCH` the org with only what changed (currency
+    can't be edited; the slug is read-only).
+  - **Tax:** "No tax" or "Add a tax rate" (the name by country, the rate, the tax number, and
+    "Prices are" Inclusive of tax or Plus tax). Saves with `POST /tax-rates` as the default
+    rate and `PATCH /orgs/{orgId}` for the tax number.
+  - **Branch & rooms:** renames the first branch (`PATCH /branches/{branchId}`) and adds rooms
+    with seats (`POST /branches/{branchId}/rooms`), with "Add room".
+  - **Academic year:** By term (the year and rows for Term 1 to 4) or "I bill monthly".
+  - **Grade levels:** preset chips Year 1–13, Year 1–12, Grade K–12 (new: Kindergarten and
+    Grade 1–12, the default for US and CA), Grade 1–13, Class 1–12 and Custom (empty), then an
+    editable list.
+  - **Subjects:** suggestion chips plus the centre's own.
+  - **Invite staff:** rows of email and role, "Invite another", one `POST /staff/invitations`
+    each.
+  - Items that fail are listed and the step stays. A done step still shows "Already set up".
+    Done still means the data exists (D-193): rooms for Branch & rooms, more than one member
+    for Invite staff.
+  - **Header** (every org page, and it now always shows): on the left the centre's badge, a
+    divider, a building icon and the centre's name, which opens the user's centres and "Start
+    another centre" when there is more than one (moved from the sidebar). Then the search (⌘K),
+    - New and the user's avatar menu: Your profile, Switch centre (with more than one centre)
+      and Sign out (moved from the sidebar footer). No branch switcher. No bell: what it shows is
+      still open in TUI-40.
+  - **Sidebar:** the logo and our existing areas. The settings screens are no longer listed:
+    one Settings link at its foot opens a new Settings page (`/settings`) with a card for each
+    screen the role can open (Organisation, Branches, Terms & holidays, Courses, Pricing, Team,
+    Theme, Privacy & data; owners also get "Set up your centre"). No help card: there is no help
+    centre. On phones, the tab bar's More is lit on settings pages.
+  - **Staff Home** for the owner, branch managers, front desk and accountants (teacher Today and
+    the portal are unchanged): the date overline in the brand colour, the greeting, "Here's
+    what's happening across {org} today." and a "14-day free trial" pill.
+    - A trial card with the days left. For the owner, while setup isn't finished, "Continue
+      setup" opens the first wizard step without data. No "View plans" (TUI-132). The thin
+      trial strip is hidden on Home.
+    - Four count tiles, two a row (four on very wide screens): Today's lessons (next at …),
+      Attendance to take (today's lessons begun plus earlier unmarked ones; opens the oldest),
+      Make-up credits (in place of the design's Pending enrolments, TUI-131) and Absence
+      notices.
+    - A Today's lessons card with the next or current lesson picked out: its time and "Starts in
+      2h 18m", or Take attendance.
+    - Money at a glance: Owing (with drafts to issue), Received this month, and Overdue across n
+      invoices. It replaces the design's this term's invoiced total against last term (TUI-133).
+    - The owner's right column: a "Set up your centre" checklist of 7 items (centre details,
+      first branch (rooms exist), grade levels, subjects, terms and dates, invite staff (more
+      than one member), first class) with a progress ring and bar, each item opening its wizard
+      step (first class opens Classes). Under it a student-limit card at 80% or more of the
+      plan's limit (`GET /billing/subscription`), without "Compare plans" (TUI-132).
+    - Needs attention and Quick actions are gone. An accountant gets Invoices and Payments
+      tiles. Other staff in a new centre keep Getting started (courses, classes, families).
+- **Consequences:**
+  - No new endpoints, tables or migration. Supersedes D-193's wizard and D-179's Home layout,
+    and moves D-161's org switcher and user footer from the sidebar to the header.
+  - The Figma parts with no API behind them wait for their tasks: an enrolment requests screen
+    (TUI-131), a plans page (TUI-132) and the term money comparison (TUI-133).
+- **Tasks:** TUI-130, TUI-131, TUI-132, TUI-133.
+
+## D-195 · 2026-10-30 · Finishing the setup wizard marks the setup complete
+
+- **Context:** The wizard counted a step as done only once its data existed (D-193, D-194). An
+  owner who chose "I bill monthly" or invited no staff saved nothing for those steps, so Home
+  kept showing the checklist and "Continue setup" for good. The owner reported it.
+- **Decision:**
+  - `orgs.setup_completed_at` (migration `0040_org_setup_completed`), returned as
+    `Org.setupCompletedAt`. `PATCH /orgs/{orgId}` takes `setupCompleted`: `true` sets it to now,
+    keeping the first time if it's already set (a repeat changes nothing), `false` clears it.
+    Owner only, like the rest of the org (`org:write`); audited as `org.updated`.
+  - The wizard's last step sends it, from "Finish setup" or "Skip for now", invites or not.
+  - Once set, Home leaves out the "Set up your centre" checklist and the trial card's "Continue
+    setup". The wizard itself still marks each step by its data, and Settings › "Set up your
+    centre" opens it again.
+  - Assumption: taken during the build without asking; the owner reported the problem, not the
+    fix.
+- **Consequences:** Leaving the wizard part way still leaves the checklist on Home until the
+  last step is finished. Orgs made before the migration count as not finished.
+- **Tasks:** TUI-130.
