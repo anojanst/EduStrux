@@ -1129,3 +1129,15 @@ export function peopleOfFamily(ctx: OrgCtx, familyId: string) {
 export function eraseStatements(...args: Parameters<typeof repo.eraseStatements>) {
   return repo.eraseStatements(...args);
 }
+
+export function inactiveFamilies(...args: Parameters<typeof repo.inactiveFamilies>) {
+  return repo.inactiveFamilies(...args);
+}
+
+export function erasedFamiliesExcept(...args: Parameters<typeof repo.erasedFamiliesExcept>) {
+  return repo.erasedFamiliesExcept(...args);
+}
+
+export function purgeStatements(...args: Parameters<typeof repo.purgeStatements>) {
+  return repo.purgeStatements(...args);
+}

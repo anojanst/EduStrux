@@ -141,6 +141,7 @@ export const en = {
   'nav.timetable': 'Timetable',
   'nav.team': 'Team',
   'nav.theme': 'Theme',
+  'nav.privacy': 'Privacy & data',
   'nav.courses': 'Courses',
   'nav.branches': 'Branches',
   'nav.terms': 'Terms & holidays',
@@ -1307,6 +1308,25 @@ export const en = {
   'courses.grades.inUse': 'Delete this grade level’s {courses} first.',
   'courses.grades.moveUp': 'Move {name} up',
   'courses.grades.moveDown': 'Move {name} down',
+
+  'privacy.overline': 'Settings',
+  'privacy.title': 'Privacy & data',
+  'privacy.subtitle': 'How long your centre keeps records of families who have left.',
+  'privacy.records': 'Invoices and payments',
+  'privacy.retention': 'Keep an erased family’s invoices and payments for',
+  'privacy.retentionHelper':
+    'This depends on your local tax law: check how long your country requires financial records to be kept. Once the time has passed after an invoice’s period, the family’s invoices, payments and anything else left of them are deleted for good.',
+  'privacy.notSet': 'Not set',
+  'privacy.years.one': '1 year',
+  'privacy.years': '{n} years',
+  'privacy.notSetNotice':
+    'Until you choose, no invoice or payment is ever deleted, and erased families stay as anonymous records.',
+  'privacy.save': 'Save',
+  'privacy.saved': 'Privacy settings saved',
+  'privacy.reload': 'Reload',
+  'privacy.inactive': 'Inactive families',
+  'privacy.inactiveBody':
+    'A family is erased automatically 6 months after it goes inactive: no running enrolments, nothing owed, and no lesson, invoice or payment in those 6 months. Names and contact details are removed; invoices and payments are kept for the time set above.',
 
   'theme.overline': 'Settings',
   'theme.title': 'Theme',

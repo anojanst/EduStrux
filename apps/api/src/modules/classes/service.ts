@@ -1068,3 +1068,8 @@ export async function openClasses(ctx: OrgCtx, today: string) {
     schedule: slots.filter((slot) => slot.classId === row.id).map(toSlot),
   }));
 }
+
+/** The org's sessions on or after `date`, as a query another statement filters by (D-104). */
+export function sessionsSince(ctx: OrgCtx, date: string) {
+  return repo.sessionsSince(ctx, date);
+}

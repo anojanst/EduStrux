@@ -20,6 +20,16 @@ const Slug = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and dashes only')
   .openapi({ example: 'bright-minds' });
 
+/**
+ * Years an erased family's invoices and payments are kept after their period (D-171). The owner
+ * sets it from the centre's local tax law; there is no default.
+ */
+const FinancialRetentionYears = z.number().int().min(1).max(10).openapi({
+  example: 7,
+  description:
+    'Years an erased family’s invoices and payments are kept, from the centre’s local tax law. null = not set: none is deleted.',
+});
+
 export const Org = z
   .object({
     id: z.string().openapi({ example: 'org_01j9z3k6m2q8w4e5r6t7y8u9i0' }),
@@ -36,6 +46,7 @@ export const Org = z
     plan: OrgPlan,
     status: OrgStatus,
     trialEndsAt: Timestamp.nullable(),
+    financialRetentionYears: FinancialRetentionYears.nullable(),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
@@ -76,6 +87,7 @@ export const UpdateOrg = z
     singleTutorMode: z.boolean(),
     theme: OrgTheme,
     taxNumber: z.string().trim().max(40).nullable(),
+    financialRetentionYears: FinancialRetentionYears.nullable(),
   })
   .partial()
   .required({ updatedAt: true })

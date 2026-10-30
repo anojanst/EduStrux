@@ -1,5 +1,6 @@
 import { enrolments } from '@edustrux/db';
 import {
+  and,
   asc,
   count,
   countDistinct,
@@ -395,4 +396,30 @@ export async function continuing(ctx: OrgCtx, studentIds: string[], today: strin
     )
     .get();
   return row?.n ?? 0;
+}
+
+/**
+ * Students with an enrolment that runs on or after `date`: running now, starting later, or
+ * ended since. A query, read with the statement it filters (D-104); wide, since it can be most
+ * of the org's students.
+ */
+export function studentsEnrolledSince(ctx: OrgCtx, date: string): IdQuery {
+  return wide(
+    idsFrom(
+      ctx,
+      enrolments,
+      enrolments.studentId,
+      or(isNull(enrolments.endDate), gte(enrolments.endDate, date)),
+    ),
+  );
+}
+
+/** Deletes the students' enrolments for good, deleted ones too (TUI-118). */
+export function purgeStatements(ctx: OrgCtx, studentIds: string[]): BatchItem<'sqlite'>[] {
+  if (studentIds.length === 0) return [];
+  return [
+    ctx.db
+      .delete(enrolments)
+      .where(and(eq(enrolments.orgId, ctx.orgId), inIds(enrolments.studentId, studentIds))),
+  ];
 }

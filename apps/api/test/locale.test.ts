@@ -1,5 +1,6 @@
 import {
   addDays,
+  addMonths,
   currencyDecimals,
   diffDays,
   eachDate,
@@ -83,6 +84,15 @@ describe('calendar dates', () => {
     expect(addDays('2026-10-05', 7)).toBe('2026-10-12');
     expect(diffDays('2026-10-05', '2026-10-12')).toBe(7);
     expect(diffDays('2026-10-12', '2026-10-05')).toBe(-7);
+  });
+
+  it('adds calendar months, keeping the day or taking the month’s last', () => {
+    expect(addMonths('2026-10-29', -6)).toBe('2026-04-29');
+    expect(addMonths('2026-08-31', -6)).toBe('2026-02-28');
+    expect(addMonths('2028-08-31', -6)).toBe('2028-02-29');
+    expect(addMonths('2026-11-15', 3)).toBe('2027-02-15');
+    expect(addMonths('2026-01-10', -84)).toBe('2019-01-10');
+    expect(() => addMonths('2026-01-10', 1.5)).toThrow(RangeError);
   });
 
   it('gives ISO weekdays and inclusive date ranges', () => {

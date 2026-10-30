@@ -44,6 +44,20 @@ export function addDays(date: string, days: number): string {
   return fromDayNumber(toDayNumber(date) + days);
 }
 
+/**
+ * The same day `months` months on (or back, when negative). A day the month doesn't have becomes
+ * its last: ("2026-08-31", -6) → "2026-02-28".
+ */
+export function addMonths(date: string, months: number): string {
+  if (!Number.isInteger(months)) throw new RangeError(`Not a whole number of months: ${months}`);
+  const { year, month, day } = parseLocalDate(date);
+  const index = year * 12 + (month - 1) + months;
+  const y = Math.floor(index / 12);
+  const m = index - y * 12 + 1;
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${pad(y, 4)}-${pad(m)}-${pad(Math.min(day, last))}`;
+}
+
 /** Days from `from` to `to`: ("2026-10-05", "2026-10-12") → 7. */
 export function diffDays(from: string, to: string): number {
   return toDayNumber(to) - toDayNumber(from);

@@ -586,3 +586,11 @@ export function planUsage(ctx: OrgCtx, today: string) {
 export function continuing(ctx: OrgCtx, studentIds: string[], today: string) {
   return repo.continuing(ctx, studentIds, today);
 }
+
+export function studentsEnrolledSince(ctx: OrgCtx, date: string) {
+  return repo.studentsEnrolledSince(ctx, date);
+}
+
+export function purgeStatements(ctx: OrgCtx, studentIds: string[]) {
+  return repo.purgeStatements(ctx, studentIds);
+}

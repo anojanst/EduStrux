@@ -394,3 +394,12 @@ export function eraseStatements(ctx: OrgCtx, guardianIds: string[]): BatchItem<'
       ),
   ];
 }
+
+/** Deletes the family's message recipient rows for good (TUI-118). The messages stay. */
+export function purgeStatements(ctx: OrgCtx, familyId: string): BatchItem<'sqlite'>[] {
+  return [
+    ctx.db
+      .delete(messageRecipients)
+      .where(and(eq(messageRecipients.orgId, ctx.orgId), eq(messageRecipients.familyId, familyId))),
+  ];
+}

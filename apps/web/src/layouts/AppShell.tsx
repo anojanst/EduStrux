@@ -18,6 +18,7 @@ import {
   PanelLeftOpen,
   Plus,
   ReceiptText,
+  ShieldCheck,
   School,
   Search,
   Tag,
@@ -90,6 +91,7 @@ function navFor(role: Role): NavItem[] {
   }
   if (can(role, 'org:write')) {
     items.push({ to: 'settings/theme', label: 'nav.theme', Icon: Palette });
+    items.push({ to: 'settings/privacy', label: 'nav.privacy', Icon: ShieldCheck });
   }
   return items;
 }

@@ -38,6 +38,9 @@ export const orgs = sqliteTable(
       .notNull()
       .default('trialing'),
     trialEndsAt: text('trial_ends_at'),
+    // Years an erased family's invoices and payments are kept, set by the owner from the
+    // centre's local tax law (D-171). null = not set: nothing financial is deleted.
+    financialRetentionYears: integer('financial_retention_years'),
     ...timestamps,
   },
   (t) => [uniqueIndex('orgs_slug_uq').on(t.slug)],

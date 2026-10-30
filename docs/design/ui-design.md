@@ -129,7 +129,7 @@ widths; the app doesn't).
   - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
     Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), and Theme for owners (D-165). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
+    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), Theme for owners (D-165), and Privacy & data for owners (shield icon, after Theme, D-189). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
     in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
   - **User footer**: avatar, name and role; opens profile and sign out.
@@ -405,6 +405,11 @@ Settled when TUI-23 was built (D-158):
   staff app, parent portal, invoices and emails that recolours as you pick, and Cancel/Save with
   an unsaved-changes note. On phones: 2 columns of tiles, only the staff-app preview, and a
   sticky full-width Save bar.
+- **Settings › Privacy & data** (D-189), built straight to this design system, owner only: a
+  select "Keep an erased family's invoices and payments for" (Not set, 1 to 10 years) with a
+  helper line that it depends on local tax law, an info notice while it is not set (no invoice
+  or payment is ever deleted), and a card explaining the automatic erase after 6 months. A stale
+  save (409) offers Reload.
 - **Classes and attendance** (D-169), from the owner's Figma Make design: the classes list, the
   Add/edit class dialog, the class page (Lessons, Schedule and Students tabs, with Enrolled,
   Lessons and Next lesson cards: 2 + 1 on phones), the enrol, withdraw and move dialogs, and

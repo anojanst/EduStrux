@@ -22,6 +22,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -33,6 +34,7 @@ import {
   getTableColumns,
   type SQL,
 } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import {
   changedFields,
@@ -40,6 +42,7 @@ import {
   idsFrom,
   inIds,
   inOrg,
+  wide,
   writeWithAudit,
   type AuditEntry,
   type IdQuery,
@@ -1344,4 +1347,89 @@ export async function owedBy(ctx: OrgCtx, familyId: string) {
     )
     .get();
   return row?.owed ?? 0;
+}
+
+/**
+ * Families with money on or after `date`: something owed, an invoice made on or after it or whose
+ * period ends then or later, or a payment received then or later. Wide queries (D-104).
+ */
+export function familiesWithMoneySince(ctx: OrgCtx, date: string): IdQuery[] {
+  return [
+    wide(
+      idsFrom(
+        ctx,
+        invoices,
+        invoices.familyId,
+        or(
+          gte(invoices.periodEnd, date),
+          gte(invoices.createdAt, date),
+          and(
+            inArray(invoices.status, ['issued', 'part_paid']),
+            gt(invoices.totalAmount, invoices.paidAmount),
+          ),
+        ),
+      ),
+    ),
+    wide(idsFrom(ctx, payments, payments.familyId, gte(payments.receivedOn, date))),
+  ];
+}
+
+/** The ids of every invoice and payment of the family, deleted ones too. */
+export async function moneyOf(ctx: OrgCtx, familyId: string) {
+  const [i, p] = await Promise.all([
+    ctx.db
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(and(eq(invoices.orgId, ctx.orgId), eq(invoices.familyId, familyId))),
+    ctx.db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(and(eq(payments.orgId, ctx.orgId), eq(payments.familyId, familyId))),
+  ]);
+  return { invoiceIds: i.map((r) => r.id), paymentIds: p.map((r) => r.id) };
+}
+
+/**
+ * Deletes the family's invoices, their lines, its payments and every allocation between them for
+ * good, deleted rows too (TUI-118).
+ */
+export function purgeStatements(
+  ctx: OrgCtx,
+  money: { invoiceIds: string[]; paymentIds: string[] },
+): BatchItem<'sqlite'>[] {
+  const { invoiceIds, paymentIds } = money;
+  const out: BatchItem<'sqlite'>[] = [];
+  if (invoiceIds.length + paymentIds.length > 0) {
+    out.push(
+      ctx.db
+        .delete(paymentAllocations)
+        .where(
+          and(
+            eq(paymentAllocations.orgId, ctx.orgId),
+            or(
+              inIds(paymentAllocations.invoiceId, invoiceIds),
+              inIds(paymentAllocations.paymentId, paymentIds),
+            ),
+          ),
+        ),
+    );
+  }
+  if (invoiceIds.length > 0) {
+    out.push(
+      ctx.db
+        .delete(invoiceLines)
+        .where(and(eq(invoiceLines.orgId, ctx.orgId), inIds(invoiceLines.invoiceId, invoiceIds))),
+      ctx.db
+        .delete(invoices)
+        .where(and(eq(invoices.orgId, ctx.orgId), inIds(invoices.id, invoiceIds))),
+    );
+  }
+  if (paymentIds.length > 0) {
+    out.push(
+      ctx.db
+        .delete(payments)
+        .where(and(eq(payments.orgId, ctx.orgId), inIds(payments.id, paymentIds))),
+    );
+  }
+  return out;
 }

@@ -1,5 +1,19 @@
 import { families, guardians, now, studentConsents, studentGrades, students } from '@edustrux/db';
-import { and, asc, count, eq, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { BatchItem } from 'drizzle-orm/batch';
 import {
@@ -1223,5 +1237,81 @@ export function eraseStatements(
             ),
         ]
       : []),
+  ];
+}
+
+/**
+ * Families to erase for being inactive (TUI-118): not erased, made before `since`, none of whose
+ * students is in `activeStudents`, and not in `activeFamilies`. Deleted families too: they still
+ * hold names. The first `limit` by id.
+ */
+export async function inactiveFamilies(
+  ctx: OrgCtx,
+  since: string,
+  activeStudents: IdQuery[],
+  activeFamilies: IdQuery[],
+  limit: number,
+) {
+  const inUse = and(
+    eq(students.orgId, ctx.orgId),
+    eq(students.familyId, families.id),
+    or(...activeStudents.map((ids) => inIds(students.id, ids))),
+  );
+  const rows = await ctx.db
+    .select({ id: families.id })
+    .from(families)
+    .where(
+      and(
+        eq(families.orgId, ctx.orgId),
+        isNull(families.erasedAt),
+        lt(families.createdAt, since),
+        sql`not exists (select 1 from ${students} where ${inUse})`,
+        ...activeFamilies.map((ids) => not(inIds(families.id, ids))),
+      ),
+    )
+    .orderBy(asc(families.id))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
+/** Erased families not in `keep`, the first `limit` by id (TUI-118). */
+export async function erasedFamiliesExcept(ctx: OrgCtx, keep: IdQuery[], limit: number) {
+  const rows = await ctx.db
+    .select({ id: families.id })
+    .from(families)
+    .where(
+      and(
+        eq(families.orgId, ctx.orgId),
+        isNotNull(families.erasedAt),
+        ...keep.map((ids) => not(inIds(families.id, ids))),
+      ),
+    )
+    .orderBy(asc(families.id))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Deletes the family for good, deleted rows too: its guardians, its students, and their grades
+ * and consents (TUI-118).
+ */
+export function purgeStatements(
+  ctx: OrgCtx,
+  familyId: string,
+  studentIds: string[],
+): BatchItem<'sqlite'>[] {
+  const ofFamily = (table: typeof guardians | typeof students) =>
+    and(eq(table.orgId, ctx.orgId), eq(table.familyId, familyId));
+  return [
+    ...(studentIds.length
+      ? [studentGrades, studentConsents].map((table) =>
+          ctx.db
+            .delete(table)
+            .where(and(eq(table.orgId, ctx.orgId), inIds(table.studentId, studentIds))),
+        )
+      : []),
+    ctx.db.delete(guardians).where(ofFamily(guardians)),
+    ctx.db.delete(students).where(ofFamily(students)),
+    ctx.db.delete(families).where(and(eq(families.orgId, ctx.orgId), eq(families.id, familyId))),
   ];
 }
