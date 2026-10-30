@@ -39,6 +39,18 @@ export const validationFailed = (fields: FieldErrors) =>
 export const unprocessable = (message: string, fields?: FieldErrors) =>
   new ApiError(422, 'unprocessable', message, fields);
 
+/**
+ * Too many requests (429). `retryAfter` is in seconds and goes out as the `Retry-After` header.
+ */
+export class RateLimited extends ApiError {
+  constructor(
+    readonly retryAfter: number,
+    message: string,
+  ) {
+    super(429, 'rate_limited', message);
+  }
+}
+
 /** A service the request needs isn't set up, or isn't answering: PDFs without Browser Rendering. */
 export const unavailable = (message: string) => new ApiError(503, 'unavailable', message);
 

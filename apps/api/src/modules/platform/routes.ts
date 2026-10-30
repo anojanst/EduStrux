@@ -35,6 +35,24 @@ const healthRoute = createRoute({
   },
 });
 
+const readyRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/health/ready',
+  tags: ['Platform'],
+  summary: 'Readiness check',
+  description:
+    'For the uptime check (TUI-83): 200 once the API has run a query on its database, 503 if ' +
+    'the database isn’t answering. `/health` doesn’t touch the database.',
+  security: [],
+  responses: {
+    200: json(
+      z.object({ ok: z.literal(true), environment: z.string(), database: z.literal('ok') }),
+      'The API and its database answer',
+    ),
+    ...errors(503),
+  },
+});
+
 const getJobRoute = createRoute({
   method: 'get',
   path: '/api/v1/orgs/{orgId}/jobs/{jobId}',
@@ -300,6 +318,13 @@ export const platformRoutes = createRouter()
     });
   })
   .openapi(healthRoute, (c) => c.json({ ok: true as const, environment: c.env.ENVIRONMENT }, 200))
+  .openapi(readyRoute, async (c) => {
+    await service.checkDatabase(c.var.db);
+    return c.json(
+      { ok: true as const, environment: c.env.ENVIRONMENT, database: 'ok' as const },
+      200,
+    );
+  })
   .openapi(getJobRoute, async (c) => {
     const job = await service.getJob(orgCtx(c), c.var.membership.role, c.req.valid('param').jobId);
     return c.json(job, 200);

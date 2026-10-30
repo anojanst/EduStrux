@@ -1,5 +1,5 @@
 import { createDb, type Db } from '@edustrux/db';
-import { localNow, orgCanWrite } from '@edustrux/shared';
+import { addDays, localNow, orgCanWrite } from '@edustrux/shared';
 import type { OrgCtx } from '../db/scope';
 import type { Bindings } from '../env';
 import { forgetOldKeys } from '../middleware/idempotency';
@@ -14,7 +14,8 @@ import * as files from '../modules/platform/files';
 import * as privacy from '../modules/privacy/service';
 import * as webhooks from '../modules/webhooks/service';
 
-const IDEMPOTENCY_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const IDEMPOTENCY_KEY_TTL_MS = DAY_MS;
 
 /**
  * The local hours the hourly cron expires make-up credits in: midnight, and the hour after it in
@@ -81,11 +82,11 @@ export async function runHourly(db: Db, env: Bindings, at: Date) {
 }
 
 /**
- * The daily cron (TUI-68): drops stale idempotency keys, webhook records and expired files, then for each org
- * extends its open-ended classes' sessions and starts its nightly backup job, erases its inactive
- * families, deletes erased ones whose money is past the org's retention (TUI-118), and clears
- * what the public forms sent once it's no longer needed (TUI-117). An org that fails is logged
- * and the rest carry on.
+ * The daily cron (TUI-68): drops stale idempotency keys, webhook records and expired files, then
+ * for each org extends its open-ended classes' sessions, checks last night's backup is there
+ * (TUI-83) and starts tonight's, erases its inactive families, deletes erased ones whose money is
+ * past the org's retention (TUI-118), and clears what the public forms sent once it's no longer
+ * needed (TUI-117). An org that fails is logged and the rest carry on.
  */
 export async function runDaily(db: Db, env: Bindings, at: Date) {
   const cutoff = new Date(at.getTime() - IDEMPOTENCY_KEY_TTL_MS).toISOString();
@@ -95,6 +96,7 @@ export async function runDaily(db: Db, env: Bindings, at: Date) {
     filesRemoved: 0,
     sessionsAdded: 0,
     backupsStarted: 0,
+    backupsMissing: 0,
     familiesErased: 0,
     familiesPurged: 0,
     enquiriesPurged: 0,
@@ -106,12 +108,20 @@ export async function runDaily(db: Db, env: Bindings, at: Date) {
   } catch (err) {
     console.error('daily cron: cleaning expired files failed', err);
   }
+  const dayBefore = new Date(at.getTime() - DAY_MS).toISOString();
   for (const org of await orgs.orgsForCron(db)) {
     const ctx: OrgCtx = { db, orgId: org.id, actorUserId: null };
     const today = localNow(org.timezone, at).date;
     try {
       if (orgCanWrite(org, at)) {
         done.sessionsAdded += await classes.extendOpenEnded(ctx, at);
+        // Last night's backup should be there, unless the org is younger than a day (TUI-83).
+        // A missing one is logged as an error, which Workers Issues reports.
+        const lastNight = addDays(today, -1);
+        if (org.createdAt < dayBefore && !(await exports.hasBackup(env.FILES, org.id, lastNight))) {
+          done.backupsMissing++;
+          console.error(`daily cron: org ${org.id} has no backup for ${lastNight}`);
+        }
         await exports.startBackup(ctx, env.JOBS_QUEUE, today);
         done.backupsStarted++;
       }

@@ -224,3 +224,59 @@ pnpm deploy:production
 - Before launch: remove or narrow Access, and set `ENABLE_DOCS` back to `false` under
   `env.production`. `CLERK_AUTHORIZED_PARTIES` there lists the origins the app is served from;
   add each new one.
+
+## Monitoring and restoring
+
+Everything here is on free tiers: Workers Logs, Workers Issues (free during its beta), the rate
+limiters, R2 and GitHub Actions on a public repository.
+
+- **Errors:** production has Workers Issues on (`observability.issues` under `env.production`).
+  Uncaught exceptions, 5xx responses and `console.error` lines are grouped into issues under
+  Workers & Pages → `edustrux` → Issues, with stacks mapped to our source files. To be told about
+  a new issue, add an automation there (email, chat or webhook). That's a dashboard step for the
+  owner. Logs are kept 7 days.
+- **Rate limits:** each signed-in user gets 600 requests a minute and each org 3,000, counted in
+  each Cloudflare location (`ratelimits` under `env.production`; D-191). Over that, the API
+  answers 429 with `Retry-After: 60`. Nothing is limited locally or in tests.
+- **Uptime:** [.github/workflows/uptime.yml](.github/workflows/uptime.yml) calls
+  `GET /api/v1/health/ready` every 15 minutes, which answers 200 only once D1 has answered a query.
+  A failed run is the alert: GitHub emails whoever last changed the workflow's schedule. It's off
+  until the owner sets it up:
+  1. In Cloudflare Zero Trust → Access → Service Auth, create a service token. On the Access
+     application that covers the Worker, add a policy with the action Service Auth that allows
+     that token.
+  2. `gh secret set CF_ACCESS_CLIENT_ID` and `gh secret set CF_ACCESS_CLIENT_SECRET` with the
+     token's id and secret.
+  3. `gh variable set UPTIME_URL --body https://edustrux.edustrux-api.workers.dev`.
+  4. Start it once by hand from the Actions tab to see it pass.
+- **Backups:** each night every org's export goes to `backups/{orgId}/{local date}.json` in the
+  `edustrux-files` bucket, and the last 14 nights are kept (D-149). The daily cron checks that each
+  org older than a day has last night's backup, and logs an error, which becomes an issue, for one
+  that doesn't.
+
+### Restoring
+
+- **The whole database** (a bad migration, or data lost across orgs): D1 Time Travel restores the
+  database to any minute in the last 30 days on the Workers Paid plan, or 7 days on Free. It
+  replaces every org's data, so note the time just before the problem first.
+
+  ```bash
+  cd apps/api
+  pnpm exec wrangler d1 time-travel info edustrux --env production --timestamp=2026-10-30T02:00:00Z
+  pnpm exec wrangler d1 time-travel restore edustrux --env production --timestamp=2026-10-30T02:00:00Z
+  ```
+
+  A restore can be undone: it prints the bookmark of the database as it was just before, and
+  `restore --bookmark=<that>` goes back to it. Apply any migrations newer than the restored point
+  again with `pnpm db:migrate:production`.
+
+- **One org** (a mistake that only touched one centre): don't restore the whole database. Fetch
+  its backup and put back what was lost:
+
+  ```bash
+  pnpm --filter @edustrux/api exec wrangler r2 object get \
+    edustrux-files/backups/<orgId>/<YYYY-MM-DD>.json --remote --file backup.json
+  ```
+
+  The file is the org's full export, the same document as `POST /exports`: every table, by id.
+  The app has no "restore from backup" yet, so rows are put back by hand from it.

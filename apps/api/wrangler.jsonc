@@ -6,6 +6,8 @@
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Deployed exception stacks point at our source files, in the logs and in Workers Issues.
+  "upload_source_maps": true,
 
   // No static assets here: locally the web app runs on Vite (:5173), which sends /api to this
   // Worker (D-158). The deployed Worker serves the web build, under `env.production`.
@@ -52,6 +54,10 @@
   "env": {
     "production": {
       "name": "edustrux",
+      // Logs, and Workers Issues: uncaught exceptions, 5xx responses and `console.error` lines
+      // grouped into issues in the dashboard (TUI-83). Here, not at the top level, because the
+      // test runner's own wrangler doesn't know `issues` yet.
+      "observability": { "enabled": true, "issues": { "enabled": true } },
       // The web app's build (`pnpm deploy:production` builds it first). /api/* always reaches the
       // Worker; any other path is a file from the build, or index.html so the app's own router
       // handles it.
@@ -87,6 +93,21 @@
           { "queue": "edustrux-jobs", "max_batch_size": 1, "max_retries": 3 },
         ],
       },
+      // Requests a minute per signed-in user and per org, in each Cloudflare location (TUI-81,
+      // D-191). Production only: locally and in tests nothing is limited. A namespace id is any
+      // number unique in the account; nothing has to be created for it.
+      "ratelimits": [
+        {
+          "name": "USER_RATE_LIMIT",
+          "namespace_id": "8101",
+          "simple": { "limit": 600, "period": 60 },
+        },
+        {
+          "name": "ORG_RATE_LIMIT",
+          "namespace_id": "8102",
+          "simple": { "limit": 3000, "period": 60 },
+        },
+      ],
     },
   },
 }

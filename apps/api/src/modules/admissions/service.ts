@@ -12,7 +12,14 @@ import {
 } from '@edustrux/shared';
 import { writeWithAudit, type Access, type OrgCtx } from '../../db/scope';
 import type { Bindings, OrgRow } from '../../env';
-import { ApiError, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
+import {
+  ApiError,
+  notFound,
+  RateLimited,
+  staleData,
+  unprocessable,
+  validationFailed,
+} from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
 import * as branches from '../branches/service';
 import * as classes from '../classes/service';
@@ -94,7 +101,7 @@ async function guard(
   const ipHash = await sha256(`${ctx.orgId}:${ip ?? 'unknown'}`);
   const since = new Date(Date.now() - 3_600_000).toISOString();
   if ((await repo.sentSince(ctx, ipHash, since)) >= FORMS_PER_HOUR) {
-    throw new ApiError(429, 'rate_limited', 'Too many forms sent. Try again in an hour.');
+    throw new RateLimited(60 * 60, 'Too many forms sent. Try again in an hour.');
   }
   return ipHash;
 }

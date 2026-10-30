@@ -4,6 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv, Bindings } from '../env';
 import { unauthenticated } from '../lib/errors';
+import { countRequest } from '../lib/rate-limit';
 import { logImpersonated } from '../modules/admin/log';
 import { findOrCreateUser, type ClerkIdentity } from '../modules/users/repository';
 
@@ -47,6 +48,8 @@ export async function signedInAs(c: Context<AppEnv>): Promise<ClerkIdentity> {
 
   const sub = claims.sub;
   if (typeof sub !== 'string') throw unauthenticated('Token has no subject');
+  // Counted before the database is read, so a flood from one user costs it nothing (TUI-81).
+  await countRequest(c.env.USER_RATE_LIMIT, sub);
   // A super-admin signed in as this user through a Clerk actor token (TUI-75): the session names
   // the admin in `act`. Every such request is logged.
   const act = claims.act as { sub?: unknown } | undefined;

@@ -1,8 +1,19 @@
 import { newId, type Job, type Role } from '@edustrux/shared';
 import type { JobMessage } from '../../background/messages';
+import type { Db } from '@edustrux/db';
 import type { OrgCtx } from '../../db/scope';
-import { notFound } from '../../lib/errors';
+import { notFound, unavailable } from '../../lib/errors';
 import * as repo from './repository';
+
+/** 503 when the database doesn't answer a query, for the readiness check (TUI-83). */
+export async function checkDatabase(db: Db) {
+  try {
+    await repo.ping(db);
+  } catch (err) {
+    console.error('readiness check: the database didn’t answer', err);
+    throw unavailable('The database isn’t answering.');
+  }
+}
 
 export function toJob(row: repo.JobRow): Job {
   return {

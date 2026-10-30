@@ -1,0 +1,47 @@
+name: Uptime check
+
+# Every 15 minutes, asks the production API whether it and its database answer
+# (`GET /api/v1/health/ready`, TUI-83). A failed run is the alert: GitHub emails whoever last
+# changed this schedule. Free, as the repository is public.
+#
+# Off until the owner sets the repository variable UPTIME_URL (the Worker's address, e.g.
+# https://edustrux.edustrux-api.workers.dev). While Cloudflare Access covers the Worker (D-069) it
+# also needs an Access service token, as the secrets CF_ACCESS_CLIENT_ID and
+# CF_ACCESS_CLIENT_SECRET (README, Monitoring).
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Health and database
+    if: vars.UPTIME_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /api/v1/health/ready
+        env:
+          URL: ${{ vars.UPTIME_URL }}
+          CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          # Three tries 20 seconds apart, so one dropped request isn't an alert.
+          headers=()
+          if [ -n "$CLIENT_ID" ]; then
+            headers+=(-H "CF-Access-Client-Id: $CLIENT_ID" -H "CF-Access-Client-Secret: $CLIENT_SECRET")
+          fi
+          for try in 1 2 3; do
+            status=$(curl -s -o body.json -w '%{http_code}' --max-time 15 "${headers[@]}" \
+              "${URL%/}/api/v1/health/ready" || echo 000)
+            if [ "$status" = 200 ]; then
+              echo "Up: $(cat body.json)"
+              exit 0
+            fi
+            echo "Try $try: HTTP $status"
+            sleep 20
+          done
+          echo "::error::The API didn't answer /api/v1/health/ready with 200 (last: HTTP $status)"
+          exit 1

@@ -54,8 +54,13 @@ const ERROR_DESCRIPTIONS = {
   503: 'A service this needs isn’t set up or isn’t answering. Try again later.',
 } as const;
 
+/**
+ * The error responses a route documents. A route that needs sign-in (401) can also be rate
+ * limited per user and per org (429, TUI-81), so 429 comes with 401.
+ */
 export function errors(...codes: (keyof typeof ERROR_DESCRIPTIONS)[]) {
+  const all = codes.includes(401) && !codes.includes(429) ? [...codes, 429 as const] : codes;
   return Object.fromEntries(
-    codes.map((code) => [code, json(ErrorResponse, ERROR_DESCRIPTIONS[code])]),
+    all.map((code) => [code, json(ErrorResponse, ERROR_DESCRIPTIONS[code])]),
   ) as Record<(typeof codes)[number], ReturnType<typeof json<typeof ErrorResponse>>>;
 }
