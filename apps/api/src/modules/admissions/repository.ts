@@ -210,12 +210,106 @@ export function eraseStatements(ctx: OrgCtx, familyId: string): BatchItem<'sqlit
   return [
     ctx.db
       .update(enrolmentRequests)
-      .set({ guardian: {}, students: [], notes: null, ipHash: null })
+      .set(clearedRequest())
       .where(
         and(
           eq(enrolmentRequests.orgId, ctx.orgId),
           sql`json_extract(${enrolmentRequests.result}, '$.familyId') = ${familyId}`,
         ),
       ),
+  ];
+}
+
+const clearedRequest = () => ({
+  guardian: {},
+  students: [],
+  notes: null,
+  ipHash: null,
+  purgedAt: new Date().toISOString(),
+});
+
+/**
+ * The enquiries whose sender's details are due to be cleared: handled before `handledBefore` (an
+ * enquiry's only change is its status, so `updated_at` is when it was handled), or never handled
+ * and received before `receivedBefore`. Both are local dates, compared with UTC instants: a day's
+ * difference at most.
+ */
+export async function enquiriesToPurge(
+  ctx: OrgCtx,
+  handledBefore: string,
+  receivedBefore: string,
+  limit: number,
+) {
+  const rows = await ctx.db
+    .select({ id: enquiries.id })
+    .from(enquiries)
+    .where(
+      inOrg(
+        ctx,
+        enquiries,
+        isNull(enquiries.purgedAt),
+        or(
+          and(eq(enquiries.status, 'handled'), lt(enquiries.updatedAt, handledBefore)),
+          and(eq(enquiries.status, 'new'), lt(enquiries.createdAt, receivedBefore)),
+        ),
+      ),
+    )
+    .orderBy(enquiries.id)
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+/** The approved or rejected requests decided before `decidedBefore`, not yet cleared. */
+export async function requestsToPurge(ctx: OrgCtx, decidedBefore: string, limit: number) {
+  const rows = await ctx.db
+    .select({ id: enrolmentRequests.id })
+    .from(enrolmentRequests)
+    .where(
+      inOrg(
+        ctx,
+        enrolmentRequests,
+        isNull(enrolmentRequests.purgedAt),
+        inArray(enrolmentRequests.status, ['approved', 'rejected']),
+        lt(enrolmentRequests.decidedAt, decidedBefore),
+      ),
+    )
+    .orderBy(enrolmentRequests.id)
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+/** Clears these enquiries' senders and these requests' form details (TUI-117). */
+export function purgeStatements(
+  ctx: OrgCtx,
+  enquiryIds: string[],
+  requestIds: string[],
+): BatchItem<'sqlite'>[] {
+  return [
+    ...(enquiryIds.length
+      ? [
+          ctx.db
+            .update(enquiries)
+            .set({
+              name: '',
+              email: '',
+              phone: null,
+              studentName: null,
+              message: '',
+              ipHash: null,
+              purgedAt: new Date().toISOString(),
+            })
+            .where(and(eq(enquiries.orgId, ctx.orgId), inIds(enquiries.id, enquiryIds))),
+        ]
+      : []),
+    ...(requestIds.length
+      ? [
+          ctx.db
+            .update(enrolmentRequests)
+            .set(clearedRequest())
+            .where(
+              and(eq(enrolmentRequests.orgId, ctx.orgId), inIds(enrolmentRequests.id, requestIds)),
+            ),
+        ]
+      : []),
   ];
 }

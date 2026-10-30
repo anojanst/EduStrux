@@ -871,6 +871,14 @@ export function guardiansOfFamilies(ctx: OrgCtx, familyIds: Ids) {
   return repo.guardiansOf(ctx, familyIds, {});
 }
 
+/**
+ * These guardians' email addresses now: what a message's recipients show, and where the sender
+ * sends it (TUI-117). Messages don't keep a copy (D-171).
+ */
+export function guardianEmails(ctx: OrgCtx, ids: Ids) {
+  return repo.guardianEmails(ctx, ids);
+}
+
 /** Of these family ids, the ones the caller reaches. */
 export async function familiesReached(ctx: OrgCtx, access: Access, ids: string[]) {
   return (await repo.familiesFound(ctx, ids, reachOf(ctx, access))).map((row) => row.id);

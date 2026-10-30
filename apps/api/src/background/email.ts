@@ -6,6 +6,7 @@ import { renderEmail, type RenderedEmail } from '../email/render';
 import type { Bindings } from '../env';
 import * as comms from '../modules/comms/service';
 import * as orgs from '../modules/orgs/service';
+import * as people from '../modules/people/service';
 import type { EmailMessage, Notice } from './messages';
 
 /** Must match `max_retries` for the email consumer in wrangler.jsonc. */
@@ -89,7 +90,14 @@ export async function deliverEmail(
       orgs.getOrg(ctx),
       comms.getSettings(ctx),
     ]);
-    if (!found || found.recipient.emailStatus !== 'queued' || !found.recipient.email) return;
+    if (!found || found.recipient.emailStatus !== 'queued') return;
+    // The guardian's address now: messages keep no copy (D-171). One erased or deleted since the
+    // message was sent has none, and isn't emailed.
+    const [guardian] = await people.guardianEmails(ctx, [found.recipient.guardianId]);
+    if (!guardian?.email) {
+      await comms.setEmailStatus(ctx, found.recipient.id, { emailStatus: 'skipped' }, ['queued']);
+      return;
+    }
     const email = renderEmail({
       orgName: org.name,
       theme: org.theme,
@@ -99,7 +107,7 @@ export async function deliverEmail(
     try {
       const providerId = await send(
         env,
-        { ...email, to: found.recipient.email, replyTo: settings.replyToEmail },
+        { ...email, to: guardian.email, replyTo: settings.replyToEmail },
         { org_id: ctx.orgId, recipient_id: found.recipient.id },
         found.recipient.id,
         fetchFn,

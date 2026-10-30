@@ -1,4 +1,6 @@
 import {
+  addDays,
+  addMonths,
   localNow,
   newId,
   type ApproveEnrolmentRequest,
@@ -8,7 +10,7 @@ import {
   type EnrolmentRequest,
   type PublicForm,
 } from '@edustrux/shared';
-import type { Access, OrgCtx } from '../../db/scope';
+import { writeWithAudit, type Access, type OrgCtx } from '../../db/scope';
 import type { Bindings, OrgRow } from '../../env';
 import { ApiError, notFound, staleData, unprocessable, validationFailed } from '../../lib/errors';
 import { decodeCursor, toPage } from '../../lib/pagination';
@@ -23,6 +25,16 @@ import * as repo from './repository';
 
 /** At most this many forms from one address to one org an hour, enquiries and requests together. */
 export const FORMS_PER_HOUR = 10;
+
+/**
+ * How long the details a form sent are kept (D-171): a handled enquiry's and a decided request's
+ * for 30 days, and an enquiry that's never handled for 6 months from when it arrived. Fixed.
+ */
+export const KEEP_DECIDED_DAYS = 30;
+export const KEEP_UNHANDLED_MONTHS = 6;
+
+/** The most enquiries, and the most requests, the daily cron clears in one org in one night. */
+export const PURGED_PER_NIGHT = 200;
 
 const sha256 = async (text: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))]
@@ -206,7 +218,7 @@ function toRequest(row: repo.RequestRow): EnrolmentRequest {
   const { orgId: _o, deletedAt: _d, ipHash: _i, decidedByUserId: _u, ...request } = row;
   return {
     ...request,
-    guardian: row.guardian as EnrolmentRequest['guardian'],
+    guardian: row.purgedAt ? null : (row.guardian as EnrolmentRequest['guardian']),
     // Requests sent before D-171 also hold a date of birth, which is no longer shown.
     students: (row.students as EnrolmentRequest['students']).map(
       ({ firstName, lastName, classIds }) => ({ firstName, lastName, classIds }),
@@ -251,7 +263,8 @@ export async function approveRequest(
   input: ApproveEnrolmentRequest,
 ): Promise<EnrolmentRequest> {
   const request = await pendingRequest(ctx, access, id);
-  const guardian = toRequest(request).guardian;
+  // A pending request is never purged, so it still has its guardian.
+  const guardian = toRequest(request).guardian!;
   const students = toRequest(request).students;
 
   let familyId: string;
@@ -336,4 +349,33 @@ export async function rejectRequest(
 /** This module's part of erasing a family (TUI-79), for the erasure's one batch. */
 export function eraseStatements(ctx: OrgCtx, familyId: string) {
   return repo.eraseStatements(ctx, familyId);
+}
+
+/**
+ * Clears what the public forms sent once it's no longer needed (TUI-117, D-171): a handled
+ * enquiry's sender 30 days after it was handled, one never handled 6 months after it arrived,
+ * and a request's guardian, children and notes 30 days after it was approved or rejected. A
+ * pending request is kept. The rows stay, with their ids, branch, status, dates and what
+ * approving made. One batch and one audit row naming the ids; returns how many of each.
+ */
+export async function purgeDecided(ctx: OrgCtx, today: string) {
+  const decidedBefore = addDays(today, -KEEP_DECIDED_DAYS);
+  const [enquiryIds, requestIds] = await Promise.all([
+    repo.enquiriesToPurge(
+      ctx,
+      decidedBefore,
+      addMonths(today, -KEEP_UNHANDLED_MONTHS),
+      PURGED_PER_NIGHT,
+    ),
+    repo.requestsToPurge(ctx, decidedBefore, PURGED_PER_NIGHT),
+  ]);
+  if (enquiryIds.length + requestIds.length > 0) {
+    await writeWithAudit(ctx, repo.purgeStatements(ctx, enquiryIds, requestIds), {
+      action: 'admissions.purged',
+      entityType: 'org',
+      entityId: ctx.orgId,
+      after: { enquiryIds, requestIds },
+    });
+  }
+  return { enquiries: enquiryIds.length, requests: requestIds.length };
 }

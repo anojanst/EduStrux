@@ -137,7 +137,6 @@ async function erase(ctx: OrgCtx, id: string, today: string, auto: boolean): Pro
       ...people.eraseStatements(ctx, id, who.studentIds, at),
       ...attendance.eraseStatements(ctx, who.studentIds),
       ...learning.eraseStatements(ctx, who.studentIds),
-      ...comms.eraseStatements(ctx, who.guardianIds),
       ...staff.eraseStatements(ctx, who.guardianIds),
       ...admissions.eraseStatements(ctx, id),
       ...platform.eraseAuditStatements(ctx, [id, ...who.guardianIds, ...who.studentIds]),
