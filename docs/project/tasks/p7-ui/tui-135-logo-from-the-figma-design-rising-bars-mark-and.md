@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-135-logo
-pr:
+pr: 86
 ---
 
 # TUI-135 Logo from the Figma design: rising bars mark and Manrope wordmark
