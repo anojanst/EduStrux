@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-117-purge-decided-enquiries
-pr:
+pr: 79
 ---
 
 # TUI-117 Purge enquiries and enrolment requests once decided
