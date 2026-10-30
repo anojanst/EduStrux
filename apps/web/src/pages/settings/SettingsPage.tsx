@@ -35,13 +35,13 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         overline={t('settings.overline')}
         title={t('nav.settings')}
         subtitle={t('settings.subtitle')}
       />
-      <ul className="grid gap-3 sm:grid-cols-2">
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {all.map(({ to, label, body, Icon }) => (
           <li key={to}>
             <Link
