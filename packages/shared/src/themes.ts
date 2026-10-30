@@ -34,6 +34,8 @@ export type ThemeColours = {
   sidebarStrong: string;
   /** The active nav item's pill, behind `brand` text. */
   sidebarActive: string;
+  /** The logo's two shorter bars on the sidebar (TUI-135): a bright tint on a dark one. */
+  logoAccent: string;
 };
 
 export const THEMES: Record<ThemeKey, ThemeColours> = {
@@ -46,6 +48,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#c9d9da',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#50c7b7',
   },
   ocean: {
     brand: '#1d5fa8',
@@ -56,6 +59,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#c8d6e8',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#6fb2f2',
   },
   indigo: {
     brand: '#4338ca',
@@ -66,6 +70,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#cfd0ee',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#a5a1f7',
   },
   violet: {
     brand: '#6d3fc0',
@@ -76,6 +81,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#d8cdea',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#bf9cf2',
   },
   berry: {
     brand: '#b4235a',
@@ -86,6 +92,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#ecc9d6',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#f17aa6',
   },
   forest: {
     brand: '#23744a',
@@ -96,6 +103,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#c7ddd0',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#5ccf8f',
   },
   amber: {
     brand: '#b45309',
@@ -106,6 +114,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#ecd5bf',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#f5a65b',
   },
   graphite: {
     brand: '#3f4f5c',
@@ -116,6 +125,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#c9d1d7',
     sidebarStrong: '#ffffff',
     sidebarActive: '#ffffff',
+    logoAccent: '#9fb3c2',
   },
   'light-teal': {
     brand: '#155d63',
@@ -126,6 +136,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#3d5459',
     sidebarStrong: '#12343a',
     sidebarActive: '#d3e8e6',
+    logoAccent: '#155d63',
   },
   sky: {
     brand: '#0369a1',
@@ -136,6 +147,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#3b5163',
     sidebarStrong: '#0f2a3d',
     sidebarActive: '#d2e7f5',
+    logoAccent: '#0369a1',
   },
   lavender: {
     brand: '#6546c3',
@@ -146,6 +158,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#4a4560',
     sidebarStrong: '#241c3d',
     sidebarActive: '#e0d8f7',
+    logoAccent: '#6546c3',
   },
   rose: {
     brand: '#be185d',
@@ -156,6 +169,7 @@ export const THEMES: Record<ThemeKey, ThemeColours> = {
     sidebarText: '#5b4450',
     sidebarStrong: '#3a1426',
     sidebarActive: '#f8dbe7',
+    logoAccent: '#be185d',
   },
 };
 

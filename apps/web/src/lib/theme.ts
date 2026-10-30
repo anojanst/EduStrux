@@ -11,6 +11,7 @@ const VARS: Record<keyof ThemeColours, string> = {
   sidebarText: '--sidebar-text',
   sidebarStrong: '--sidebar-strong',
   sidebarActive: '--sidebar-active',
+  logoAccent: '--logo-accent',
 };
 
 /** The theme's tokens as inline styles, so `bg-brand` and friends inside take its colours. */

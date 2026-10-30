@@ -42,7 +42,8 @@ Defined as CSS variables on `:root`, with these exact names (they match the Figm
 | `--sidebar-raised` | `#1a4d52` | Org switcher card and hovered items on the sidebar      |
 | `--sidebar-text`   | `#c9d9da` | Sidebar nav items (active item: white pill, brand text) |
 | `--sidebar-strong` | `#ffffff` | Names and hovered items on the sidebar                  |
-| `--sidebar-active` | `#ffffff` | The active nav item's pill and the sidebar logo tile    |
+| `--sidebar-active` | `#ffffff` | The active nav item's pill                              |
+| `--logo-accent`    | `#50c7b7` | The logo's two shorter bars on the sidebar (TUI-135)    |
 | `--text`           | `#192229` | Body text and headings                                  |
 | `--muted`          | `#66747d` | Secondary text, labels, metadata                        |
 | `--subtle`         | `#8b979e` | Placeholders, timestamps, disabled text                 |
@@ -123,7 +124,13 @@ widths; the app doesn't).
 ### App shell, desktop (≥ 1024px)
 
 - **Sidebar**, 248px wide, `--sidebar` background, full height (D-194):
-  - Logo mark and name at the top.
+  - Logo mark and name at the top. The logo (TUI-135, from the owner's Figma Make design) is
+    three bars rising to the right, each leaning 25°, and "EduStrux" in Manrope ExtraBold 19px
+    (the only Manrope on the page). On a dark panel the tall bar is `--sidebar-strong` and the
+    shorter two `--logo-accent` (the first at 65% opacity); on a light background they are
+    `--text` and `--brand`. Every theme sets its own `--logo-accent`: a bright tint of its brand
+    on the dark sidebars, the brand itself on the light ones. The app icons are the same mark on
+    `#12333a`.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
     Messages and Reports, as the role allows. Timetable is for roles with `classes:read` except
     parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172). Items are
