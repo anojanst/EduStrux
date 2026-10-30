@@ -47,6 +47,9 @@ export const Org = z
     status: OrgStatus,
     trialEndsAt: Timestamp.nullable(),
     financialRetentionYears: FinancialRetentionYears.nullable(),
+    setupCompletedAt: Timestamp.nullable().openapi({
+      description: 'When the owner finished the setup wizard; null while it is still to do.',
+    }),
     createdAt: Timestamp,
     updatedAt: Timestamp,
   })
@@ -88,6 +91,9 @@ export const UpdateOrg = z
     theme: OrgTheme,
     taxNumber: z.string().trim().max(40).nullable(),
     financialRetentionYears: FinancialRetentionYears.nullable(),
+    setupCompleted: z.boolean().openapi({
+      description: 'true marks the setup wizard finished (sets setupCompletedAt); false clears it.',
+    }),
   })
   .partial()
   .required({ updatedAt: true })

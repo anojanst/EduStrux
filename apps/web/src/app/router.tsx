@@ -27,6 +27,7 @@ import { PortalTimetable } from '../pages/portal/PortalTimetable';
 import { PricingPage } from '../pages/settings/PricingPage';
 import { OrganisationPage } from '../pages/settings/OrganisationPage';
 import { PrivacyPage } from '../pages/settings/PrivacyPage';
+import { SettingsPage } from '../pages/settings/SettingsPage';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { MessagesPage } from '../pages/messages/MessagesPage';
 import { TermsPage } from '../pages/settings/TermsPage';
@@ -135,6 +136,7 @@ export const routes = [
               { path: 'more', element: <ForParent portal={<PortalMore />} /> },
               { path: 'invoices/:invoiceId', element: <InvoicePage /> },
               { path: 'payments', element: <PaymentsPage /> },
+              { path: 'settings', element: <SettingsPage /> },
               { path: 'settings/branches', element: <BranchesPage /> },
               { path: 'settings/terms', element: <TermsPage /> },
               { path: 'settings/courses', element: <CoursesPage /> },

@@ -37,16 +37,18 @@ describe('the sidebar', () => {
   it('collapses to an icon rail that keeps every link named, and remembers it', async () => {
     const first = renderRoutes(routes, '/o/magic', inOrg);
     expect(sidebar()).toHaveClass('lg:w-[248px]');
-    expect(screen.getByText('Ethan Nojan')).toBeVisible();
 
     await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(sidebar()).not.toHaveClass('lg:w-[248px]');
     expect(sidebar()).toHaveClass('w-[72px]');
-    expect(screen.queryByText('Ethan Nojan')).toBeNull();
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
     expect(nav.getByRole('link', { name: 'Home' })).toBeVisible();
-    expect(nav.getByRole('link', { name: 'Team' })).toBeVisible();
-    expect(nav.getByRole('link', { name: 'Your profile' })).toBeVisible();
+    // The settings screens sit behind one Settings link at the foot (TUI-130).
+    expect(nav.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/o/magic/settings',
+    );
+    expect(nav.queryByRole('link', { name: 'Team' })).toBeNull();
     expect(localStorage.getItem('edustrux.sidebarCollapsed')).toBe('1');
     first.unmount();
 
@@ -77,12 +79,16 @@ describe('the trial banner', () => {
 
   it('tells the owner and branch managers the trial is running out, and nobody else', () => {
     for (const role of ['owner', 'branch_manager'] as const) {
-      const view = renderRoutes(routes, '/o/magic', as(role));
+      const view = renderRoutes(routes, '/o/magic/classes', as(role));
       expect(screen.getByText('Your free trial ends in 5 days.')).toBeVisible();
       view.unmount();
     }
+    // Home has its own trial card (TUI-130).
+    const home = renderRoutes(routes, '/o/magic', as('owner'));
+    expect(screen.queryByText('Your free trial ends in 5 days.')).toBeNull();
+    home.unmount();
     for (const role of ['front_desk', 'teacher', 'accountant', 'parent'] as const) {
-      const view = renderRoutes(routes, '/o/magic', as(role));
+      const view = renderRoutes(routes, '/o/magic/classes', as(role));
       expect(screen.queryByText(/free trial/)).toBeNull();
       view.unmount();
     }
@@ -178,13 +184,13 @@ describe('the tab bar on phones', () => {
       'href',
       '/o/magic/families',
     );
-    // Team isn't a tab, so More is lit.
+    // Team is a settings screen, not a tab, so More is lit.
     const more = tabs().getByRole('button', { name: 'More' });
     expect(more).toHaveClass('text-brand');
 
     await userEvent.click(more);
     const drawer = screen.getByRole('dialog');
-    expect(within(drawer).getByRole('link', { name: 'Team' })).toBeVisible();
+    expect(within(drawer).getByRole('link', { name: 'Settings' })).toBeVisible();
     expect(more).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -233,12 +239,69 @@ describe('the sidebar on a tablet', () => {
       removeEventListener: () => {},
     }));
     renderRoutes(routes, '/o/magic', inOrg);
-    expect(screen.queryByText('Ethan Nojan')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     const drawer = screen.getByRole('dialog');
-    expect(within(drawer).getByText('Ethan Nojan')).toBeVisible();
-    expect(within(drawer).getByRole('link', { name: 'Team' })).toBeVisible();
+    expect(within(drawer).getByText('Families & students')).toBeVisible();
+    expect(within(drawer).getByRole('link', { name: 'Settings' })).toBeVisible();
+  });
+});
+
+describe('the header', () => {
+  const two = {
+    id: 'usr_1',
+    email: 'ethan@example.com',
+    name: 'Ethan Nojan',
+    memberships: [
+      { id: 'mem_1', role: 'owner' as const, branchIds: null, org },
+      {
+        id: 'mem_2',
+        role: 'teacher' as const,
+        branchIds: null,
+        org: { id: 'org_2', name: 'Harmony Music', slug: 'harmony' },
+      },
+    ],
+  };
+  const withTwo = (tree: ReactNode) => (
+    <OrgContext.Provider
+      value={{
+        me: two,
+        membership: { id: 'mem_1', role: 'owner', branchIds: null, org },
+        org: undefined,
+      }}
+    >
+      {tree}
+    </OrgContext.Provider>
+  );
+
+  it('shows the centre, and lists the others to switch to', async () => {
+    renderRoutes(routes, '/o/magic', withTwo);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Magic Center: switch organisation' }),
+    );
+    const items = screen.getAllByRole('menuitem');
+    expect(items.map((item) => item.textContent)).toEqual([
+      'MCMagic CenterOwner',
+      'HMHarmony MusicTeacher',
+      'Start another centre',
+    ]);
+    expect(items[1]).toHaveAttribute('href', '/o/harmony');
+  });
+
+  it('opens the profile, switches centre and signs out from the user menu', async () => {
+    renderRoutes(routes, '/o/magic', withTwo);
+    await userEvent.click(screen.getByRole('button', { name: 'Account: Ethan Nojan' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Your profile',
+      'Switch centre',
+      'Sign out',
+    ]);
+  });
+
+  it('shows a single centre without a menu', () => {
+    renderRoutes(routes, '/o/magic', inOrg);
+    expect(screen.queryByRole('button', { name: /switch organisation/ })).toBeNull();
+    expect(screen.getByText('Magic Center')).toBeVisible();
   });
 });

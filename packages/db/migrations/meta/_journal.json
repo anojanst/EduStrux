@@ -281,6 +281,13 @@
       "when": 1793335120893,
       "tag": "0039_purge_decided_admissions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1793352475676,
+      "tag": "0040_org_setup_completed",
+      "breakpoints": true
     }
   ]
 }

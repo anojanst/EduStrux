@@ -122,29 +122,34 @@ widths; the app doesn't).
 
 ### App shell, desktop (≥ 1024px)
 
-- **Sidebar**, 248px wide, `--sidebar` background, full height:
+- **Sidebar**, 248px wide, `--sidebar` background, full height (D-194):
   - Logo mark and name at the top.
-  - **Org switcher**: a card on a slightly lighter teal with the org avatar, "Organisation"
-    overline and org name; opens the list of the user's orgs (from `GET /me`).
-  - **Branch selector**: "All branches" with a pin icon; filters every list that has a branch.
-    Hidden for single-branch orgs and for staff limited to one branch.
   - **Nav**: Home, Timetable, Classes, Families & Students, Attendance, Invoices, Payments,
-    Messages, Reports, Settings, Branches (map-pin icon) and Courses for roles that change classes (D-178, D-170), Organisation for owners (building icon, before Theme, D-193), Theme for owners (D-165), and Privacy & data for owners (shield icon, after Theme, D-189). Timetable is for roles with `classes:read` except parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172), and so is Pricing (tag icon, under Settings; not for parents, D-175). Items are 40px high, icon + label; the active item is a pill
-    in `--sidebar-active` (white on a dark theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
+    Messages and Reports, as the role allows. Timetable is for roles with `classes:read` except
+    parents (D-176). Invoices and Payments are for staff with `billing:read` (D-172). Items are
+    40px high, icon + label; the active item is a pill in `--sidebar-active` (white on a dark
+    theme) with `--brand` text. A count badge (`--danger`, white text) sits at the right edge.
     Items the role can't use are left out.
-  - **User footer**: avatar, name and role; opens profile and sign out.
-- **Top bar**, 64px, white with a bottom border. It shows for any role that can search or
-  create (D-164, D-174):
-  - Global search: full-width field with a search icon and a `⌘K` hint, finding families,
-    students and guardians (`GET /search`).
-  - **+ New**: the primary button ("New" with a plus icon) at the right, with a menu of what the
-    role may create, each with an icon, opening the same dialog as its own page (D-174):
-    Family (`people:write`, Add family), Class (`classes:write`, Add class), Payment
-    (`billing:write`, Record payment for any family that owes) and Announcement
-    (`messages:write`, New announcement, D-183). Student and enrolment aren't in it: a student
-    is added inside a family, an enrolment from a class. Parents and accountants have no
-    "+ New"; a teacher's has only Announcement.
-  - Notifications bell with a dot when there's something new.
+  - **Settings**: one link at the foot, above a divider, for any role with a settings screen.
+    It opens the Settings page (§10), not a list in the sidebar.
+  - No org card (it's in the top bar), no user footer (the top bar's user menu), no help card
+    (there is no help centre). No branch selector yet: the centre only (D-194).
+- **Top bar**, 64px, white with a bottom border, on every org page (D-194):
+  - **Centre** at the left: the centre's badge (8px radius), a divider, a building icon and its
+    name. With more than one centre it opens the list of the user's centres (from `GET /me`)
+    and "Start another centre". Hidden on phones.
+  - Global search: a field with a search icon and a `⌘K` hint, finding families, students and
+    guardians (`GET /search`), for roles that can search (D-164).
+  - **+ New**: the primary button ("New" with a plus icon), with a menu of what the role may
+    create, each with an icon, opening the same dialog as its own page (D-174): Family
+    (`people:write`, Add family), Class (`classes:write`, Add class), Payment (`billing:write`,
+    Record payment for any family that owes) and Announcement (`messages:write`, New
+    announcement, D-183). Student and enrolment aren't in it: a student is added inside a
+    family, an enrolment from a class. Parents and accountants have no "+ New"; a teacher's has
+    only Announcement.
+  - **User menu** at the right, after a divider: the user's photo or initials, opening Your
+    profile, Switch centre (with more than one centre) and Sign out.
+  - No notifications bell yet: what it shows is still open (TUI-40).
 - **Banner slot** under the top bar, full width (see §6, Banners).
 - **Content**: the full width beside the sidebar, edge to edge, with 32px padding (16px on
   phones). The profile page too, beside its section menu (tried on 2026-10-22; revert to a
@@ -153,8 +158,8 @@ widths; the app doesn't).
     page's outer wrapper never has a max width, even when a Figma design shows a narrower
     column. Only a paragraph of running text (an explainer) and dialogs get a max width.
 - **Collapsing:** a button at the top of the sidebar turns it into a 72px icon rail (logo mark,
-  org avatar, nav icons, profile avatar and sign out), with each label shown beside its icon on
-  hover and keyboard focus. The choice is remembered on that browser.
+  nav icons and the Settings icon), with each label shown beside its icon on hover and keyboard
+  focus. The choice is remembered on that browser.
 
 ### Tablet (640–1023px)
 
@@ -164,7 +169,8 @@ with its label. The remembered collapse choice applies only from 1024px (D-185).
 
 ### Phone (< 640px)
 
-- Top bar: logo, search icon and **+ New** as a 44px brand icon button; no menu button (the tab
+- Top bar: logo, search icon, **+ New** as a 44px brand icon button and the user menu (where
+  Switch centre lives on phones); no menu button (the tab
   bar's More replaces it). It grows by the top safe area in an installed iPhone app. Nothing may
   overflow the screen width.
 - **Bottom tab bar** for every role (D-180, D-185). Staff (owner, branch manager, front desk):
@@ -173,8 +179,8 @@ with its label. The remembered collapse choice applies only from 1024px (D-185).
   Families and Invoices they have, then their next main (not settings) areas up to four tabs
   (accountant: Home, Invoices, Payments, More).
 - **More**: for staff it opens the full menu drawer; for parents it's the portal More page. It's
-  lit while the drawer is open or on a menu area that isn't a tab (Team, Classes, Theme), not on
-  a page reached from inside one (a lesson, a student).
+  lit while the drawer is open, on a menu area that isn't a tab (Classes, Messages) or on any
+  settings page (D-194), not on a page reached from inside one (a lesson, a student).
 - **Clear of the tab bar:** pages end 90px above the bottom (plus the safe area); sticky save and
   action bars sit above the tab bar, and so do toasts.
 - Stat cards sit in a **2 × 2 grid**, not a sideways scroller.
@@ -339,31 +345,48 @@ online." (D-185).
 
 ## 9. Home dashboard
 
-The first screen, as designed. What each part reads:
+Home for the owner, branch managers, front desk and accountants, from the owner's Figma Make
+design (D-194, replacing TUI-125's layout, D-179). Teachers get Today (D-177); parents the
+portal Home (D-180). What each part reads:
 
-| Part                                                                   | API                                                                                                                                                                                     |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Greeting, org name, user                                               | `GET /me`, the org from the shell                                                                                                                                                       |
-| Trial or read-only banner                                              | `GET /billing/subscription` (owner); `org.status`, `trialEndsAt` for others                                                                                                             |
-| Total owing, overdue (with count), received this month, draft invoices | `GET /reports/dashboard` → `money` (left out for teachers and front desk: hide the cards)                                                                                               |
-| Today's lessons                                                        | `GET /sessions?from=<today>&to=<today>` (class, room, teacher, times, cancelled, moved)                                                                                                 |
-| Whether each lesson is marked                                          | `GET /sessions` → each session's `attendance` (marks by status, all 0 until marked; staff only, D-168)                                                                                  |
-| Needs attention                                                        | `GET /reports/dashboard` → `today.absenceNotices`, `makeupCreditsAvailable`, `money.overdueInvoices`; also `unmarkedLessons` (last 14 days). "Oldest is 18 days overdue" isn't returned |
-| Quick actions                                                          | Static, filtered by the role's permissions                                                                                                                                              |
-| Recent activity                                                        | **No endpoint yet.** `GET /audit-log` is owner only; other roles need a new feed, or leave the panel out for them                                                                       |
+| Part                                                         | API                                                                                                                   |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Date overline (brand colour), greeting, "across {org} today" | `GET /me`, the org from the shell                                                                                     |
+| Trial pill and trial card                                    | `org.status`, `trialEndsAt`                                                                                           |
+| Today's lessons tile and card                                | `GET /sessions?from=<today>&to=<today>` (class, room, teacher, times, cancelled, moved)                               |
+| Attendance to take                                           | each session's `attendance` (D-168), plus `GET /reports/dashboard` → `unmarkedLessons` and the last 14 days' sessions |
+| Make-up credits, Absence notices                             | `GET /reports/dashboard` → `makeupCreditsAvailable`, `today.absenceNotices`                                           |
+| Money at a glance (roles that see money)                     | `GET /reports/dashboard` → `money` (owing with drafts to issue, received this month, overdue with its count)          |
+| Set up your centre (owner)                                   | the same lists the setup wizard checks (rooms, academic years, grade levels, subjects, staff, classes)                |
+| Student limit (owner)                                        | `GET /billing/subscription`, shown at 80% or more of the plan's limit                                                 |
 
-Built in TUI-125 (D-179). Changes from the Figma source:
+- **Header:** the date overline in `--brand`, the greeting, "Here's what's happening across
+  {org} today." and, during the trial, a "14-day free trial" pill.
+- **Trial card:** the days left. For the owner, while setup isn't finished, "Continue setup"
+  opens the first wizard step without its data. The thin trial strip of §6 is hidden on Home.
+- **Count tiles:** Today's lessons (next at …), Attendance to take (today's lessons begun plus
+  earlier unmarked ones; opens the oldest), Make-up credits and Absence notices. Two a row,
+  four on very wide screens. An accountant, who has no lessons, gets Invoices and Payments
+  tiles instead.
+- **Today's lessons** card with the next or current lesson picked out: its time and "Starts in
+  2h 18m", or Take attendance.
+- **Money at a glance:** Owing, Received this month and Overdue across n invoices. Left out for
+  roles that don't see money.
+- **Owner's right column:** the "Set up your centre" checklist (centre details, first branch
+  with rooms, grade levels, subjects, terms and dates, invite staff, first class) with a
+  progress ring and bar, each item opening its wizard step (first class opens Classes); under it
+  the student-limit card.
+- **Getting started:** other staff in a centre with no classes keep the links to courses,
+  classes and families.
 
-- Front desk, who doesn't see money, gets the centre's counts (families, students, classes,
-  lessons today) in place of the money cards.
-- Recent activity is left out until there is a feed endpoint; Quick actions sit under today's
-  lessons instead. "Send message" waits for the messages screen.
-- A centre with no classes yet gets "Getting started" above the panels. The owner's links to
-  the setup wizard ("Finish setting up your centre", D-193); other staff get "Add your courses"
-  and "Add your first class".
-- "Send message" describes **email or portal**: SMS and WhatsApp are paid add-ons, not in the
-  base app.
-- On phones the stat cards are a 2 × 2 grid and "+ New" is an icon button, so nothing is cut off.
+Changes from the Figma source (D-194):
+
+- No branch switcher and no bell in the header (§5).
+- Make-up credits replaces Pending enrolments (there is no requests screen yet, TUI-131).
+- Money at a glance shows overdue in place of this term's invoiced total against last term
+  (TUI-133).
+- No "View plans" or "Compare plans" until there is a plans page (TUI-132).
+- Needs attention, Quick actions and Recent activity are left out.
 - Text is never below 12px.
 
 ---
@@ -384,9 +407,10 @@ Settled when TUI-23 was built (D-158):
   `apps/web/src/components/` (app components such as `StatCard`, `LessonRow`, `StatusBadge`).
 - **Sign-in and sign-up** are Clerk's own components, themed with these tokens, inside the app's
   auth layout: the teal brand panel beside the form (D-160).
-- **Built so far** (D-161): the desktop sidebar of §5 (logo, org switcher, nav by role, user
-  footer), a top bar with a drawer below 1024px, and the banners of §6 for trial, read-only and
-  past due. Not yet: the bell (TUI-40).
+- **Built so far** (D-161): the desktop sidebar of §5, a top bar with a drawer below 1024px, and
+  the banners of §6 for trial, read-only and past due. The org switcher and user menu moved from
+  the sidebar to the top bar, and the settings screens behind one Settings link (D-194). Not
+  yet: the bell (TUI-40) and a branch selector.
 - **Phone and tablet** (D-185): the tablet icon rail with its drawer, the phone tab bar for
   every role, the offline banner, and an installable app (manifest with PNG and maskable icons,
   Apple touch icon, white theme colour to match the top bar). No service worker yet: offline
@@ -475,13 +499,23 @@ Settled when TUI-23 was built (D-158):
   Settings › Courses with a one-line explainer above; add and edit dialogs per tab, and a
   searchable checkbox list (`PickList`) for choosing students, families or courses. On phones
   each row puts its value under the name in a two-column grid, so long names aren't cut short.
-- **Setup wizard** (D-193), built straight to this design system without a Figma design (the
-  owner's choice, 2026-10-30), owner only, where a new centre lands after `/onboarding`: five
-  steps, one a page, the step in the URL (Terms, Grade levels, Subjects, Tax, First class). A
-  numbered step list with checks on done steps on the left on wide screens, a "Set up · Step n of
-  5" overline, and Back, Skip for now and Save and continue on each step. Presets are chips
-  (grade levels editable, subjects toggled); a done step shows "Already set up" with a link to
-  its settings screen; items that fail to save are listed on the step.
+- **Setup wizard** (D-194), from the owner's Figma Make design, replacing D-193's pages: a full
+  screen of its own, outside the app shell. A dark panel on the left in the theme's sidebar
+  colours ("Let's get started" / "Set up your centre") lists the 8 steps as done (check),
+  current ("In progress") or to do; on phones a bar with "Step n of 8" and a progress line.
+  Each step has a "Step n of 8" overline, title, subtitle, the form, then Back, Skip for now and
+  Continue with its arrow on the right ("Finish setup" on the last, which goes Home). Steps:
+  Centre details and Setup type (`/onboarding` when creating a centre, where steps 3–8 are
+  locked; inside a centre they edit the org), then Tax, Branch & rooms, Academic year, Grade
+  levels, Subjects and Invite staff (`/o/:orgSlug/setup?step=…`, owner only). Presets are
+  chips; a done step shows "Already set up" with a link to its settings screen; items that fail
+  to save are listed on the step.
+- **Settings page** (D-194), from the Settings link at the foot of the sidebar
+  (`/o/:orgSlug/settings`): a card for each settings screen the role can open, in this order:
+  Organisation (owners), Branches, Terms & holidays and Courses (roles that change classes,
+  D-178, D-181, D-170), Pricing (`billing:read`, D-175), Team (`staff:read`), Theme and Privacy &
+  data (owners, D-165, D-189). Owners also get "Set up your centre", which opens the wizard.
+  Parents have no Settings.
 - **Settings › Organisation** (D-193), built straight to this design system, owner only: centre
   name, single-tutor mode, tax number, country, date format and time zone, with the currency
   read-only. A stale save (409) offers Reload; the single-tutor 422 shows under its switch.

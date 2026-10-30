@@ -1,14 +1,15 @@
 import { useClerk, useUser } from '@clerk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeftRight,
   BookOpen,
   Building2,
   CalendarCheck,
   CalendarDays,
   CalendarRange,
   Check,
+  ChevronDown,
   Ellipsis,
-  ChevronsUpDown,
   House,
   LogOut,
   MapPin,
@@ -22,8 +23,10 @@ import {
   ShieldCheck,
   School,
   Search,
+  Settings as SettingsIcon,
   Tag,
   TriangleAlert,
+  UserRound,
   Users,
   UsersRound,
   Wallet,
@@ -39,7 +42,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { Link, NavLink, useLocation } from 'react-router';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { Logo } from '../components/Logo';
 import { SearchPalette } from '../components/SearchPalette';
 import { Avatar } from '../components/ui/Avatar';
@@ -56,7 +59,7 @@ import { orgBanner, seesTrialBanner } from '../lib/orgStatus';
 import { can, roleLabel, type Role } from '../lib/roles';
 import { orgPath, rememberOrg } from '../lib/session';
 
-type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean };
+export type NavItem = { to: string; label: MessageKey; Icon: LucideIcon; end?: boolean };
 
 /**
  * The nav for a role (ui-design.md §5): only what the role can use. More areas join as their
@@ -79,6 +82,19 @@ function navFor(role: Role): NavItem[] {
   if (can(role, 'messages:read')) {
     items.push({ to: 'messages', label: 'nav.messages', Icon: MessageSquare });
   }
+  return items;
+}
+
+/**
+ * The settings screens a role can open, in the order Settings lists them. They sit behind one
+ * Settings link at the foot of the sidebar (TUI-130).
+ */
+export function settingsFor(role: Role): NavItem[] {
+  if (role === 'parent') return [];
+  const items: NavItem[] = [];
+  if (can(role, 'org:write')) {
+    items.push({ to: 'settings/organisation', label: 'nav.organisation', Icon: Building2 });
+  }
   if (can(role, 'classes:write')) {
     items.push({ to: 'settings/branches', label: 'nav.branches', Icon: MapPin });
     items.push({ to: 'settings/terms', label: 'nav.terms', Icon: CalendarRange });
@@ -91,7 +107,6 @@ function navFor(role: Role): NavItem[] {
     items.push({ to: 'settings/team', label: 'nav.team', Icon: UsersRound });
   }
   if (can(role, 'org:write')) {
-    items.push({ to: 'settings/organisation', label: 'nav.organisation', Icon: Building2 });
     items.push({ to: 'settings/theme', label: 'nav.theme', Icon: Palette });
     items.push({ to: 'settings/privacy', label: 'nav.privacy', Icon: ShieldCheck });
   }
@@ -265,19 +280,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header
           className={cn(
             // Under an installed app's status bar on iPhones the bar grows by the safe area.
-            'sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] sm:px-8',
-            canSearch || canCreate ? null : 'sm:hidden',
+            'sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] sm:gap-3 sm:px-8',
           )}
         >
           <span className="sm:hidden">
             <Logo />
           </span>
+          <OrgSwitcher />
           {canSearch ? (
             <>
               <button
                 type="button"
                 onClick={() => setSearching(true)}
-                className="hidden h-10 w-full max-w-[520px] items-center gap-2.5 rounded-lg border border-border bg-canvas px-3 text-left text-body text-subtle hover:border-border-strong sm:flex"
+                className="hidden h-10 w-full max-w-[420px] items-center gap-2.5 rounded-lg border border-border bg-canvas px-3 text-left text-body text-subtle hover:border-border-strong sm:ml-auto sm:flex"
               >
                 <Search className="size-4" aria-hidden />
                 <span className="flex-1">{t('search.placeholder')}</span>
@@ -296,6 +311,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </>
           ) : null}
           {canCreate ? <NewMenu pushRight={!canSearch} /> : null}
+          <UserMenu pushRight={!canSearch && !canCreate} />
         </header>
         {searching ? <SearchPalette onClose={() => setSearching(false)} /> : null}
         <OfflineBanner />
@@ -326,9 +342,9 @@ function TabBar({ onMore, moreOpen }: { onMore: () => void; moreOpen: boolean })
     end ? pathname === href(to) : pathname.startsWith(href(to));
   // More is lit for an area of the menu that isn't a tab (Team, Classes), not for a page
   // reached from inside one (a lesson, a student).
-  const inMore = navFor(membership.role).some(
-    (item) => !tabs.some((tab) => tab.to === item.to) && at(item),
-  );
+  const inMore =
+    navFor(membership.role).some((item) => !tabs.some((tab) => tab.to === item.to) && at(item)) ||
+    pathname.startsWith(href('settings'));
   return (
     <nav
       aria-label={t('shell.tabs')}
@@ -396,7 +412,7 @@ function NewMenu({ pushRight }: { pushRight: boolean }) {
   }));
   const close = () => setOpen(null);
   return (
-    <div className={cn('sm:ml-auto', pushRight && 'max-sm:ml-auto')}>
+    <div className={cn(pushRight && 'ml-auto')}>
       <ActionMenu
         label={t('shell.new')}
         items={items}
@@ -481,7 +497,6 @@ function Sidebar({
           </button>
         ) : null}
       </div>
-      <OrgSwitcher collapsed={collapsed} />
       <ul className={cn('flex flex-col gap-1', collapsed && 'w-full')}>
         {navFor(membership.role).map(({ to, label, Icon, end }) => (
           <li key={label}>
@@ -505,15 +520,35 @@ function Sidebar({
           </li>
         ))}
       </ul>
-      <div className={cn('mt-auto', collapsed && 'w-full')}>
-        <UserFooter collapsed={collapsed} />
-      </div>
+      {settingsFor(membership.role).length ? (
+        <div className={cn('mt-auto border-t border-sidebar-raised pt-4', collapsed && 'w-full')}>
+          <NavLink
+            to={`${base}/settings`}
+            aria-label={collapsed ? t('nav.settings') : undefined}
+            className={({ isActive }) =>
+              cn(
+                'group relative flex h-10 items-center gap-3 rounded-lg text-label font-medium transition-colors duration-150',
+                collapsed ? 'justify-center' : 'px-3',
+                isActive
+                  ? 'bg-sidebar-active text-brand'
+                  : 'hover:bg-sidebar-raised hover:text-sidebar-strong',
+              )
+            }
+          >
+            <SettingsIcon className="size-5 shrink-0" aria-hidden />
+            {collapsed ? <RailTip label={t('nav.settings')} /> : t('nav.settings')}
+          </NavLink>
+        </div>
+      ) : null}
     </nav>
   );
 }
 
-/** The org card in the sidebar; with more than one org it opens the list of them. */
-function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
+/**
+ * The centre in the header (TUI-130): its badge and, on wider screens, its name. With more than
+ * one centre it opens the list of them and "Start another centre".
+ */
+function OrgSwitcher() {
   const { me, membership } = useOrg();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -538,28 +573,17 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
     };
   }, [open]);
 
-  const card = collapsed ? (
+  const card = (
     <>
-      <Avatar name={membership.org.name} tone="org" />
-      <RailTip label={membership.org.name} />
-    </>
-  ) : (
-    <>
-      <Avatar name={membership.org.name} tone="org" />
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block text-meta font-semibold tracking-[0.05em] text-sidebar-text uppercase">
-          {t('shell.organisation')}
-        </span>
-        <span className="block truncate text-body font-semibold text-sidebar-strong">
-          {membership.org.name}
-        </span>
+      <Avatar name={membership.org.name} tone="org" className="rounded-lg" />
+      <span aria-hidden className="h-6 w-px bg-border" />
+      <Building2 className="size-4 shrink-0 text-muted" aria-hidden />
+      <span className="max-w-[220px] truncate text-label font-semibold text-text">
+        {membership.org.name}
       </span>
     </>
   );
-  const box = cn(
-    'group relative flex items-center rounded-xl bg-sidebar-raised',
-    collapsed ? 'size-12 justify-center' : 'w-full gap-3 p-3',
-  );
+  const box = 'hidden h-10 shrink-0 items-center gap-3 rounded-lg pr-2 sm:flex';
 
   return (
     <div ref={ref} className="relative">
@@ -568,25 +592,20 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label={collapsed ? t('shell.switchOrg', { org: membership.org.name }) : undefined}
+          aria-label={t('shell.switchOrg', { org: membership.org.name })}
           onClick={() => setOpen((v) => !v)}
-          className={cn(box, 'transition-colors duration-150 hover:bg-sidebar-raised/80')}
+          className={cn(box, 'transition-colors duration-150 hover:bg-canvas')}
         >
           {card}
-          {collapsed ? null : <ChevronsUpDown className="size-4 shrink-0" aria-hidden />}
+          <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
         </button>
       ) : (
-        <div className={box} aria-label={collapsed ? membership.org.name : undefined}>
-          {card}
-        </div>
+        <div className={box}>{card}</div>
       )}
       {open ? (
         <div
           role="menu"
-          className={cn(
-            'absolute z-50 rounded-xl border border-border bg-surface p-1 text-text shadow-pop',
-            collapsed ? 'top-0 left-full ml-3 w-[260px]' : 'inset-x-0 top-full mt-2',
-          )}
+          className="absolute top-full left-0 z-50 mt-2 w-[280px] rounded-xl border border-border bg-surface p-1 text-text shadow-pop"
         >
           {me.memberships.map((m) => (
             <Link
@@ -599,7 +618,7 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
               }}
               className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-canvas"
             >
-              <Avatar name={m.org.name} tone="org" className="size-8" />
+              <Avatar name={m.org.name} tone="org" className="size-8 rounded-lg" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-body font-semibold">{m.org.name}</span>
                 <span className="block text-meta text-muted">{roleLabel(m.role)}</span>
@@ -623,54 +642,54 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function UserFooter({ collapsed }: { collapsed: boolean }) {
+/**
+ * The signed-in person at the right of the header (TUI-130): their photo or initials, opening
+ * their profile, switching centre (on phones, where the header has no room for it) and signing
+ * out.
+ */
+function UserMenu({ pushRight }: { pushRight: boolean }) {
   const { me, membership } = useOrg();
   const { signOut } = useClerk();
   const { user } = useUser();
   const queryClient = useQueryClient();
-  const name = me.name ?? me.email;
+  const navigate = useNavigate();
+  const items: MenuItem[] = [
+    {
+      label: t('shell.profile'),
+      Icon: UserRound,
+      onSelect: () => navigate(`${orgPath(membership.org.slug)}/profile`),
+    },
+  ];
+  if (me.memberships.length > 1) {
+    items.push({
+      label: t('shell.switchCentre'),
+      Icon: ArrowLeftRight,
+      onSelect: () => navigate('/orgs'),
+    });
+  }
+  items.push({
+    label: t('common.signOut'),
+    Icon: LogOut,
+    danger: true,
+    onSelect: () => {
+      queryClient.clear();
+      void signOut();
+    },
+  });
   return (
-    <div className={cn('flex items-center gap-1', collapsed && 'flex-col')}>
-      <NavLink
-        to={`${orgPath(membership.org.slug)}/profile`}
-        aria-label={t('shell.profile')}
-        className={({ isActive }) =>
-          cn(
-            'group relative flex min-w-0 items-center gap-3 rounded-xl transition-colors duration-150 hover:bg-sidebar-raised',
-            collapsed ? 'p-1.5' : 'flex-1 px-1 py-2',
-            isActive && 'bg-sidebar-raised',
-          )
-        }
+    <div className={cn('shrink-0 sm:border-l sm:border-border sm:pl-3', pushRight && 'ml-auto')}>
+      <ActionMenu
+        label={t('shell.account', { name: me.name ?? me.email ?? '' })}
+        items={items}
+        className="flex h-11 items-center gap-1.5 rounded-lg px-1 hover:bg-canvas sm:h-10"
       >
         <Avatar
           name={me.name}
           fallback={me.email ?? '?'}
           src={user?.hasImage ? user.imageUrl : null}
         />
-        {collapsed ? (
-          <RailTip label={t('shell.profile')} />
-        ) : (
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-label font-semibold text-sidebar-strong">
-              {name}
-            </span>
-            <span className="block text-meta">{roleLabel(membership.role)}</span>
-          </span>
-        )}
-      </NavLink>
-      <button
-        type="button"
-        aria-label={t('common.signOut')}
-        title={collapsed ? undefined : t('common.signOut')}
-        onClick={() => {
-          queryClient.clear();
-          void signOut();
-        }}
-        className="group relative inline-flex size-11 items-center justify-center rounded-lg hover:bg-sidebar-raised hover:text-sidebar-strong lg:size-9"
-      >
-        <LogOut className="size-5" aria-hidden />
-        {collapsed ? <RailTip label={t('common.signOut')} /> : null}
-      </button>
+        <ChevronDown className="hidden size-4 text-muted sm:block" aria-hidden />
+      </ActionMenu>
     </div>
   );
 }
@@ -695,6 +714,7 @@ const TRIAL_DISMISSED = 'edustrux.trialBannerDismissed';
 /** Trial days left, read-only, or a payment problem (ui-design.md §6 Banners). */
 function OrgBanner() {
   const { org, membership } = useOrg();
+  const { pathname } = useLocation();
   const today = new Date().toISOString().slice(0, 10);
   const [dismissed, setDismissed] = useState(() => {
     try {
@@ -709,7 +729,9 @@ function OrgBanner() {
 
   const owner = membership.role === 'owner';
   if (banner.kind === 'trial') {
-    if (dismissed || !seesTrialBanner(membership.role)) return null;
+    // Home has its own trial card (TUI-130).
+    const home = pathname === orgPath(membership.org.slug);
+    if (dismissed || home || !seesTrialBanner(membership.role)) return null;
     return (
       <div className="flex items-center gap-3 border-b border-border bg-warning-soft px-4 py-2.5 text-body text-text sm:px-8">
         <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden />

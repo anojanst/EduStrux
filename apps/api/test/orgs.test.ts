@@ -298,3 +298,68 @@ describe('theme', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('finishing the setup wizard (D-195)', () => {
+  it('marks the setup done once, keeps its first time, audits it and can clear it', async () => {
+    const { token } = await newUser('owner');
+    const org = await newOrg(token);
+    expect(
+      (await call('GET', `/api/v1/orgs/${org.id}`, { token })).body.setupCompletedAt,
+    ).toBeNull();
+
+    const done = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt, setupCompleted: true },
+    });
+    expect(done.status).toBe(200);
+    expect(done.body.setupCompletedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(done.body).not.toHaveProperty('setupCompleted');
+    const audit = (await call('GET', `/api/v1/orgs/${org.id}/audit-log?limit=1`, { token })).body
+      .data[0];
+    expect(audit).toMatchObject({
+      action: 'org.updated',
+      before: { setupCompletedAt: null },
+      after: { setupCompletedAt: done.body.setupCompletedAt },
+    });
+
+    // Finishing again changes nothing.
+    const again = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: done.body.updatedAt, setupCompleted: true },
+    });
+    expect(again.body.setupCompletedAt).toBe(done.body.setupCompletedAt);
+    expect(again.body.updatedAt).toBe(done.body.updatedAt);
+
+    const cleared = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: again.body.updatedAt, setupCompleted: false },
+    });
+    expect(cleared.body.setupCompletedAt).toBeNull();
+  });
+
+  it('takes only true or false, and only from the owner', async () => {
+    const owner = await newUser('owner');
+    const org = await newOrg(owner.token);
+    const bad = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token: owner.token,
+      body: { updatedAt: org.updatedAt, setupCompleted: 'yes' },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.fields).toHaveProperty('setupCompleted');
+
+    const manager = await newUser('branch_manager');
+    const token = await addMember(org.id, manager.clerkUserId, 'branch_manager');
+    const refused = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token,
+      body: { updatedAt: org.updatedAt, setupCompleted: true },
+    });
+    expect(refused.status).toBe(403);
+
+    const stranger = await newUser('owner_b');
+    const other = await call('PATCH', `/api/v1/orgs/${org.id}`, {
+      token: stranger.token,
+      body: { updatedAt: org.updatedAt, setupCompleted: true },
+    });
+    expect(other.status).toBe(404);
+  });
+});

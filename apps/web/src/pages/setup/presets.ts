@@ -9,6 +9,7 @@ const numbered = (prefix: string, from: number, to: number) =>
 export const GRADE_PRESETS = {
   year13: numbered('Year', 1, 13),
   year12: numbered('Year', 1, 12),
+  gradeK12: ['Kindergarten', ...numbered('Grade', 1, 12)],
   grade12: numbered('Grade', 1, 12),
   grade13: numbered('Grade', 1, 13),
   class12: numbered('Class', 1, 12),
@@ -20,8 +21,8 @@ const GRADES_BY_COUNTRY: Record<string, GradePreset> = {
   GB: 'year13',
   IE: 'year12',
   AU: 'year12',
-  US: 'grade12',
-  CA: 'grade12',
+  US: 'gradeK12',
+  CA: 'gradeK12',
   ZA: 'grade12',
   PH: 'grade12',
   KE: 'grade12',
