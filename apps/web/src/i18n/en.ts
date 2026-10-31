@@ -46,6 +46,19 @@ export const en = {
     'Create your account, then name your centre. You can invite your team and families after.',
   'auth.signUp.invitedHint':
     'Joining a centre as staff or a parent? Use the link in your invitation email instead.',
+  'auth.signUp.legal': 'By signing up, you agree to the {terms} and the {privacy}.',
+  'auth.signUp.legalTerms': 'Terms of service',
+  'auth.signUp.legalPrivacy': 'Privacy policy',
+
+  'legal.terms': 'Terms of service',
+  'legal.privacy': 'Privacy policy',
+  'legal.dpa': 'Data processing agreement',
+  'legal.documents': 'Legal documents',
+  'legal.updated': 'Last updated {date}',
+  'legal.summary': 'In plain English',
+  'legal.onThisPage': 'On this page',
+  'legal.signIn': 'Sign in',
+  'legal.madeIn': '© 2026 EduStrux. Made in Auckland, New Zealand.',
 
   'invite.overline': 'Invitation',
   'invite.title': 'Join {org}',

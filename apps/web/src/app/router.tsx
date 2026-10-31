@@ -14,6 +14,7 @@ import { InvoicePage } from '../pages/billing/InvoicePage';
 import { InvoicesPage } from '../pages/billing/InvoicesPage';
 import { PaymentsPage } from '../pages/billing/PaymentsPage';
 import { InvitationPage } from '../pages/InvitationPage';
+import { LegalPage } from '../pages/legal/LegalPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
 import { FamilyPage } from '../pages/people/FamilyPage';
@@ -103,6 +104,10 @@ export const routes = [
         ),
       },
       { path: 'invitations/:token', element: <InvitationPage /> },
+      // The legal documents (TUI-85): public, signed in or not.
+      { path: 'terms', element: <LegalPage slug="terms" /> },
+      { path: 'privacy', element: <LegalPage slug="privacy" /> },
+      { path: 'dpa', element: <LegalPage slug="dpa" /> },
       {
         element: <RequireSignedIn />,
         children: [

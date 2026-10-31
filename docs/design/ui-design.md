@@ -419,7 +419,13 @@ Settled when TUI-23 was built (D-158):
 - Components live in `apps/web/src/components/ui/` (primitives) and
   `apps/web/src/components/` (app components such as `StatCard`, `LessonRow`, `StatusBadge`).
 - **Sign-in and sign-up** are Clerk's own components, themed with these tokens, inside the app's
-  auth layout: the teal brand panel beside the form (D-160).
+  auth layout: the teal brand panel beside the form (D-160). The terms, privacy policy and DPA
+  are linked at the foot of that layout, and sign-up says the person agrees to the first two.
+- **Legal pages** (`/terms`, `/privacy`, `/dpa`, D-198): public, outside the app shell. A white
+  page with a thin header (logo, Sign in), the title in Manrope ExtraBold, a soft-teal
+  "In plain English" summary, numbered sections at about 68 characters a line with a sticky list
+  of them on the left from 1024px (a collapsible "On this page" below that), and the documents
+  linked in the footer.
 - **Built so far** (D-161): the desktop sidebar of §5, a top bar with a drawer below 1024px, and
   the banners of §6 for trial, read-only and past due. The org switcher and user menu moved from
   the sidebar to the top bar, and the settings screens behind one Settings link (D-194). Not
