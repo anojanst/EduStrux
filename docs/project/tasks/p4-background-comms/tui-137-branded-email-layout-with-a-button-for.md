@@ -8,7 +8,7 @@ priority: P1
 size: S
 endpoints: []
 branch: task/tui-137-email-layout
-pr:
+pr: 89
 ---
 
 # TUI-137 Branded email layout with a button for invitations
