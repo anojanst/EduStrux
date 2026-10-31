@@ -542,9 +542,13 @@ describe('sending an email (TUI-65)', () => {
         { name: 'recipient_id', value: recipientId },
       ],
     });
-    expect(sent.html).toContain('<p>See you tomorrow &amp; thanks.</p>');
+    expect(sent.html).toMatch(/<p [^>]*>See you tomorrow &amp; thanks.<\/p>/);
     expect(sent.html).not.toContain('<today>');
-    expect(sent.html).toMatch(/color: #155d63;[^>]*>Bright Minds Tuition<\/p>/);
+    expect(sent.html).toContain('>Closed &lt;today&gt;</h1>');
+    expect(sent.html).toMatch(/color: #155d63;[^>]*>Bright Minds Tuition<\/td>/);
+    expect(sent.html).toContain('border-top: 4px solid #155d63;');
+    // No app address: the footer names EduStrux without the logo.
+    expect(sent.html).not.toContain('<img');
     expect(sent.text).toContain('Sent by Bright Minds Tuition.');
     expect(await statusOf(recipientId)).toMatchObject({
       emailStatus: 'sent',
@@ -652,32 +656,45 @@ describe('sending an email (TUI-65)', () => {
     expect((await statusOf(later.recipientId)).emailStatus).toBe('skipped');
   });
 
-  it('sends an invitation with its code, and a link when the app’s address is known', async () => {
+  it('sends an invitation with a button when the app’s address is known, else its code', async () => {
     const { org } = await setup();
     const fetchFn = vi.fn(async () => Response.json({ id: 'email_9' }));
+    const invitation = {
+      orgId: org.id,
+      to: 'new@example.com',
+      template: 'invitation',
+      data: {
+        token: 'tok_abc',
+        role: 'teacher',
+        orgName: 'Bright Minds Tuition',
+        expiresAt: '2026-11-01T00:00:00.000Z',
+      },
+    };
+    const sentBody = (call: number) =>
+      JSON.parse((fetchFn.mock.calls[call] as unknown as [string, RequestInit])[1].body as string);
+
     await deliverEmail(
       db(),
       { ...configured, APP_URL: 'https://app.example.com/' },
-      {
-        orgId: org.id,
-        to: 'new@example.com',
-        template: 'invitation',
-        data: {
-          token: 'tok_abc',
-          role: 'teacher',
-          orgName: 'Bright Minds Tuition',
-          expiresAt: '2026-11-01T00:00:00.000Z',
-        },
-      },
+      invitation,
       1,
       fetchFn as unknown as typeof fetch,
     );
-    const sent = JSON.parse(
-      (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    const linked = sentBody(0);
+    expect(linked.subject).toBe('You’re invited to join Bright Minds Tuition');
+    expect(linked.html).toContain(
+      '<a href="https://app.example.com/invitations/tok_abc" target="_blank" style="display: inline-block;',
     );
-    expect(sent.subject).toBe('You’re invited to join Bright Minds Tuition');
-    expect(sent.text).toContain('as a teacher');
-    expect(sent.text).toContain('tok_abc');
-    expect(sent.text).toContain('https://app.example.com/invitations/tok_abc');
+    expect(linked.html).toContain('>Accept invitation</a>');
+    expect(linked.html).toContain('This invitation works until');
+    expect(linked.html).toContain('<img src="https://app.example.com/email-logo.png"');
+    expect(linked.text).toContain('on EduStrux as a teacher');
+    expect(linked.text).toContain('Accept invitation: https://app.example.com/invitations/tok_abc');
+    expect(linked.text).not.toContain('invitation code');
+
+    await deliverEmail(db(), configured, invitation, 1, fetchFn as unknown as typeof fetch);
+    const coded = sentBody(1);
+    expect(coded.text).toContain('Your invitation code is tok_abc.');
+    expect(coded.html).not.toContain('Accept invitation');
   });
 });

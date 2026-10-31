@@ -5935,3 +5935,30 @@ as its first two). Settings › Organisation stays, now opened from the Settings
   - Resend's free plan sends 3,000 emails a month and 100 a day; more needs its paid plan.
   - Clerk's production instance, which needs the domain too, is a separate step.
 - **Tasks:** TUI-3.
+
+## D-197 · 2026-10-31 · Branded email layout, and invitations with a button
+
+- **Context:** The first real emails went out once Resend was set up (D-196). The owner found the
+  invitation plain: the org's name over three lines of text, with the raw invitation code and a
+  bare link.
+- **Decision:**
+  - Every email (announcements, automatic messages, invoices and invitations) uses one layout: a
+    white card on a grey canvas, at most 560px wide, with a top edge in the org's theme colour
+    (D-165). The card is headed by a square with the org's initial and its name, then the subject
+    as the heading, then the body.
+  - The footer under the card reads "Sent by {org}." and "Powered by" with the EduStrux logo.
+    The logo is `/email-logo.png` from the web app, so it shows only when `APP_URL` is set;
+    otherwise the footer has the name as text.
+  - An email can carry a button, with its link also written out under it for clients that block
+    buttons, and a short note under a rule. Built from tables with inline styles, so it holds up
+    in Gmail and Outlook. It's marked light-only, so dark-mode clients don't recolour it. A hidden
+    first line sets the inbox preview to the body instead of the org's name.
+  - Invitations: "Accept invitation" button to `{APP_URL}/invitations/{token}`, and the expiry as
+    the note. The code is shown only when there's no `APP_URL` (locally), since the link carries
+    it.
+  - The plain-text part keeps the same content: body, button label and link, note, footer.
+  - Assumption: taken during the build; the owner asked for "better UI for email", not this
+    layout.
+- **Consequences:** Org-written text is still plain text, escaped, never HTML. The logo needs the
+  web app's address to be public: while Access covers it, the image doesn't load in email.
+- **Tasks:** TUI-137.
