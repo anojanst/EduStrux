@@ -103,6 +103,7 @@ export async function deliverEmail(
       theme: org.theme,
       subject: found.message.subject,
       body: found.message.body,
+      appUrl: env.APP_URL,
     });
     try {
       const providerId = await send(
@@ -136,20 +137,24 @@ export async function deliverEmail(
   if (message.template === 'invitation') {
     const data = message.data as { token: string; role: Role; orgName: string; expiresAt: string };
     const org = await orgs.getOrg(ctx);
-    const link = env.APP_URL
-      ? `\n\n${t('email.invitation.link', { link: `${env.APP_URL.replace(/\/$/, '')}/invitations/${data.token}` })}`
-      : '';
+    const appUrl = env.APP_URL?.replace(/\/$/, '');
+    const body = t('email.invitation.body', {
+      orgName: data.orgName,
+      role: t(`role.${data.role}`),
+    });
     const email = renderEmail({
       orgName: data.orgName,
       theme: org.theme,
       subject: t('email.invitation.subject', { orgName: data.orgName }),
-      body:
-        t('email.invitation.body', {
-          orgName: data.orgName,
-          role: t(`role.${data.role}`),
-          token: data.token,
-          expiresOn: formatDate(utcToLocal(data.expiresAt, org.timezone).date, org.dateFormat),
-        }) + link,
+      // With the app's address, a button; without it (locally), the code to type in.
+      body: appUrl ? body : `${body}\n\n${t('email.invitation.code', { token: data.token })}`,
+      action: appUrl
+        ? { label: t('email.invitation.button'), url: `${appUrl}/invitations/${data.token}` }
+        : undefined,
+      note: t('email.invitation.expires', {
+        expiresOn: formatDate(utcToLocal(data.expiresAt, org.timezone).date, org.dateFormat),
+      }),
+      appUrl,
     });
     try {
       await send(

@@ -4,11 +4,13 @@
 
 export const en = {
   'email.footer': 'Sent by {orgName}.',
+  'email.poweredBy': 'Powered by',
+  'email.buttonHelp': 'If the button doesn’t work, copy this link into your browser:',
   'email.invitation.subject': 'You’re invited to join {orgName}',
-  'email.invitation.body':
-    '{orgName} has invited you to join them as {role}.\n\nYour invitation code is {token}. It ' +
-    'works until {expiresOn}.',
-  'email.invitation.link': 'Accept the invitation: {link}',
+  'email.invitation.body': '{orgName} has invited you to join them on EduStrux as {role}.',
+  'email.invitation.code': 'Your invitation code is {token}.',
+  'email.invitation.button': 'Accept invitation',
+  'email.invitation.expires': 'This invitation works until {expiresOn}.',
   'role.owner': 'an owner',
   'role.branch_manager': 'a branch manager',
   'role.front_desk': 'front desk staff',
