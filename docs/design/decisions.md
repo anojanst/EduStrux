@@ -5965,3 +5965,41 @@ as its first two). Settings › Organisation stays, now opened from the Settings
 - **Consequences:** Org-written text is still plain text, escaped, never HTML. The logo needs the
   web app's address to be public: while Access covers it, the image doesn't load in email.
 - **Tasks:** TUI-137.
+
+## D-198 · 2026-10-31 · Legal documents: terms, privacy policy and DPA as public pages
+
+- **Context:** TUI-85. The app went public at app.edustrux.com (D-196), and stores children's and
+  families' details. The owner trades as a sole trader for now and asked for terms that protect
+  them from liability.
+- **Decision:**
+  - Three public pages in the web app, no sign-in: `/terms`, `/privacy` and `/dpa`. Each has its
+    title and date, a plain-English summary, numbered sections with a sticky list of them on wide
+    screens (a collapsible "On this page" on phones), and links to the others at the foot.
+  - Sign-up says "By signing up, you agree to the Terms of service and the Privacy policy", both
+    linked. Every sign-in, sign-up and invitation screen links all three at the foot.
+  - The text lives in `apps/web/src/pages/legal/documents.ts`, outside the UI catalog: a
+    translated legal document is a new document. The operator's name, place and contact email
+    are one constant (`OPERATOR`).
+  - Written from what the app actually stores and does: the data fields, Cloudflare (Oceania),
+    Clerk, Resend and Stripe as the providers, nightly backups kept 14 days, logs 7 days, the
+    hashed IP on public forms, the automatic erase after 6 months and the retention period
+    (D-171, D-189).
+  - Terms, for the owner's protection: provided "as is"; no liability for indirect or
+    consequential loss or lost data; total liability capped at the fees paid in the last 12
+    months, or NZ$100; the centre indemnifies the owner for claims from its users and families;
+    business use, contracting out of the Consumer Guarantees Act and sections 9, 12A, 13 and
+    14(1) of the Fair Trading Act; New Zealand law and courts. The centre is responsible for its
+    data, consents (including parents' for children) and for checking invoices and tax.
+  - Privacy policy under the Privacy Act 2020: the centre is responsible for centre data, which
+    EduStrux holds as its agent (the DPA); no selling, ads, trackers or AI training.
+  - Data after an account closes: deleted on request or after 90 days. This is a promise in the
+    documents; nothing does it automatically yet.
+  - Assumption: drafted during the build, not by a lawyer. The owner has them reviewed before
+    relying on them.
+- **Consequences:**
+  - `hello@edustrux.com` must receive mail (for example with Cloudflare Email Routing) before the
+    pages go live.
+  - Deleting a closed account's data after 90 days is a manual job until it is automated.
+  - Clerk's own consent checkbox (Clerk dashboard → Legal) can be turned on with the two URLs
+    for a recorded acceptance; the app doesn't record acceptance itself.
+- **Tasks:** TUI-85.

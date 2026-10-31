@@ -1,5 +1,6 @@
 import { SignUp } from '@clerk/react';
 import { Mail } from 'lucide-react';
+import { Link } from 'react-router';
 import { t } from '../i18n';
 import { AuthLayout } from '../layouts/AuthLayout';
 
@@ -16,6 +17,7 @@ export function SignUpPage() {
         <Mail className="mt-px size-4 shrink-0" aria-hidden />
         {t('auth.signUp.invitedHint')}
       </p>
+      <LegalConsent />
     </AuthLayout>
   );
 }
@@ -29,5 +31,29 @@ function SignUpAside() {
       <h2 className="mt-2 text-title font-normal text-white">{t('auth.signUp.asideTitle')}</h2>
       <p className="mt-4 text-body">{t('auth.signUp.asideBody')}</p>
     </div>
+  );
+}
+
+/** The sign-up's agreement line, with the two documents linked where their names fall (TUI-85). */
+function LegalConsent() {
+  const links = {
+    terms: (
+      <Link to="/terms" className="text-brand underline">
+        {t('auth.signUp.legalTerms')}
+      </Link>
+    ),
+    privacy: (
+      <Link to="/privacy" className="text-brand underline">
+        {t('auth.signUp.legalPrivacy')}
+      </Link>
+    ),
+  };
+  const parts = t('auth.signUp.legal').split(/\{(terms|privacy)\}/);
+  return (
+    <p className="mt-3 text-meta text-muted">
+      {parts.map((part, i) =>
+        i % 2 ? <span key={i}>{links[part as keyof typeof links]}</span> : part,
+      )}
+    </p>
   );
 }

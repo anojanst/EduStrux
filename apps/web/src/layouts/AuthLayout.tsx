@@ -2,10 +2,11 @@ import { CalendarCheck, Receipt, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '../components/Logo';
 import { t } from '../i18n';
+import { LegalLinks } from '../pages/legal/LegalPage';
 
 /**
  * Sign-in, sign-up, invitations and onboarding: a teal brand panel beside the form on wide
- * screens; on phones just the logo above it.
+ * screens; on phones just the logo above it. The legal documents are linked at the foot (TUI-85).
  */
 export function AuthLayout({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
@@ -20,6 +21,7 @@ export function AuthLayout({ children, aside }: { children: ReactNode; aside?: R
           <Logo />
         </div>
         <div className="w-full max-w-[440px]">{children}</div>
+        <LegalLinks className="mt-10 w-full max-w-[440px] [&_ul]:justify-center" />
       </main>
     </div>
   );
