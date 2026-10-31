@@ -8,7 +8,7 @@ priority: P1
 size: M
 endpoints: []
 branch: task/tui-76-landing-page
-pr:
+pr: 92
 ---
 
 # TUI-76 Marketing/pricing landing page
