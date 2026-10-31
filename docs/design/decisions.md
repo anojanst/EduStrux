@@ -5965,3 +5965,36 @@ as its first two). Settings › Organisation stays, now opened from the Settings
 - **Consequences:** Org-written text is still plain text, escaped, never HTML. The logo needs the
   web app's address to be public: while Access covers it, the image doesn't load in email.
 - **Tasks:** TUI-137.
+
+## D-199 · 2026-10-31 · The marketing page at edustrux.com: static HTML from the same Worker
+
+- **Context:** TUI-76. The owner designed the page in Figma Make
+  (people-tag-96843739.figma.site) from a brief that ruled out generic AI-site clichés: real
+  workflows, real prices, the brand's colours and the logo's bar motif only. The bare domain was
+  kept free for it (D-196).
+- **Decision:**
+  - **Static HTML, not the React app.** `apps/web/landing.html`, with its own stylesheet
+    (`src/landing/landing.css`, plain CSS scoped under `.landing`) and a few lines of script for
+    the monthly/yearly prices. The questions open with `<details>`, without script. Vite builds
+    it beside the app (a second input), so it loads fast (about 13 kB gzipped plus fonts), needs
+    no Clerk, and search engines read it as it is.
+  - **Same Worker, by host.** `edustrux.com` and `www.edustrux.com` are added as Custom Domains.
+    The Worker sees "/" first (`run_worker_first` gains "/", with an `ASSETS` binding): on
+    edustrux.com it serves the landing page, www gets a 301 to the bare domain, and every other
+    host gets the app's `index.html` as before. Other paths are unchanged.
+  - **Every link into the app is absolute** to `https://app.edustrux.com` (sign in, sign up,
+    terms, privacy, DPA), so the app is only ever used on its own origin and
+    `CLERK_AUTHORIZED_PARTIES` doesn't change.
+  - **Content as designed**, except: "For parents" in the top bar is "Questions" (there was no
+    parents section to link to), "Get in touch" emails `hello@edustrux.com`, the yearly toggle
+    shows US$99 and US$249 a year (D-027), and the logo uses the app's own mark.
+  - Outside the UI catalog (D-015): a marketing page is English copy, edited as a page.
+  - Assumption: the hosting choices were made during the build; the owner asked for the design
+    to be built.
+- **Consequences:**
+  - The deploy adds the edustrux.com and www Custom Domains; the deploy token already has Workers
+    Routes: Edit on the zone (D-196).
+  - The page claims what the app does today (data in Oceania, nightly backups, one-file export,
+    read-only after the trial, no card for the trial). Change the copy when those change.
+  - Locally the page is at http://localhost:5173/landing.html.
+- **Tasks:** TUI-76.

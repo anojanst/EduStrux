@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduStrux · Admin software for tuition centres</title>
+    <meta
+      name="description"
+      content="Timetables, attendance, make-up lessons and invoices, for solo tutors and tuition centres up to 150 students. 14-day free trial, no card needed."
+    />
+    <link rel="canonical" href="https://edustrux.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://edustrux.com/" />
+    <meta property="og:title" content="Run your tuition centre without the spreadsheet." />
+    <meta
+      property="og:description"
+      content="Timetables, attendance, make-up lessons and invoices, for solo tutors and centres up to 150 students."
+    />
+    <meta property="og:image" content="https://edustrux.com/icon-512.png" />
+    <meta name="theme-color" content="#e7f2f1" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script type="module" src="/src/landing/landing.ts"></script>
+  </head>
+  <!--
+    The marketing page at edustrux.com (TUI-76, from the owner's Figma Make design). Static HTML
+    and its own stylesheet, not the React app, so it loads fast and needs no sign-in code. The
+    Worker serves it for "/" on edustrux.com; every link into the app goes to app.edustrux.com.
+  -->
+  <body class="landing">
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="logo" href="/" aria-label="EduStrux home">
+          <svg class="logo__mark" viewBox="0 -4 29 33" aria-hidden="true">
+            <path
+              class="logo__bar logo__bar--one"
+              d="M0 17a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1Z"
+              transform="translate(4.5 20) skewY(-25) translate(-4.5 -20)"
+            />
+            <path
+              class="logo__bar logo__bar--two"
+              d="M10 9a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H11a1 1 0 0 1-1-1Z"
+              transform="translate(14.5 16) skewY(-25) translate(-14.5 -16)"
+            />
+            <path
+              class="logo__bar logo__bar--three"
+              d="M20 2a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H21a1 1 0 0 1-1-1Z"
+              transform="translate(24.5 12.5) skewY(-25) translate(-24.5 -12.5)"
+            />
+          </svg>
+          <span>EduStrux</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main">
+          <div class="nav-pill">
+            <a href="#week">How it works</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#faq">Questions</a>
+          </div>
+          <div class="nav-actions">
+            <a class="nav-signin" href="https://app.edustrux.com/sign-in">Sign in</a>
+            <a class="button button--small" href="https://app.edustrux.com/sign-up"
+              >Start free trial<span aria-hidden="true">→</span></a
+            >
+          </div>
+        </nav>
+        <div class="mobile-actions">
+          <a href="https://app.edustrux.com/sign-in">Sign in</a>
+          <a class="mobile-trial" href="https://app.edustrux.com/sign-up">Start free trial</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero__copy">
+          <span class="hero__kicker">Admin software for tuition centres</span>
+          <h1>Run your tuition centre <span>without the spreadsheet.</span></h1>
+          <p>
+            Timetables, attendance, make-up lessons and invoices, for solo tutors and centres up to
+            150 students.
+          </p>
+          <div class="hero__action">
+            <a class="button" href="https://app.edustrux.com/sign-up"
+              >Start 14-day free trial<span aria-hidden="true">→</span></a
+            >
+            <small>No card needed. <br />Your data stays yours.</small>
+          </div>
+        </div>
+        <div class="hero__product">
+          <span class="product-caption">A centre, on an ordinary Monday</span>
+          <div
+            class="hero-activity"
+            role="img"
+            aria-label="A Monday in EduStrux: a lesson starting, attendance marked, a make-up credit issued and a payment recorded"
+          >
+            <div class="hero-bars" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="activity-card activity-card--lesson">
+              <span class="activity-card__time">3:30 PM</span>
+              <div><strong>Year 6 Maths starts soon</strong><small>Room 2 · 8 students</small></div>
+              <i class="activity-card__status">✓</i>
+            </div>
+            <div class="activity-card activity-card--attendance">
+              <span class="activity-card__time">4:42 PM</span>
+              <div>
+                <strong>Attendance complete</strong><small>11 of 11 marked · Year 9 Science</small>
+              </div>
+              <i class="activity-card__status">✓</i>
+            </div>
+            <div class="activity-card activity-card--credit">
+              <span class="activity-card__time">5:08 PM</span>
+              <div>
+                <strong>Make-up credit issued</strong
+                ><small>Aarav Patel · expires 30 September</small>
+              </div>
+              <i class="activity-card__status">✓</i>
+            </div>
+            <div class="activity-card activity-card--payment">
+              <span class="activity-card__time">6:14 PM</span>
+              <div>
+                <strong>Payment recorded</strong><small>Mere Rangi · $249.00 · bank transfer</small>
+              </div>
+              <i class="activity-card__status">✓</i>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="week section" id="week">
+        <div class="section-intro">
+          <span class="eyebrow">The working week</span>
+          <h2>A week at a centre</h2>
+          <p>
+            Not reports for the sake of reports. Just the jobs that come up between teaching, dinner
+            and getting home.
+          </p>
+        </div>
+        <div class="timeline">
+          <article class="timeline-step">
+            <div class="timeline-step__day"><span>01</span><b>Mon</b></div>
+            <div class="timeline-step__copy">
+              <h3>Set the week up</h3>
+              <p>
+                See every branch and room in one timetable. If two classes need the same room,
+                you’ll know before Monday afternoon.
+              </p>
+            </div>
+            <div class="week-crop schedule-crop" aria-hidden="true">
+              <div class="crop-toolbar"><b>Monday</b><span>All branches ⌄</span></div>
+              <div class="schedule-row">
+                <small>3:30</small><span>Year 6 Maths<br /><em>Room 2</em></span
+                ><span>Beginner Piano<br /><em>Studio A</em></span>
+              </div>
+              <div class="schedule-row">
+                <small>4:45</small><span>Year 9 Science<br /><em>Room 1</em></span
+                ><span class="conflict">Tamil 3<br /><em>Room 1 · Clash</em></span>
+              </div>
+            </div>
+          </article>
+          <article class="timeline-step">
+            <div class="timeline-step__day"><span>02</span><b>Tue</b></div>
+            <div class="timeline-step__copy">
+              <h3>Take the roll mid-lesson</h3>
+              <p>
+                One tap per student, on your phone. You can finish attendance while everyone is
+                finding the right page.
+              </p>
+            </div>
+            <div class="week-crop phone-crop" aria-hidden="true">
+              <div class="phone-top"><span>‹</span><b>Year 9 Science</b><small>8 of 11</small></div>
+              <div class="student-row"><span>Leila M.</span><i class="checked">✓</i></div>
+              <div class="student-row"><span>Tama R.</span><i class="checked">✓</i></div>
+              <div class="student-row"><span>Sophie K.</span><i></i></div>
+              <span class="app-action">Save attendance</span>
+            </div>
+          </article>
+          <article class="timeline-step">
+            <div class="timeline-step__day"><span>03</span><b>Wed</b></div>
+            <div class="timeline-step__copy">
+              <h3>Aarav is sick</h3>
+              <p>
+                His absence creates a make-up credit. Book him into another class with a free seat,
+                without checking three sheets.
+              </p>
+            </div>
+            <div class="week-crop makeup-crop" aria-hidden="true">
+              <span class="credit-pill">1 credit available</span>
+              <h4>Book a make-up for Aarav</h4>
+              <div>
+                <span><b>Year 7 Maths</b><small>Wed 21 Aug · 4:45pm</small></span
+                ><em>2 seats</em>
+              </div>
+              <div>
+                <span><b>Year 7 Maths</b><small>Sat 24 Aug · 10:00am</small></span
+                ><em>1 seat</em>
+              </div>
+            </div>
+          </article>
+          <article class="timeline-step">
+            <div class="timeline-step__day"><span>04</span><b>Thu</b></div>
+            <div class="timeline-step__copy">
+              <h3>Bill the term</h3>
+              <p>
+                One invoice run bills every family, including sibling discounts and tax. Review it,
+                then send.
+              </p>
+            </div>
+            <div class="week-crop invoice-crop" aria-hidden="true">
+              <div class="crop-toolbar"><b>Term 4 invoice run</b><span>Draft</span></div>
+              <div class="invoice-total"><small>46 families</small><strong>$12,840.00</strong></div>
+              <div class="invoice-check"><span>Sibling discounts</span><b>12 applied</b></div>
+              <div class="invoice-check"><span>GST</span><b>Included</b></div>
+              <span class="app-action">Create 46 invoices</span>
+            </div>
+          </article>
+          <article class="timeline-step">
+            <div class="timeline-step__day"><span>05</span><b>Fri</b></div>
+            <div class="timeline-step__copy">
+              <h3>Mere pays by bank transfer</h3>
+              <p>
+                Find her reference and record the payment in five seconds. She sees the invoice as
+                paid on her phone.
+              </p>
+            </div>
+            <div class="week-crop payment-crop" aria-hidden="true">
+              <span class="success-mark">✓</span>
+              <div>
+                <small>Payment recorded</small><strong>$249.00</strong
+                ><span>Mereana Rangi · INV-1048</span>
+              </div>
+              <span class="paid-pill">Paid</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="makeups section">
+        <div class="makeups__heading">
+          <div>
+            <span class="eyebrow">The fiddly bit, handled</span>
+            <h2>Make-ups, properly.</h2>
+          </div>
+          <p>
+            A missed lesson is not just an empty cell. EduStrux follows the credit from the original
+            absence to the replacement class.
+          </p>
+        </div>
+        <ol class="makeup-flow">
+          <li class="makeup-step">
+            <span class="makeup-step__num">01</span>
+            <h3>Absent</h3>
+            <p>Mark the reason and whether your policy allows a credit.</p>
+          </li>
+          <li class="makeup-step">
+            <span class="makeup-step__num">02</span>
+            <h3>Credit issued</h3>
+            <p>The family can see it, and you can see when it expires.</p>
+          </li>
+          <li class="makeup-step">
+            <span class="makeup-step__num">03</span>
+            <h3>Make-up booked</h3>
+            <p>Choose a suitable class that has a free seat.</p>
+          </li>
+          <li class="makeup-step">
+            <span class="makeup-step__num">04</span>
+            <h3>Credit closed</h3>
+            <p>Used credits close automatically. Unused ones follow your expiry policy.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="honest">
+        <div>
+          <span class="eyebrow eyebrow--light">A shorter list</span>
+          <h2>What it doesn’t do</h2>
+        </div>
+        <ol class="honest__list">
+          <li>
+            <span>01</span>
+            <p>It doesn’t take card payments. You keep your bank account and your fees.</p>
+          </li>
+          <li>
+            <span>02</span>
+            <p>It doesn’t message parents on WhatsApp <em>(yet)</em>. Email is built in.</p>
+          </li>
+          <li>
+            <span>03</span>
+            <p>It doesn’t lock you in. Export everything, any time, as one file.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="built-for section">
+        <span class="eyebrow">Built for the way you teach</span>
+        <ul class="built-for__list">
+          <li><span>01</span>Maths and science tuition</li>
+          <li><span>02</span>Music schools</li>
+          <li><span>03</span>Language and cultural schools</li>
+          <li><span>04</span>Dance studios</li>
+          <li><span>05</span>Solo tutors</li>
+        </ul>
+      </section>
+
+      <section class="pricing section" id="pricing">
+        <div class="pricing__heading">
+          <div>
+            <span class="eyebrow">Pricing</span>
+            <h2>Small enough to be sensible.</h2>
+          </div>
+          <div class="billing-toggle" role="group" aria-label="Billing frequency">
+            <button type="button" data-interval="month" aria-pressed="true">Monthly</button>
+            <button type="button" data-interval="year" aria-pressed="false">
+              Yearly <span>2 months free</span>
+            </button>
+          </div>
+        </div>
+        <div class="pricing-grid">
+          <div class="price-column">
+            <div class="price-column__name"><h3>Solo</h3></div>
+            <div class="price">
+              <strong data-month="$9.90" data-year="$99">$9.90</strong>
+              <span data-month="US$ / month" data-year="US$ / year">US$ / month</span>
+            </div>
+            <p>Up to 30 students.</p>
+            <a class="button button--outline" href="https://app.edustrux.com/sign-up"
+              >Start free trial<span aria-hidden="true">→</span></a
+            >
+          </div>
+          <div class="price-column price-column--active">
+            <div class="price-column__name">
+              <h3>Small</h3>
+              <span>Most centres start here</span>
+            </div>
+            <div class="price">
+              <strong data-month="$24.90" data-year="$249">$24.90</strong>
+              <span data-month="US$ / month" data-year="US$ / year">US$ / month</span>
+            </div>
+            <p>Up to 150 students.</p>
+            <a class="button" href="https://app.edustrux.com/sign-up"
+              >Start free trial<span aria-hidden="true">→</span></a
+            >
+          </div>
+          <div class="price-column">
+            <div class="price-column__name"><h3>Larger</h3></div>
+            <div class="price"><strong>Talk to us</strong></div>
+            <p>More students or a more complicated setup.</p>
+            <a class="button button--outline" href="mailto:hello@edustrux.com"
+              >Get in touch<span aria-hidden="true">→</span></a
+            >
+          </div>
+        </div>
+        <p class="pricing-note">
+          Only students with an active enrolment count. Every plan has every feature. 14-day free
+          trial on the Small plan.
+        </p>
+      </section>
+
+      <section class="faq section" id="faq">
+        <div>
+          <span class="eyebrow">Before you ask</span>
+          <h2>A few practical questions.</h2>
+        </div>
+        <div class="faq__items">
+          <details class="faq-item" open>
+            <summary>Where is my data?<i aria-hidden="true"></i></summary>
+            <p>Stored with Cloudflare in the Oceania region, backed up nightly.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Can I get my data out?<i aria-hidden="true"></i></summary>
+            <p>Yes: one export file, any time.</p>
+          </details>
+          <details class="faq-item">
+            <summary>What happens when the trial ends?<i aria-hidden="true"></i></summary>
+            <p>Your account becomes read-only until you choose a plan. Nothing is deleted.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Do parents need an app?<i aria-hidden="true"></i></summary>
+            <p>
+              No. The parent view works in their phone’s browser. Parents sign in with the email
+              their centre has for them.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Is it safe for children’s data?<i aria-hidden="true"></i></summary>
+            <p>
+              We keep only what a feature needs and delete what’s no longer needed. Read the
+              <a href="https://app.edustrux.com/privacy">privacy policy</a>.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <section class="closing">
+        <span class="bar-motif" aria-hidden="true"><i></i><i></i><i></i></span>
+        <h2>Try it with your real timetable this week.</h2>
+        <p>Fourteen days on the Small plan. No card needed.</p>
+        <a class="button button--light" href="https://app.edustrux.com/sign-up"
+          >Start 14-day free trial<span aria-hidden="true">→</span></a
+        >
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__top">
+        <div>
+          <a class="logo logo--inverse" href="/" aria-label="EduStrux home">
+            <svg class="logo__mark" viewBox="0 -4 29 33" aria-hidden="true">
+              <path
+                class="logo__bar logo__bar--one"
+                d="M0 17a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1Z"
+                transform="translate(4.5 20) skewY(-25) translate(-4.5 -20)"
+              />
+              <path
+                class="logo__bar logo__bar--two"
+                d="M10 9a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H11a1 1 0 0 1-1-1Z"
+                transform="translate(14.5 16) skewY(-25) translate(-14.5 -16)"
+              />
+              <path
+                class="logo__bar logo__bar--three"
+                d="M20 2a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3V25a1 1 0 0 1-1 1H21a1 1 0 0 1-1-1Z"
+                transform="translate(24.5 12.5) skewY(-25) translate(-24.5 -12.5)"
+              />
+            </svg>
+            <span>EduStrux</span>
+          </a>
+          <p>Made in Auckland, New Zealand</p>
+        </div>
+        <nav class="footer__links" aria-label="Footer">
+          <a href="#pricing">Pricing</a>
+          <a href="https://app.edustrux.com/sign-in">Sign in</a>
+          <a href="https://app.edustrux.com/terms">Terms of service</a>
+          <a href="https://app.edustrux.com/privacy">Privacy policy</a>
+          <a href="https://app.edustrux.com/dpa">Data processing agreement</a>
+          <a href="mailto:hello@edustrux.com">Contact</a>
+        </nav>
+      </div>
+      <div class="footer__bottom">
+        <span>© 2026 EduStrux</span>
+        <a href="mailto:hello@edustrux.com">hello@edustrux.com</a>
+      </div>
+    </footer>
+  </body>
+</html>

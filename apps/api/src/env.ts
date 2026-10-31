@@ -4,6 +4,8 @@ import type { EmailMessage, JobMessage } from './background/messages';
 
 export type Bindings = {
   DB: D1Database;
+  /** The web build, under `env.production` only: "/" on each host comes from it (TUI-76). */
+  ASSETS?: Fetcher;
   FILES: R2Bucket;
   EMAIL_QUEUE: Queue<EmailMessage>;
   JOBS_QUEUE: Queue<JobMessage>;
