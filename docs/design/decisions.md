@@ -1473,6 +1473,9 @@ get them without the default price).
   shape" doesn't hold while Access is on, and the checks above now return 302 to the Access
   sign-in page from outside. Launch has two manual steps: turn the docs off and remove or narrow
   Access (D-069).
+- **Update 2026-10-31:** The owner took Access off `app.edustrux.com`, so the app is public. The
+  docs are off in production (`ENABLE_DOCS` is `false`); `/api/docs` and `/api/openapi.json` are
+  404 there.
 
 ## D-069 · 2026-10-12 · Production is behind Cloudflare Access until the app is finalised
 

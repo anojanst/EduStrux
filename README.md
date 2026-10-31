@@ -216,13 +216,12 @@ pnpm deploy:production
 - Secrets are set once, by the owner:
   `pnpm --filter @edustrux/api exec wrangler secret put CLERK_SECRET_KEY --env production` (or
   `CLERK_JWT_KEY`).
-- Swagger is on in production for now, at `/api/docs`, because production is the only deployed
-  environment (D-068).
+- Swagger is off in production since the app went public; use it locally (D-068).
 - The whole deployed API is behind Cloudflare Access until the app is finalised (D-069). A
   browser signs in through Access first; curl and other non-browser clients need an Access
   service token. Access is set up in the Cloudflare dashboard, not in this repo.
-- Before launch: remove or narrow Access, and set `ENABLE_DOCS` back to `false` under
-  `env.production`. `CLERK_AUTHORIZED_PARTIES` there lists the origins the app is served from;
+- Access no longer covers `app.edustrux.com`, which is public since 2026-10-31.
+  `CLERK_AUTHORIZED_PARTIES` there lists the origins the app is served from;
   add each new one.
 
 ## Monitoring and restoring

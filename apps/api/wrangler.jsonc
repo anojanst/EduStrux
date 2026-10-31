@@ -72,8 +72,9 @@
       "routes": [{ "pattern": "app.edustrux.com", "custom_domain": true }],
       "vars": {
         "ENVIRONMENT": "production",
-        // On until launch, while production is the only deployed environment (D-068).
-        "ENABLE_DOCS": "true",
+        // Off: the app is public at app.edustrux.com, so the docs would be too (D-068). Swagger
+        // stays on locally.
+        "ENABLE_DOCS": "false",
         // The origins the web app is served from (this Worker). A token minted on any other
         // origin is refused. Add each new origin here when the app gets one.
         "CLERK_AUTHORIZED_PARTIES": "https://app.edustrux.com,https://edustrux.edustrux-api.workers.dev",
