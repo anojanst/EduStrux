@@ -424,6 +424,11 @@ Settled when TUI-23 was built (D-158):
   the banners of §6 for trial, read-only and past due. The org switcher and user menu moved from
   the sidebar to the top bar, and the settings screens behind one Settings link (D-194). Not
   yet: the bell (TUI-40) and a branch selector.
+- **Marketing page** (edustrux.com, D-199): static HTML outside the app, from the owner's Figma
+  Make design. Soft-teal hero with the day's activity as floating cards, the week as five day
+  cards with small app pictures, then rounded panels for make-ups, what it doesn't do (deep
+  teal), who it's for, pricing and questions, a teal closing band and an ink footer. Manrope for
+  headings, Inter for text, the logo's bars as the only decoration.
 - **Phone and tablet** (D-185): the tablet icon rail with its drawer, the phone tab bar for
   every role, the offline banner, and an installable app (manifest with PNG and maskable icons,
   Apple touch icon, white theme colour to match the top bar). No service worker yet: offline

@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ command, mode }) => {
@@ -16,6 +17,15 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // The app, and the marketing page the Worker serves at edustrux.com (TUI-76).
+    build: {
+      rollupOptions: {
+        input: {
+          app: resolve(import.meta.dirname, 'index.html'),
+          landing: resolve(import.meta.dirname, 'landing.html'),
+        },
+      },
+    },
     server: {
       port: Number(process.env.PORT) || 5173,
       // The API runs on :8787 (`pnpm dev`); same origin in the browser, as in production.

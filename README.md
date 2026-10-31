@@ -185,6 +185,10 @@ The Worker serves the web app too: `/api/*` reaches the API, and every other pat
 `apps/web/dist` or, for the app's own pages, its `index.html`. Locally nothing changes: Vite
 serves the app and sends `/api` to `wrangler dev`.
 
+The same Worker serves the marketing page at https://edustrux.com (`apps/web/landing.html`, a
+static page with its own stylesheet). On that host "/" is the landing page and www redirects to
+it; on app.edustrux.com "/" is the app. Locally it's at http://localhost:5173/landing.html.
+
 - Merges that only change `docs/`, Markdown files or `.claude/` don't start it.
 - It can be started by hand from the repository's Actions tab ("Run workflow"). Only `main` is
   ever deployed.

@@ -64,12 +64,19 @@
       "assets": {
         "directory": "../web/dist",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*"],
+        // "/" too: the marketing page on edustrux.com, the app on app.edustrux.com (TUI-76).
+        "run_worker_first": ["/api/*", "/"],
+        "binding": "ASSETS",
       },
       // The app's own address (D-196). Cloudflare makes its DNS record and certificate on deploy;
       // the deploy token needs Zone → Workers Routes: Edit on edustrux.com. The workers.dev
       // address keeps working too.
-      "routes": [{ "pattern": "app.edustrux.com", "custom_domain": true }],
+      "routes": [
+        { "pattern": "app.edustrux.com", "custom_domain": true },
+        // The marketing page (TUI-76); www is sent to the bare domain.
+        { "pattern": "edustrux.com", "custom_domain": true },
+        { "pattern": "www.edustrux.com", "custom_domain": true },
+      ],
       "vars": {
         "ENVIRONMENT": "production",
         // Off: the app is public at app.edustrux.com, so the docs would be too (D-068). Swagger
